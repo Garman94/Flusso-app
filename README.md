@@ -1,109 +1,233 @@
-<a href="https://demo-nextjs-with-supabase.vercel.app/">
-  <img alt="Next.js and Supabase Starter Kit - the fastest way to build apps with Next.js and Supabase" src="https://demo-nextjs-with-supabase.vercel.app/opengraph-image.png">
-  <h1 align="center">Next.js and Supabase Starter Kit</h1>
-</a>
+# garman-boilerplate
 
-<p align="center">
- The fastest way to build apps with Next.js and Supabase
-</p>
+> Read this in another language: [🇮🇹 Italiano](docs/README.it.md) · [🇪🇸 Español](docs/README.es.md)
 
-<p align="center">
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#demo"><strong>Demo</strong></a> ·
-  <a href="#deploy-to-vercel"><strong>Deploy to Vercel</strong></a> ·
-  <a href="#clone-and-run-locally"><strong>Clone and run locally</strong></a> ·
-  <a href="#feedback-and-issues"><strong>Feedback and issues</strong></a>
-  <a href="#more-supabase-examples"><strong>More Examples</strong></a>
-</p>
-<br/>
+A production-ready Next.js + Supabase SaaS boilerplate with authentication, user profiles, plan management, Lemon Squeezy billing, transactional email, MDX blog, and admin panel.
 
-## Features
+---
 
-- Works across the entire [Next.js](https://nextjs.org) stack
-  - App Router
-  - Pages Router
-  - Proxy
-  - Client
-  - Server
-  - It just works!
-- supabase-ssr. A package to configure Supabase Auth to use cookies
-- Password-based authentication block installed via the [Supabase UI Library](https://supabase.com/ui/docs/nextjs/password-based-auth)
-- Styling with [Tailwind CSS](https://tailwindcss.com)
-- Components with [shadcn/ui](https://ui.shadcn.com/)
-- Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
-  - Environment variables automatically assigned to Vercel project
+## 👉 [SETUP GUIDE — Start here](SETUP.md)
 
-## Demo
+Step-by-step instructions to go from zero to running in ~30 minutes. Includes troubleshooting for the most common errors.
 
-You can view a fully working demo at [demo-nextjs-with-supabase.vercel.app](https://demo-nextjs-with-supabase.vercel.app/).
+---
 
-## Deploy to Vercel
+---
 
-Vercel deployment will guide you through creating a Supabase account and project.
+## What's included
 
-After installation of the Supabase integration, all relevant environment variables will be assigned to the project so the deployment is fully functioning.
+| Feature | Details |
+|---|---|
+| Auth | Email/password, Google OAuth, forgot password, email confirmation |
+| Profiles | Auto-created on sign-up with `full_name` and `plan` fields |
+| Plans | `free`, `premium`, `founder` with RLS-enforced access |
+| Middleware | Protects `/dashboard/*`, redirects authenticated users from `/login` |
+| Billing | Lemon Squeezy webhook — upgrades/downgrades plan automatically |
+| Email | Resend transactional email — welcome email, password reset |
+| Blog | MDX blog with SEO metadata, OG tags, sitemap |
+| Admin panel | `/dashboard/admin` — manage all users and plans |
+| SEO | Sitemap, robots.txt, OG metadata on all pages |
+| UI | shadcn/ui, Tailwind CSS, dark mode, Sonner toasts |
+| Legal | `/terms` and `/privacy` placeholder pages |
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&project-name=nextjs-with-supabase&repository-name=nextjs-with-supabase&demo-title=nextjs-with-supabase&demo-description=This+starter+configures+Supabase+Auth+to+use+cookies%2C+making+the+user%27s+session+available+throughout+the+entire+Next.js+app+-+Client+Components%2C+Server+Components%2C+Route+Handlers%2C+Server+Actions+and+Middleware.&demo-url=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2F&external-id=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&demo-image=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2Fopengraph-image.png)
+---
 
-The above will also clone the Starter kit to your GitHub, you can clone that locally and develop locally.
+## Quick start
 
-If you wish to just develop locally and not deploy to Vercel, [follow the steps below](#clone-and-run-locally).
+```bash
+npm install
+npm run dev
+```
 
-## Clone and run locally
+Open [http://localhost:3000](http://localhost:3000)
 
-1. You'll first need a Supabase project which can be made [via the Supabase dashboard](https://database.new)
+---
 
-2. Create a Next.js app using the Supabase Starter template npx command
+## Environment variables
 
-   ```bash
-   npx create-next-app --example with-supabase with-supabase-app
-   ```
+Fill in `.env.local`:
 
-   ```bash
-   yarn create next-app --example with-supabase with-supabase-app
-   ```
+```env
+# Supabase — https://supabase.com/dashboard/project/_/settings/api
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
 
-   ```bash
-   pnpm create next-app --example with-supabase with-supabase-app
-   ```
+# Service role — server-side only, NEVER expose to client
+SUPABASE_SERVICE_ROLE_KEY=
 
-3. Use `cd` to change into the app's directory
+# Site URL
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
-   ```bash
-   cd with-supabase-app
-   ```
+# Lemon Squeezy — https://app.lemonsqueezy.com
+LEMON_SQUEEZY_WEBHOOK_SECRET=
+NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL=
 
-4. Rename `.env.example` to `.env.local` and update the following:
+# Resend — https://resend.com
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=noreply@yourdomain.com
 
-  ```env
-  NEXT_PUBLIC_SUPABASE_URL=[INSERT SUPABASE PROJECT URL]
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=[INSERT SUPABASE PROJECT API PUBLISHABLE OR ANON KEY]
-  ```
-  > [!NOTE]
-  > This example uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, which refers to Supabase's new **publishable** key format.
-  > Both legacy **anon** keys and new **publishable** keys can be used with this variable name during the transition period. Supabase's dashboard may show `NEXT_PUBLIC_SUPABASE_ANON_KEY`; its value can be used in this example.
-  > See the [full announcement](https://github.com/orgs/supabase/discussions/29260) for more information.
+# Internal webhook secret (random secure string)
+SUPABASE_WEBHOOK_SECRET=
 
-  Both `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` can be found in [your Supabase project's API settings](https://supabase.com/dashboard/project/_?showConnect=true)
+# Admin — comma-separated emails with admin access
+ADMIN_EMAILS=you@example.com
+```
 
-5. You can now run the Next.js local development server:
+---
 
-   ```bash
-   npm run dev
-   ```
+## Setting up Supabase
 
-   The starter kit should now be running on [localhost:3000](http://localhost:3000/).
+1. Create a project at [database.new](https://database.new)
+2. Copy **Project URL** and **Publishable (anon) key** into `.env.local`
+3. Copy **Service Role key** into `.env.local` — keep it secret
+4. Run the SQL migration (see below)
 
-6. This template comes with the default shadcn/ui style initialized. If you instead want other ui.shadcn styles, delete `components.json` and [re-install shadcn/ui](https://ui.shadcn.com/docs/installation/next)
+## Running the SQL migration
 
-> Check out [the docs for Local Development](https://supabase.com/docs/guides/getting-started/local-development) to also run Supabase locally.
+**Option A — Supabase SQL Editor (recommended)**
 
-## Feedback and issues
+1. Dashboard → **SQL Editor** → **New query**
+2. Paste [`supabase/migrations/001_profiles.sql`](supabase/migrations/001_profiles.sql)
+3. Click **Run**
 
-Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
+**Option B — Supabase CLI**
 
-## More Supabase examples
+```bash
+supabase login
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
 
-- [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)
-- [Cookie-based Auth and the Next.js 13 App Router (free course)](https://youtube.com/playlist?list=PL5S4mPUpp4OtMhpnp93EFSo42iQ40XjbF)
-- [Supabase Auth and the Next.js App Router](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+The migration creates:
+- `profiles` table (`id`, `full_name`, `plan`, `created_at`, `updated_at`)
+- Check constraint: `plan` must be `free`, `premium`, or `founder`
+- RLS: users can only read/update their own row
+- Trigger: auto-creates a profile row on sign-up
+
+---
+
+## Configuring Google OAuth
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services** → **Credentials**
+2. Create an **OAuth 2.0 Client ID** (Web application)
+3. Authorized JavaScript origins: `http://localhost:3000`
+4. Authorized redirect URIs: `https://<your-project-ref>.supabase.co/auth/v1/callback`
+5. Copy **Client ID** and **Client Secret**
+6. Supabase dashboard → **Authentication** → **Providers** → **Google** → paste and save
+
+> When deploying to production: add your production domain to the authorized origins on Google Cloud Console.
+
+---
+
+## Configuring Lemon Squeezy
+
+1. Create a product/subscription in [Lemon Squeezy](https://app.lemonsqueezy.com)
+2. Copy the checkout URL to `NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL`
+3. **Settings → Webhooks** → add webhook:
+   - URL: `https://your-domain.com/api/webhook/lemon-squeezy`
+   - Events: `order_created`, `subscription_created`, `subscription_cancelled`
+   - Copy the signing secret to `LEMON_SQUEEZY_WEBHOOK_SECRET`
+4. Pass the user's Supabase UUID as `custom_data.user_id` in the checkout URL:
+
+```ts
+const url = new URL(process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL!);
+url.searchParams.set("checkout[custom][user_id]", user.id);
+window.location.href = url.toString();
+```
+
+---
+
+## Configuring Resend (transactional email)
+
+1. Create an account at [resend.com](https://resend.com)
+2. Add and verify your domain
+3. Create an API key → copy to `RESEND_API_KEY`
+4. Set `RESEND_FROM_EMAIL` to a verified sender address
+5. The welcome email is sent via `POST /api/auth/welcome` — call it after sign-up or trigger it via Supabase webhook
+
+---
+
+## Admin panel
+
+Access `/dashboard/admin` — visible only to users listed in `ADMIN_EMAILS`.
+
+From the admin panel you can:
+- View all registered users
+- Change any user's plan directly from the table
+
+**Via code:**
+
+```ts
+import { updateUserPlan } from "@/lib/admin";
+await updateUserPlan("user-uuid-here", "founder");
+```
+
+---
+
+## Blog
+
+Add MDX files to `content/blog/`:
+
+```mdx
+---
+title: Your post title
+description: A short description
+date: 2026-04-11
+author: Your name
+tags: [tag1, tag2]
+---
+
+Your content in **Markdown**.
+```
+
+Posts appear automatically at `/blog`.
+
+---
+
+## Branding
+
+All branding is in one file: [`lib/config.ts`](lib/config.ts)
+
+Change `name`, `tagline`, `description`, plan features, prices, nav links — everything updates across the entire app.
+
+---
+
+## Project structure
+
+```
+app/
+  page.tsx                        # Landing page
+  pricing/                        # Pricing page
+  blog/                           # Blog list + [slug] post pages
+  terms/ privacy/                 # Legal pages
+  dashboard/
+    page.tsx                      # User dashboard
+    account/                      # Account settings
+    admin/                        # Admin panel (ADMIN_EMAILS only)
+  auth/                           # Login, sign-up, forgot-password, confirm
+  api/
+    webhook/lemon-squeezy/        # Billing webhook
+    admin/update-plan/            # Admin plan update API
+    auth/welcome/                 # Welcome email trigger
+components/
+  navbar.tsx                      # Public navbar
+  oauth-buttons.tsx               # Google OAuth button
+  pricing-card.tsx                # Reusable pricing card
+  login-form.tsx / sign-up-form.tsx / ...
+content/
+  blog/                           # MDX blog posts
+hooks/
+  useAuth.ts                      # Client-side auth + profile hook
+lib/
+  config.ts                       # Site-wide branding & plan config
+  plans.ts                        # isPremium, isFounder, getPlanLabel
+  admin.ts                        # updateUserPlan (service role)
+  email.ts                        # Resend email templates
+  blog.ts                         # MDX blog utilities
+  supabase/
+    client.ts / server.ts / proxy.ts
+supabase/
+  migrations/
+    001_profiles.sql
+```

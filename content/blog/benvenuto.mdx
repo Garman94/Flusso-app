@@ -1,0 +1,44 @@
+---
+title: Benvenuto su ShipFast
+description: Come usare questo boilerplate per lanciare il tuo SaaS in un weekend.
+date: 2026-04-11
+author: Team ShipFast
+tags: [guida, boilerplate]
+---
+
+## Cos'è questo boilerplate?
+
+Questo boilerplate ti permette di avere un SaaS completo e funzionante in poche ore invece di settimane. Include autenticazione, profili utente, pagamenti e molto altro.
+
+## Cosa è già incluso
+
+- **Auth** — registrazione, login, Google OAuth, recupero password
+- **Profili** — creati automaticamente al sign-up con supporto ai piani
+- **Pagamenti** — integrazione Lemon Squeezy con webhook verificato
+- **Dashboard** — area riservata agli utenti autenticati
+- **Blog** — questo blog, pronto per i tuoi contenuti
+
+## Come aggiungere un articolo
+
+Crea un file `.mdx` nella cartella `content/blog/` con questo frontmatter:
+
+```mdx
+---
+title: Il titolo del tuo articolo
+description: Una breve descrizione
+date: 2026-04-11
+author: Il tuo nome
+tags: [tag1, tag2]
+---
+
+Qui va il contenuto del tuo articolo in **Markdown**.
+```
+
+## Prossimi passi
+
+1. Modifica `lib/config.ts` con il nome e la descrizione della tua app
+2. Esegui la migration SQL su Supabase
+3. Configura Lemon Squeezy per i pagamenti
+4. Personalizza la landing page e inizia a costruire
+
+Buon lancio! 🚀

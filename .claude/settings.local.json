@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.shipfa.st)",
+      "WebFetch(domain:makerkit.dev)",
+      "WebSearch",
+      "Bash(npm install:*)"
+    ]
+  }
+}
