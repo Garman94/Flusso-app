@@ -5,6 +5,7 @@ import { getPlanLabel, getPlanBadgeColor } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { UpdateNameForm } from "./update-name-form";
+import { AvatarUpload } from "@/components/avatar-upload";
 
 async function AccountContent() {
   const supabase = await createClient();
@@ -32,6 +33,12 @@ async function AccountContent() {
       {/* Profile */}
       <div className="rounded-xl border p-6 flex flex-col gap-6">
         <h2 className="font-semibold">Profilo</h2>
+
+        <AvatarUpload
+          userId={data.claims.sub}
+          currentAvatarUrl={profile?.avatar_url ?? null}
+          fullName={profile?.full_name ?? null}
+        />
 
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium">Email</label>
