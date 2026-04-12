@@ -14,6 +14,7 @@ import {
   type DailyPoint,
 } from "@/lib/calculations";
 import { updateBalance } from "./balance-action";
+import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -28,6 +29,9 @@ type Props = {
   month: number;
   totalTxCount: number;
   lastTxDate: string | null;
+  payDay: number;     // 0 = calendar month, 1-28 = custom pay day
+  periodFrom: string; // ISO date, start of current period
+  periodTo: string;   // ISO date, end of current period
 };
 
 // ─── SVG Trend Chart ──────────────────────────────────────────────────────────
@@ -64,21 +68,16 @@ function TrendChart({ points, prevMonthNet }: { points: DailyPoint[]; prevMonthN
 
   const polyPoints = points.map(p => `${toX(p.day).toFixed(1)},${toY(p.balance).toFixed(1)}`).join(" ");
 
-  // Prev month reference: horizontal line at startBalance + prevMonthDailyNet * lastDay
   const daysInPrevMonth = 30;
   const prevDailyNet = prevMonthNet / daysInPrevMonth;
   const prevRefBalance = points[0].balance + prevDailyNet * lastDay;
   const prevY = toY(Math.max(lo, Math.min(hi, prevRefBalance)));
 
-  // Area fill polygon
   const areaPoints = `${toX(1).toFixed(1)},${toY(lo).toFixed(1)} ${polyPoints} ${toX(lastDay).toFixed(1)},${toY(lo).toFixed(1)}`;
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
-      {/* Area fill */}
       <polygon points={areaPoints} fill={lineColor} fillOpacity={0.07} />
-
-      {/* Previous month reference dashed */}
       <line
         x1={PAD.left} y1={prevY} x2={W - PAD.right} y2={prevY}
         stroke="currentColor" strokeOpacity={0.25} strokeWidth={1.5} strokeDasharray="5 4"
@@ -86,8 +85,6 @@ function TrendChart({ points, prevMonthNet }: { points: DailyPoint[]; prevMonthN
       <text x={W - PAD.right - 2} y={prevY - 4} fontSize={9} fill="currentColor" fillOpacity={0.4} textAnchor="end">
         mese scorso
       </text>
-
-      {/* Main line */}
       <polyline
         points={polyPoints}
         fill="none"
@@ -96,11 +93,7 @@ function TrendChart({ points, prevMonthNet }: { points: DailyPoint[]; prevMonthN
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-
-      {/* Last point dot */}
       <circle cx={toX(lastDay)} cy={toY(lastBalance)} r={4} fill={lineColor} />
-
-      {/* Day labels (first, mid, last) */}
       {[1, Math.round(lastDay / 2), lastDay].map(d => (
         <text key={d} x={toX(d)} y={H - 4} fontSize={9} fill="currentColor" fillOpacity={0.35} textAnchor="middle">
           {d}
@@ -110,7 +103,7 @@ function TrendChart({ points, prevMonthNet }: { points: DailyPoint[]; prevMonthN
   );
 }
 
-// ─── Balance edit form ────────────────────────────────────────────────────────
+// ─── Balance editor ───────────────────────────────────────────────────────────
 function BalanceEditor({ currentBalance }: { currentBalance: number }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(currentBalance.toFixed(2).replace(".", ","));
@@ -173,45 +166,203 @@ function BalanceEditor({ currentBalance }: { currentBalance: number }) {
   );
 }
 
-// ─── Main Dashboard Client ────────────────────────────────────────────────────
-export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, year, month, totalTxCount, lastTxDate }: Props) {
-  // ── date helpers
-  const now = new Date();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const daysPassed = now.getDate();
-  const daysRemaining = daysInMonth - daysPassed;
-  const monthName = now.toLocaleString("it-IT", { month: "long", year: "numeric" });
+// ─── Settings Modal ───────────────────────────────────────────────────────────
+function adjustBizDay(date: Date): Date {
+  const dow = date.getDay();
+  if (dow === 6) return new Date(date.getTime() - 86_400_000);
+  if (dow === 0) return new Date(date.getTime() + 86_400_000);
+  return date;
+}
 
-  // ── current month aggregates
+function computePayPeriodPreview(day: number): { from: string; to: string } {
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = today.getMonth();
+  let start = adjustBizDay(new Date(y, m, day));
+  if (today < start) start = adjustBizDay(new Date(y, m - 1, day));
+  const nextStart = adjustBizDay(new Date(start.getFullYear(), start.getMonth() + 1, day));
+  const end = new Date(nextStart.getTime() - 86_400_000);
+  const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "long" };
+  const optsYear: Intl.DateTimeFormatOptions = { day: "numeric", month: "long", year: "numeric" };
+  return {
+    from: start.toLocaleDateString("it-IT", opts),
+    to:   end.toLocaleDateString("it-IT", optsYear),
+  };
+}
+
+function SettingsModal({ payDay, onClose }: { payDay: number; onClose: () => void }) {
+  const [type, setType] = useState<"solare" | "stipendio">(payDay > 0 ? "stipendio" : "solare");
+  const [day, setDay] = useState(payDay > 0 ? payDay : 10);
+  const [saving, setSaving] = useState(false);
+
+  const preview = type === "stipendio" ? computePayPeriodPreview(day) : null;
+
+  async function handleSave() {
+    setSaving(true);
+    const newPayDay = type === "solare" ? 0 : day;
+    const res = await updatePayDay(newPayDay);
+    if (res?.error) {
+      toast.error(res.error);
+    } else {
+      toast.success("Impostazioni salvate!");
+      onClose();
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-background border rounded-xl p-6 max-w-sm w-full mx-4 flex flex-col gap-5 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-lg">Impostazioni dashboard</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors text-xl leading-none">✕</button>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide text-xs">Periodo mensile</p>
+
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <input
+              type="radio" name="period"
+              checked={type === "solare"}
+              onChange={() => setType("solare")}
+              className="mt-0.5 accent-primary"
+            />
+            <div>
+              <p className="text-sm font-medium group-hover:text-primary transition-colors">Mese solare</p>
+              <p className="text-xs text-muted-foreground">1° – ultimo giorno del mese</p>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <input
+              type="radio" name="period"
+              checked={type === "stipendio"}
+              onChange={() => setType("stipendio")}
+              className="mt-0.5 accent-primary"
+            />
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium group-hover:text-primary transition-colors">Mese stipendio</p>
+              <p className="text-xs text-muted-foreground">Il periodo parte dal giorno di accredito</p>
+            </div>
+          </label>
+
+          {type === "stipendio" && (
+            <div className="ml-6 flex flex-col gap-3 border rounded-lg p-3 bg-muted/30">
+              <div className="flex items-center gap-2">
+                <label className="text-sm whitespace-nowrap">Giorno stipendio</label>
+                <input
+                  type="number" min={1} max={28}
+                  value={day}
+                  onChange={e => setDay(Math.max(1, Math.min(28, Number(e.target.value))))}
+                  className="border rounded-md px-2 py-1 text-sm bg-background w-16 focus:outline-none focus:ring-2 focus:ring-primary text-center"
+                />
+                <span className="text-xs text-muted-foreground">del mese</span>
+              </div>
+
+              {preview && (
+                <p className="text-xs text-primary font-medium">
+                  Periodo attuale: {preview.from} → {preview.to}
+                </p>
+              )}
+
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Se cade di <strong>sabato</strong> il periodo inizia il venerdì precedente.
+                Se cade di <strong>domenica</strong> inizia il lunedì seguente.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 justify-end pt-1">
+          <button
+            onClick={onClose}
+            className="border rounded-md px-4 py-2 text-sm hover:bg-muted/50 transition-colors"
+          >
+            Annulla
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {saving ? "Salvataggio..." : "Salva"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Dashboard Client ────────────────────────────────────────────────────
+export function DashboardClient({
+  profile, currentTxs, prevTxsAmounts, goals,
+  year, month, totalTxCount, lastTxDate,
+  payDay, periodFrom, periodTo,
+}: Props) {
+  const [showSettings, setShowSettings] = useState(false);
+
+  const now = new Date();
+
+  // ── Period-aware day calculations ──────────────────────────────────────────
+  const periodStart = new Date(periodFrom + "T00:00:00");
+  const periodEnd   = new Date(periodTo   + "T00:00:00");
+  const totalDays   = Math.round((periodEnd.getTime() - periodStart.getTime()) / 86_400_000) + 1;
+  const daysPassed  = Math.max(1, Math.min(totalDays,
+    Math.floor((now.getTime() - periodStart.getTime()) / 86_400_000) + 1
+  ));
+  const daysRemaining = Math.max(0, totalDays - daysPassed);
+
+  // ── Period label ─────────────────────────────────────────────────────────
+  const periodLabel = payDay > 0
+    ? `${periodStart.toLocaleDateString("it-IT", { day: "numeric", month: "short" })} – ${periodEnd.toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" })}`
+    : now.toLocaleString("it-IT", { month: "long", year: "numeric" });
+
+  // ── Aggregates ────────────────────────────────────────────────────────────
   const income      = currentTxs.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
   const expensesAbs = currentTxs.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-
-  // ── prev month net (for chart reference line)
   const prevMonthNet = prevTxsAmounts.reduce((s, a) => s + a, 0);
 
-  // ── calculations
+  // ── Calculations ─────────────────────────────────────────────────────────
   const score     = calculateFinancialScore(income, expensesAbs);
   const projected = calculateProjectedBalance(profile.balance, expensesAbs, daysPassed, daysRemaining);
-  const trendData = calculateTrendData(currentTxs, profile.balance, year, month);
+  const startDay  = payDay > 0 ? periodStart.getDate() : 1;
+  const trendData = calculateTrendData(currentTxs, profile.balance, year, month, startDay);
   const macro     = calculateMacroBreakdown(currentTxs);
   const monthlySavings = income - expensesAbs;
 
-  const hasTransactions = currentTxs.length > 0;
+  const hasTransactions    = currentTxs.length > 0;
   const hasAnyTransactions = totalTxCount > 0;
-  const recentTxs = [...currentTxs].reverse().slice(0, 5);
-
-  const projectedDiff = projected - profile.balance;
+  const recentTxs          = [...currentTxs].reverse().slice(0, 5);
+  const projectedDiff      = projected - profile.balance;
 
   return (
     <div className="flex flex-col gap-6">
 
+      {/* Settings modal */}
+      {showSettings && (
+        <SettingsModal payDay={payDay} onClose={() => setShowSettings(false)} />
+      )}
+
       {/* ── Header ── */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold">
-            Ciao{profile.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}!
-          </h1>
-          <p className="text-muted-foreground text-sm mt-0.5 capitalize">{monthName}</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold">
+              Ciao{profile.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}!
+            </h1>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted/50"
+              title="Impostazioni dashboard"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+          </div>
+          <p className="text-muted-foreground text-sm mt-0.5">{periodLabel}</p>
         </div>
       </div>
 
@@ -220,7 +371,7 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
         <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 flex items-center gap-3 text-sm">
           <span className="text-yellow-500 text-lg shrink-0">⚠️</span>
           <p className="text-yellow-700 dark:text-yellow-400">
-            Nessun movimento caricato per questo mese.
+            Nessun movimento caricato per questo periodo.
             Ultimo movimento registrato:{" "}
             <strong>
               {new Date(lastTxDate + "T00:00:00").toLocaleDateString("it-IT", {
@@ -244,7 +395,7 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
           {/* Saldo previsto */}
           {hasTransactions && (
             <div className="mt-3 flex flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground uppercase tracking-wide">Previsto fine mese</span>
+              <span className="text-xs text-muted-foreground uppercase tracking-wide">Previsto fine periodo</span>
               <div className="flex items-baseline gap-2">
                 <span className={`text-xl font-semibold tabular-nums ${projected < profile.balance ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
                   {formatEuro(projected)}
@@ -277,7 +428,7 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
       {hasTransactions && trendData.length >= 2 && (
         <div className="rounded-xl border p-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-sm">Andamento saldo — {monthName}</h2>
+            <h2 className="font-semibold text-sm">Andamento saldo — {periodLabel}</h2>
             <span className="text-xs text-muted-foreground">
               {trendData[trendData.length - 1].balance >= trendData[0].balance
                 ? "↑ in crescita"
@@ -288,7 +439,7 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
         </div>
       )}
 
-      {/* ── Empty state — solo se non esistono transazioni in assoluto ── */}
+      {/* ── Empty state ── */}
       {!hasAnyTransactions && (
         <div className="rounded-xl border border-dashed p-8 sm:p-12 flex flex-col items-center gap-4 text-center">
           <span className="text-5xl">💸</span>
@@ -306,14 +457,14 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
       {hasTransactions && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-          {/* Macro category breakdown */}
+          {/* Macro breakdown + recenti */}
           <div className="rounded-xl border p-5 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Dove vanno i soldi</h2>
-              <span className="text-xs text-muted-foreground">{monthName}</span>
+              <span className="text-xs text-muted-foreground">{periodLabel}</span>
             </div>
             {macro.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nessuna uscita questo mese.</p>
+              <p className="text-sm text-muted-foreground">Nessuna uscita questo periodo.</p>
             ) : (
               <div className="flex flex-col gap-3">
                 {macro.map(mc => (
@@ -339,7 +490,6 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
               </div>
             )}
 
-            {/* Transazioni recenti */}
             {recentTxs.length > 0 && (
               <div className="mt-2 pt-4 border-t flex flex-col gap-1">
                 <div className="flex items-center justify-between mb-2">
@@ -372,8 +522,9 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
               <div className="flex flex-col items-center gap-3 py-6 text-center">
                 <span className="text-4xl">🎯</span>
                 <p className="text-sm text-muted-foreground">Nessun obiettivo ancora.</p>
-                <Link href="/dashboard/obiettivi"
-                  className="text-xs text-primary hover:underline">Crea il primo obiettivo</Link>
+                <Link href="/dashboard/obiettivi" className="text-xs text-primary hover:underline">
+                  Crea il primo obiettivo
+                </Link>
               </div>
             ) : (
               <div className="flex flex-col gap-5">
@@ -400,9 +551,7 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
                       </div>
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>{formatEuro(Number(g.current_amount))}</span>
-                        {eta && !completed && (
-                          <span className="text-primary">📅 {eta}</span>
-                        )}
+                        {eta && !completed && <span className="text-primary">📅 {eta}</span>}
                         <span>{formatEuro(Number(g.target_amount))}</span>
                       </div>
                       {g.deadline && !completed && (

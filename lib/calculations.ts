@@ -126,27 +126,35 @@ export function calculateTrendData(
   balance: number,
   year: number,
   month: number, // 0-indexed
+  startDay = 1,  // first day of the period within this month (e.g. 10 for pay-period)
 ): DailyPoint[] {
   const today = new Date();
-  const lastDay =
-    year === today.getFullYear() && month === today.getMonth()
-      ? today.getDate()
-      : new Date(year, month + 1, 0).getDate();
+  const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
+  const lastDay = isCurrentMonth ? today.getDate() : new Date(year, month + 1, 0).getDate();
 
-  const totalMonthNet = currentMonthTxs.reduce((s, t) => s + Number(t.amount), 0);
-  const startBalance = balance - totalMonthNet;
+  // Only use transactions that fall within the start month of the period
+  const monthTxs = currentMonthTxs.filter(t => {
+    const d = new Date(t.date + "T00:00:00");
+    return d.getFullYear() === year && d.getMonth() === month;
+  });
+
+  const totalNet = monthTxs.reduce((s, t) => s + Number(t.amount), 0);
+  // balance is today's real balance; subtract all period txs to get period-start balance
+  const allPeriodNet = currentMonthTxs.reduce((s, t) => s + Number(t.amount), 0);
+  const startBalance = balance - allPeriodNet;
 
   const dailyDelta: Record<number, number> = {};
-  for (const t of currentMonthTxs) {
+  for (const t of monthTxs) {
     const d = new Date(t.date + "T00:00:00").getDate();
     dailyDelta[d] = (dailyDelta[d] ?? 0) + Number(t.amount);
   }
 
   const points: DailyPoint[] = [];
   let running = startBalance;
-  for (let d = 1; d <= lastDay; d++) {
+  for (let d = startDay; d <= lastDay; d++) {
     running += dailyDelta[d] ?? 0;
-    points.push({ day: d, balance: running });
+    // normalise day to 1-based so the SVG chart always starts at x=1
+    points.push({ day: d - startDay + 1, balance: running });
   }
 
   return points;
