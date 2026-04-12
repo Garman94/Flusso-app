@@ -14,7 +14,7 @@ export default function TermsPage() {
       <main className="flex-1 w-full max-w-3xl mx-auto px-5 py-16 flex flex-col gap-8">
         <div>
           <h1 className="text-3xl font-bold">Termini di servizio</h1>
-          <p className="text-muted-foreground mt-2">Ultimo aggiornamento: {new Date().toLocaleDateString("it-IT")}</p>
+          <p className="text-muted-foreground mt-2">Ultimo aggiornamento: 12 aprile 2026</p>
         </div>
 
         <section className="flex flex-col gap-4 text-sm leading-relaxed text-muted-foreground">
