@@ -4,9 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 import { LogoutButton } from "./logout-button";
 
 export async function AuthButton() {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  const user = data?.claims;
+  let user = null;
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getClaims();
+    user = data?.claims ?? null;
+  } catch {
+    // fail gracefully — show login buttons
+  }
 
   return user ? (
     <div className="flex items-center gap-4">
