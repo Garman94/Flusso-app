@@ -210,12 +210,6 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
           </h1>
           <p className="text-muted-foreground text-sm mt-0.5 capitalize">{monthName}</p>
         </div>
-        <Link
-          href="/dashboard/transazioni"
-          className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 transition-colors"
-        >
-          + Aggiungi
-        </Link>
       </div>
 
       {/* ── Hero: saldo + score ── */}
@@ -283,12 +277,6 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
           <p className="text-muted-foreground text-sm max-w-xs">
             Aggiungi la tua prima transazione manualmente o carica un file Excel della tua banca.
           </p>
-          <Link
-            href="/dashboard/transazioni"
-            className="text-sm bg-primary text-primary-foreground rounded-md px-5 py-2.5 hover:bg-primary/90 transition-colors"
-          >
-            Aggiungi transazione
-          </Link>
         </div>
       )}
 
