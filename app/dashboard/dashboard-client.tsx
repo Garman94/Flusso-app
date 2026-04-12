@@ -26,6 +26,7 @@ type Props = {
   goals: Goal[];
   year: number;
   month: number;
+  totalTxCount: number;
 };
 
 // ─── SVG Trend Chart ──────────────────────────────────────────────────────────
@@ -172,7 +173,7 @@ function BalanceEditor({ currentBalance }: { currentBalance: number }) {
 }
 
 // ─── Main Dashboard Client ────────────────────────────────────────────────────
-export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, year, month }: Props) {
+export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, year, month, totalTxCount }: Props) {
   // ── date helpers
   const now = new Date();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -195,6 +196,7 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
   const monthlySavings = income - expensesAbs;
 
   const hasTransactions = currentTxs.length > 0;
+  const hasAnyTransactions = totalTxCount > 0;
   const recentTxs = [...currentTxs].reverse().slice(0, 5);
 
   const projectedDiff = projected - profile.balance;
@@ -269,14 +271,17 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
         </div>
       )}
 
-      {/* ── Empty state ── */}
-      {!hasTransactions && (
+      {/* ── Empty state — solo se non esistono transazioni in assoluto ── */}
+      {!hasAnyTransactions && (
         <div className="rounded-xl border border-dashed p-12 flex flex-col items-center gap-4 text-center">
           <span className="text-5xl">💸</span>
-          <h2 className="font-semibold text-lg">Nessuna transazione questo mese</h2>
+          <h2 className="font-semibold text-lg">Nessuna transazione ancora</h2>
           <p className="text-muted-foreground text-sm max-w-xs">
-            Aggiungi la tua prima transazione manualmente o carica un file Excel della tua banca.
+            Vai alla pagina Transazioni per aggiungere i tuoi movimenti manualmente o caricare un file Excel della tua banca.
           </p>
+          <Link href="/dashboard/transazioni" className="text-sm text-primary hover:underline">
+            Vai alle transazioni →
+          </Link>
         </div>
       )}
 
