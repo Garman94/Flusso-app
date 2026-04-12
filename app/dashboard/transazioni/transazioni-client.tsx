@@ -260,7 +260,32 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Mobile: card list */}
+          <div className="sm:hidden flex flex-col divide-y">
+            {filtered.map(t => (
+              <div key={t.id} className="flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-xl shrink-0">{t.categories?.icon ?? "📦"}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{t.description || "—"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(t.date).toLocaleDateString("it-IT")}
+                      {t.categories && <span> · {t.categories.name}</span>}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`text-sm font-semibold tabular-nums ${Number(t.amount) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
+                    {Number(t.amount) >= 0 ? "+" : ""}{formatEuro(Number(t.amount))}
+                  </span>
+                  <button onClick={() => handleDelete(t.id)} className="text-muted-foreground hover:text-destructive transition-colors text-xs p-1">✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop: table */}
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">

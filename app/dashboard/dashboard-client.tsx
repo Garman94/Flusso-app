@@ -232,7 +232,7 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
       )}
 
       {/* ── Hero: saldo + score ── */}
-      <div className="rounded-xl border p-6 flex flex-col sm:flex-row gap-6 sm:items-center justify-between">
+      <div className="rounded-xl border p-4 sm:p-6 flex flex-col sm:flex-row gap-4 sm:gap-6 sm:items-center justify-between">
         {/* Saldo attuale */}
         <div className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground uppercase tracking-wide">Saldo attuale</span>
@@ -259,7 +259,7 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
 
         {/* Score */}
         {hasTransactions && (
-          <div className={`rounded-xl px-5 py-4 flex flex-col gap-1 ${score.bgClass} min-w-[200px]`}>
+          <div className={`rounded-xl px-4 py-3 sm:px-5 sm:py-4 flex flex-col gap-1 ${score.bgClass} w-full sm:min-w-[200px] sm:w-auto`}>
             <div className="flex items-center gap-2">
               <span className="text-2xl">{score.dot}</span>
               <span className={`font-semibold text-sm ${score.colorClass}`}>{score.label}</span>
@@ -290,7 +290,7 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
 
       {/* ── Empty state — solo se non esistono transazioni in assoluto ── */}
       {!hasAnyTransactions && (
-        <div className="rounded-xl border border-dashed p-12 flex flex-col items-center gap-4 text-center">
+        <div className="rounded-xl border border-dashed p-8 sm:p-12 flex flex-col items-center gap-4 text-center">
           <span className="text-5xl">💸</span>
           <h2 className="font-semibold text-lg">Nessuna transazione ancora</h2>
           <p className="text-muted-foreground text-sm max-w-xs">
