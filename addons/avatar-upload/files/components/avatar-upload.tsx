@@ -72,7 +72,6 @@ export function AvatarUpload({ userId, currentAvatarUrl, fullName }: Props) {
       toast.error("Errore durante il caricamento. Riprova.", { id: toastId });
     } finally {
       setUploading(false);
-      // Reset input so the same file can be re-selected
       if (inputRef.current) inputRef.current.value = "";
     }
   }
@@ -82,7 +81,6 @@ export function AvatarUpload({ userId, currentAvatarUrl, fullName }: Props) {
     const toastId = toast.loading("Rimozione avatar...");
 
     try {
-      // Remove all files in the user's avatar folder
       const { data: files } = await supabase.storage
         .from("avatars")
         .list(userId);
@@ -113,7 +111,6 @@ export function AvatarUpload({ userId, currentAvatarUrl, fullName }: Props) {
       <label className="text-sm font-medium">Avatar</label>
 
       <div className="flex items-center gap-4">
-        {/* Avatar preview */}
         <button
           type="button"
           onClick={() => !uploading && inputRef.current?.click()}
@@ -135,7 +132,6 @@ export function AvatarUpload({ userId, currentAvatarUrl, fullName }: Props) {
             </div>
           )}
 
-          {/* Overlay on hover */}
           <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -159,7 +155,6 @@ export function AvatarUpload({ userId, currentAvatarUrl, fullName }: Props) {
           </div>
         </button>
 
-        {/* Actions */}
         <div className="flex flex-col gap-1.5">
           <button
             type="button"
