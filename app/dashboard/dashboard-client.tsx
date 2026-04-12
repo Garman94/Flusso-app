@@ -489,20 +489,7 @@ export function DashboardClient({
             <PiggyBalanceEditor currentPiggy={profile.piggy_balance} />
           </div>
 
-          {/* Saldo previsto */}
-          {hasTransactions && (
-            <div className="mt-3 flex flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground uppercase tracking-wide">Previsto fine periodo</span>
-              <div className="flex items-baseline gap-2">
-                <span className={`text-xl font-semibold tabular-nums ${projected < profile.balance ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
-                  {formatEuro(projected)}
-                </span>
-                <span className={`text-xs ${projectedDiff < 0 ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
-                  {projectedDiff >= 0 ? "+" : ""}{formatEuro(projectedDiff)}
-                </span>
-              </div>
-            </div>
-          )}
+          {/* Saldo previsto — nascosto finché non vengono impostate le spese ricorrenti */}
         </div>
 
         {/* Score */}
