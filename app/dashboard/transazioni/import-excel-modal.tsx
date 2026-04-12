@@ -229,14 +229,44 @@ export function ImportExcelModal({ userId, categories, onClose, onImported }: Pr
     setImporting(true);
     const supabase = createClient();
 
-    const toInsert = rows.map(r => ({
-      user_id: userId,
-      date: r.date,
-      amount: r.amount,
-      description: r.description,
-      category_id: r.category_id || null,
-      source: "excel" as const,
-    }));
+    // Fetch existing transactions for the same date range to deduplicate
+    const dates = rows.map(r => r.date).sort();
+    const minDate = dates[0];
+    const maxDate = dates[dates.length - 1];
+
+    const { data: existing } = await supabase
+      .from("transactions")
+      .select("date, amount, description")
+      .eq("user_id", userId)
+      .gte("date", minDate)
+      .lte("date", maxDate);
+
+    const existingSet = new Set(
+      (existing ?? []).map(t =>
+        `${t.date}|${Number(t.amount).toFixed(2)}|${String(t.description ?? "").trim().toLowerCase()}`
+      )
+    );
+
+    const toInsert = rows
+      .filter(r => !existingSet.has(
+        `${r.date}|${r.amount.toFixed(2)}|${r.description.toLowerCase()}`
+      ))
+      .map(r => ({
+        user_id: userId,
+        date: r.date,
+        amount: r.amount,
+        description: r.description,
+        category_id: r.category_id || null,
+        source: "excel" as const,
+      }));
+
+    const skipped = rows.length - toInsert.length;
+    if (toInsert.length === 0) {
+      toast.info(`Tutti i ${rows.length} movimenti sono già presenti. Nessun duplicato importato.`);
+      setImporting(false);
+      onClose();
+      return;
+    }
 
     // insert in batches of 200
     const BATCH = 200;
@@ -249,8 +279,8 @@ export function ImportExcelModal({ userId, categories, onClose, onImported }: Pr
       }
     }
 
-    toast.success(`${rows.length} movimenti importati!`);
-    onImported(rows.length);
+    toast.success(skipped > 0 ? `${toInsert.length} movimenti importati, ${skipped} duplicati saltati.` : `${toInsert.length} movimenti importati!`);
+    onImported(toInsert.length);
     onClose();
   }
 
