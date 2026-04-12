@@ -109,7 +109,12 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
     if (filter === "entrate" && Number(t.amount) <= 0) return false;
     if (filter === "uscite" && Number(t.amount) >= 0) return false;
     if (filter === "senza_cat" && t.category_id !== null && t.categories?.name?.toLowerCase() !== "altro") return false;
-    if (searchQuery && !t.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const matchesDesc = t.description.toLowerCase().includes(q);
+      const matchesCat  = t.categories?.name?.toLowerCase().includes(q) ?? false;
+      if (!matchesDesc && !matchesCat) return false;
+    }
     return true;
   });
 
@@ -241,11 +246,17 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
       <div className="flex flex-col sm:flex-row gap-3">
         <input
           type="text"
-          placeholder="Cerca transazioni..."
+          list="category-suggestions"
+          placeholder="Cerca transazioni o categoria..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
         />
+        <datalist id="category-suggestions">
+          {categories.map(c => (
+            <option key={c.id} value={c.name}>{c.icon} {c.name}</option>
+          ))}
+        </datalist>
         <div className="flex rounded-md border overflow-hidden text-sm">
           {(["all", "entrate", "uscite", "senza_cat"] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
