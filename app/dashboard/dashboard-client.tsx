@@ -366,7 +366,7 @@ export function DashboardClient({
         </div>
       </div>
 
-      {/* ── Banner: nessun movimento questo mese ── */}
+      {/* ── Banner: nessun movimento questo periodo ── */}
       {hasAnyTransactions && !hasTransactions && lastTxDate && (
         <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 flex items-center gap-3 text-sm">
           <span className="text-yellow-500 text-lg shrink-0">⚠️</span>
@@ -381,6 +381,30 @@ export function DashboardClient({
           </p>
         </div>
       )}
+
+      {/* ── Banner: transazioni non categorizzate ── */}
+      {(() => {
+        const uncategorized = currentTxs.filter(t => !t.category_id).length;
+        if (uncategorized < 3) return null;
+        const pct = Math.round((uncategorized / currentTxs.length) * 100);
+        return (
+          <Link
+            href="/dashboard/transazioni"
+            className="rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 py-3 flex items-center justify-between gap-3 text-sm hover:bg-orange-500/15 transition-colors group"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-orange-500 text-lg shrink-0">🏷️</span>
+              <p className="text-orange-700 dark:text-orange-400">
+                <strong>{uncategorized} transazioni</strong> ({pct}%) non hanno una categoria —
+                le categorie migliorano le analisi delle spese.
+              </p>
+            </div>
+            <span className="text-orange-600 dark:text-orange-400 font-medium whitespace-nowrap group-hover:underline">
+              Categorizza →
+            </span>
+          </Link>
+        );
+      })()}
 
       {/* ── Hero: saldo + score ── */}
       <div className="rounded-xl border p-4 sm:p-6 flex flex-col sm:flex-row gap-4 sm:gap-6 sm:items-center justify-between">
