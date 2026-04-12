@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: NextRequest) {
@@ -37,17 +46,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const safeName = escapeHtml(name);
+    const safeEmail = escapeHtml(email);
+    const safeMessage = escapeHtml(message);
+
     // Send notification to admin
     await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL!,
       to: adminEmail,
-      subject: `Nuovo messaggio da ${name}`,
+      subject: `Nuovo messaggio da ${safeName}`,
       html: `
         <h2>Nuovo messaggio di contatto</h2>
-        <p><strong>Nome:</strong> ${name}</p>
-        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Nome:</strong> ${safeName}</p>
+        <p><strong>Email:</strong> ${safeEmail}</p>
         <p><strong>Messaggio:</strong></p>
-        <p style="white-space: pre-wrap; background: #f4f4f4; padding: 12px; border-radius: 6px;">${message}</p>
+        <p style="white-space: pre-wrap; background: #f4f4f4; padding: 12px; border-radius: 6px;">${safeMessage}</p>
         <hr />
         <p style="color: #888; font-size: 12px;">Inviato tramite il modulo di contatto del sito.</p>
       `,
@@ -59,7 +72,7 @@ export async function POST(request: NextRequest) {
       to: email,
       subject: "Abbiamo ricevuto il tuo messaggio",
       html: `
-        <h2>Grazie, ${name}!</h2>
+        <h2>Grazie, ${safeName}!</h2>
         <p>Abbiamo ricevuto il tuo messaggio e ti risponderemo al più presto.</p>
         <p style="color: #888; font-size: 12px;">Se non hai inviato questo messaggio, ignora questa email.</p>
       `,

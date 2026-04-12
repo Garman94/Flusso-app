@@ -24,11 +24,34 @@ Questo:
 - Crea il bucket `avatars` (pubblico)
 - Aggiunge le policy RLS per Storage (ogni utente gestisce solo il proprio avatar)
 
-### 2. Copia il componente
+### 2. Configura next.config.ts per le immagini Supabase
+
+> ⚠️ Obbligatorio — senza questo step `next/image` crasha con un errore quando prova a mostrare l'avatar.
+
+In `next.config.ts`, aggiungi `remotePatterns`:
+
+```ts
+const nextConfig: NextConfig = {
+  // ...resto della config
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
+    ],
+  },
+};
+```
+
+Se stai usando il **garman-boilerplate**, questo è già incluso nel `next.config.ts` — puoi saltare questo step.
+
+### 3. Copia il componente
 
 Copia `components/avatar-upload.tsx` nella cartella `components/` del tuo progetto.
 
-### 3. Aggiungi alla pagina account
+### 4. Aggiungi alla pagina account
 
 In `app/dashboard/account/page.tsx`, importa e usa il componente:
 
@@ -43,7 +66,7 @@ import { AvatarUpload } from "@/components/avatar-upload";
 />
 ```
 
-### 4. (Opzionale) Aggiorna il tipo Profile in useAuth.ts
+### 5. (Opzionale) Aggiorna il tipo Profile in useAuth.ts
 
 ```ts
 type Profile = {

@@ -38,7 +38,15 @@ export async function POST(request: NextRequest) {
         .eq("id", userId);
     }
 
-    const { priceId } = await request.json();
+    const body = await request.json();
+    const { priceId } = body;
+
+    if (!priceId || typeof priceId !== "string") {
+      return NextResponse.json(
+        { error: "priceId mancante o non valido." },
+        { status: 400 }
+      );
+    }
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,

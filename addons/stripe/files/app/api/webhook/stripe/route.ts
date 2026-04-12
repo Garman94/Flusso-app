@@ -11,10 +11,12 @@ const supabase = createClient(
 
 // Map Stripe price IDs to your plan names
 // Update these with your actual Stripe price IDs
-const PRICE_TO_PLAN: Record<string, string> = {
-  [process.env.STRIPE_PRICE_PREMIUM ?? ""]: "premium",
-  [process.env.STRIPE_PRICE_FOUNDER ?? ""]: "founder",
-};
+const PRICE_TO_PLAN: Record<string, string> = Object.fromEntries(
+  [
+    [process.env.STRIPE_PRICE_PREMIUM, "premium"],
+    [process.env.STRIPE_PRICE_FOUNDER, "founder"],
+  ].filter(([key]) => !!key)
+);
 
 export async function POST(request: NextRequest) {
   const body = await request.text();

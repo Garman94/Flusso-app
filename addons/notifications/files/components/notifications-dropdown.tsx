@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Notification = {
   id: string;
@@ -26,7 +26,7 @@ export function NotificationsDropdown() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  async function fetchNotifications() {
+  const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/notifications");
@@ -37,7 +37,7 @@ export function NotificationsDropdown() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   async function markAllRead() {
     await fetch("/api/notifications", { method: "PATCH" });
@@ -46,7 +46,7 @@ export function NotificationsDropdown() {
 
   useEffect(() => {
     fetchNotifications();
-  }, []);
+  }, [fetchNotifications]);
 
   // Close on outside click
   useEffect(() => {
