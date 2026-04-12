@@ -79,7 +79,7 @@ async function DashboardContent() {
   // Fetch profile first to know the payDay
   const profileRes = await supabase
     .from("profiles")
-    .select("full_name, plan, balance, pay_day")
+    .select("full_name, plan, balance, pay_day, piggy_balance")
     .eq("id", userId)
     .single();
 
@@ -107,6 +107,7 @@ async function DashboardContent() {
         full_name: profileRes.data?.full_name ?? null,
         plan: profileRes.data?.plan ?? "free",
         balance: Number(profileRes.data?.balance ?? 0),
+        piggy_balance: Number(profileRes.data?.piggy_balance ?? 0),
       }}
       currentTxs={(currentTxsRes.data ?? []) as unknown as Transaction[]}
       prevTxsAmounts={(prevTxsRes.data ?? []).map(t => Number(t.amount))}
