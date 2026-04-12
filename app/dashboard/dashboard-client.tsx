@@ -27,6 +27,7 @@ type Props = {
   year: number;
   month: number;
   totalTxCount: number;
+  lastTxDate: string | null;
 };
 
 // ─── SVG Trend Chart ──────────────────────────────────────────────────────────
@@ -173,7 +174,7 @@ function BalanceEditor({ currentBalance }: { currentBalance: number }) {
 }
 
 // ─── Main Dashboard Client ────────────────────────────────────────────────────
-export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, year, month, totalTxCount }: Props) {
+export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, year, month, totalTxCount, lastTxDate }: Props) {
   // ── date helpers
   const now = new Date();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -213,6 +214,22 @@ export function DashboardClient({ profile, currentTxs, prevTxsAmounts, goals, ye
           <p className="text-muted-foreground text-sm mt-0.5 capitalize">{monthName}</p>
         </div>
       </div>
+
+      {/* ── Banner: nessun movimento questo mese ── */}
+      {hasAnyTransactions && !hasTransactions && lastTxDate && (
+        <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 flex items-center gap-3 text-sm">
+          <span className="text-yellow-500 text-lg shrink-0">⚠️</span>
+          <p className="text-yellow-700 dark:text-yellow-400">
+            Nessun movimento caricato per questo mese.
+            Ultimo movimento registrato:{" "}
+            <strong>
+              {new Date(lastTxDate + "T00:00:00").toLocaleDateString("it-IT", {
+                day: "numeric", month: "long", year: "numeric",
+              })}
+            </strong>.
+          </p>
+        </div>
+      )}
 
       {/* ── Hero: saldo + score ── */}
       <div className="rounded-xl border p-6 flex flex-col sm:flex-row gap-6 sm:items-center justify-between">

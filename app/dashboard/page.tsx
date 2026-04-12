@@ -31,7 +31,7 @@ async function DashboardContent() {
   const { from: mFrom, to: mTo, year, month } = currentMonthRange();
   const { from: pFrom, to: pTo } = prevMonthRange();
 
-  const [profileRes, currentTxsRes, prevTxsRes, goalsRes, totalCountRes] = await Promise.all([
+  const [profileRes, currentTxsRes, prevTxsRes, goalsRes, totalCountRes, lastTxRes] = await Promise.all([
     supabase.from("profiles").select("full_name, plan, balance").eq("id", userId).single(),
     supabase.from("transactions")
       .select("id, amount, date, description, category_id, categories(name, color, icon)")
@@ -43,6 +43,8 @@ async function DashboardContent() {
       .eq("user_id", userId).order("created_at", { ascending: false }).limit(3),
     supabase.from("transactions")
       .select("id", { count: "exact", head: true }).eq("user_id", userId),
+    supabase.from("transactions")
+      .select("date").eq("user_id", userId).order("date", { ascending: false }).limit(1).single(),
   ]);
 
   return (
@@ -54,6 +56,7 @@ async function DashboardContent() {
       year={year}
       month={month}
       totalTxCount={totalCountRes.count ?? 0}
+      lastTxDate={lastTxRes.data?.date ?? null}
     />
   );
 }
