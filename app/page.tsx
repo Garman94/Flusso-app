@@ -5,40 +5,58 @@ import { siteConfig } from "@/lib/config";
 
 const features = [
   {
-    icon: "🔐",
-    title: "Auth pronta",
+    icon: "📊",
+    title: "Dashboard essenziale",
     description:
-      "Registrazione, accesso, recupero password e conferma email — tutto integrato con Supabase.",
+      "I numeri che contano subito in evidenza: saldo, entrate, uscite del mese. Scorri per approfondire.",
   },
   {
-    icon: "👤",
-    title: "Profili utente",
+    icon: "📁",
+    title: "Carica il tuo Excel",
     description:
-      "Tabella profiles creata automaticamente alla registrazione con nome e piano. Policy RLS incluse.",
+      "Importa l'estratto conto direttamente dal file della tua banca. Le categorie vengono rilevate automaticamente.",
   },
   {
-    icon: "💳",
-    title: "Pagamenti con Lemon Squeezy",
+    icon: "🏷️",
+    title: "Categorie smart",
     description:
-      "Webhook che aggiorna il piano utente automaticamente sugli eventi di pagamento.",
+      "Regole intelligenti che categorizzano automaticamente le spese. Se un movimento contiene \"Esselunga\" diventa Alimentari.",
   },
   {
-    icon: "🛡️",
-    title: "Protezione delle route",
+    icon: "🔮",
+    title: "Previsioni spese",
     description:
-      "Il middleware protegge le route /dashboard e reindirizza gli utenti autenticati dalla pagina di login.",
+      "Analizza le spese passate e prevede quanto spenderai il prossimo mese per ogni categoria.",
   },
   {
-    icon: "🎨",
-    title: "Componenti UI",
+    icon: "💡",
+    title: "Consigli di risparmio",
     description:
-      "Componenti shadcn/ui con Tailwind CSS e supporto dark mode già pronti all'uso.",
+      "Suggerimenti personalizzati basati sulle tue abitudini di spesa per aiutarti a risparmiare di più.",
   },
   {
-    icon: "⚡",
-    title: "Next.js 16 + App Router",
+    icon: "🎯",
+    title: "Obiettivi finanziari",
     description:
-      "Costruito sull'ultima versione di Next.js con server components, streaming e Turbopack.",
+      "Imposta obiettivi di risparmio e tieni traccia dei progressi. Vacanza, fondo emergenza, acquisto importante.",
+  },
+];
+
+const steps = [
+  {
+    step: "1",
+    title: "Registrati gratis",
+    description: "Crea il tuo account in 30 secondi. Nessuna carta di credito.",
+  },
+  {
+    step: "2",
+    title: "Carica le tue spese",
+    description: "Importa il file Excel della banca o inserisci le transazioni manualmente.",
+  },
+  {
+    step: "3",
+    title: "Prendi il controllo",
+    description: "Visualizza dove vanno i tuoi soldi e inizia a risparmiare.",
   },
 ];
 
@@ -51,7 +69,7 @@ export default function HomePage() {
         {/* Hero */}
         <section className="w-full max-w-5xl px-5 py-24 flex flex-col items-center text-center gap-8">
           <div className="inline-flex items-center rounded-full border px-4 py-1.5 text-sm text-muted-foreground">
-            Boilerplate SaaS production-ready
+            💸 Finanze personali semplici e intelligenti
           </div>
 
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight max-w-3xl leading-tight">
@@ -76,9 +94,13 @@ export default function HomePage() {
               Vedi i prezzi
             </Link>
           </div>
+
+          {/* Social proof */}
+          <p className="text-sm text-muted-foreground">
+            Gratis per sempre · Nessuna carta di credito · Setup in 2 minuti
+          </p>
         </section>
 
-        {/* Divider */}
         <div className="w-full max-w-5xl px-5">
           <div className="w-full h-px bg-gradient-to-r from-transparent via-foreground/10 to-transparent" />
         </div>
@@ -86,9 +108,9 @@ export default function HomePage() {
         {/* Features */}
         <section id="features" className="w-full max-w-5xl px-5 py-24 flex flex-col gap-12">
           <div className="text-center flex flex-col gap-3">
-            <h2 className="text-3xl font-bold">Tutto incluso</h2>
-            <p className="text-muted-foreground">
-              Smettila di costruire sempre lo stesso boilerplate. Inizia da ciò che conta davvero.
+            <h2 className="text-3xl font-bold">Tutto quello che ti serve</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              Smetti di usare fogli Excel complicati. Flusso fa il lavoro sporco per te.
             </p>
           </div>
 
@@ -108,36 +130,60 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Pricing preview */}
+        {/* How it works */}
         <section className="w-full bg-muted/30 py-24">
           <div className="max-w-5xl mx-auto px-5 flex flex-col gap-12">
             <div className="text-center flex flex-col gap-3">
-              <h2 className="text-3xl font-bold">Prezzi semplici</h2>
-              <p className="text-muted-foreground">
-                Inizia gratis, fai l&apos;upgrade quando sei pronto.
-              </p>
+              <h2 className="text-3xl font-bold">Come funziona</h2>
+              <p className="text-muted-foreground">Tre passi per avere il controllo totale.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {Object.values(siteConfig.plans).map((plan) => (
-                <PricingCard key={plan.label} plan={plan} />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {steps.map((s) => (
+                <div key={s.step} className="flex flex-col items-center text-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-bold">
+                    {s.step}
+                  </div>
+                  <h3 className="font-semibold text-lg">{s.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{s.description}</p>
+                </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* CTA */}
-        <section className="w-full max-w-5xl px-5 py-24 flex flex-col items-center text-center gap-6">
-          <h2 className="text-3xl font-bold">Pronto a lanciare?</h2>
-          <p className="text-muted-foreground max-w-md">
-            Unisciti agli sviluppatori che saltano il setup noioso e si concentrano sul prodotto.
-          </p>
-          <Link
-            href="/auth/sign-up"
-            className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-8 py-3 text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
-            Inizia a costruire gratis
-          </Link>
+        {/* Pricing preview */}
+        <section className="w-full max-w-5xl px-5 py-24 flex flex-col gap-12">
+          <div className="text-center flex flex-col gap-3">
+            <h2 className="text-3xl font-bold">Prezzi onesti</h2>
+            <p className="text-muted-foreground">
+              Inizia gratis. Passa a Premium quando vuoi di più.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {Object.values(siteConfig.plans).map((plan) => (
+              <PricingCard key={plan.label} plan={plan} />
+            ))}
+          </div>
+        </section>
+
+        {/* CTA finale */}
+        <section className="w-full bg-primary py-24">
+          <div className="max-w-5xl mx-auto px-5 flex flex-col items-center text-center gap-6">
+            <h2 className="text-3xl font-bold text-primary-foreground">
+              Pronto a controllare le tue finanze?
+            </h2>
+            <p className="text-primary-foreground/80 max-w-md">
+              Unisciti a chi ha già smesso di chiedersi dove finiscono i soldi ogni mese.
+            </p>
+            <Link
+              href="/auth/sign-up"
+              className="inline-flex items-center justify-center rounded-md bg-background text-foreground px-8 py-3 text-sm font-medium hover:bg-background/90 transition-colors"
+            >
+              Inizia gratis ora
+            </Link>
+          </div>
         </section>
       </main>
 

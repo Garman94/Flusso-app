@@ -5,6 +5,7 @@ import { getPlanLabel, getPlanBadgeColor } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { UpdateNameForm } from "./update-name-form";
+import { DeleteAccountButton } from "./delete-account-button";
 
 async function AccountContent() {
   const supabase = await createClient();
@@ -73,12 +74,13 @@ async function AccountContent() {
         )}
       </div>
 
-      {/* Danger zone */}
+      {/* Delete account */}
       <div className="rounded-xl border border-destructive/30 p-6 flex flex-col gap-4">
-        <h2 className="font-semibold text-destructive">Zona pericolosa</h2>
+        <h2 className="font-semibold text-destructive">Elimina il tuo account</h2>
         <p className="text-sm text-muted-foreground">
-          Per eliminare il tuo account, contatta il supporto.
+          Una volta eliminato, il tuo account e tutti i dati associati verranno rimossi definitivamente. Questa azione non può essere annullata.
         </p>
+        <DeleteAccountButton hasPlan={plan !== "free"} />
       </div>
     </div>
   );

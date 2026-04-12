@@ -24,6 +24,12 @@ async function DashboardNav() {
           <Link href="/dashboard" className="hover:text-foreground transition-colors">
             Dashboard
           </Link>
+          <Link href="/dashboard/transazioni" className="hover:text-foreground transition-colors">
+            Transazioni
+          </Link>
+          <Link href="/dashboard/obiettivi" className="hover:text-foreground transition-colors">
+            Obiettivi
+          </Link>
           <Link href="/dashboard/account" className="hover:text-foreground transition-colors">
             Impostazioni
           </Link>

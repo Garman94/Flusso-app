@@ -6,23 +6,27 @@ import Link from "next/link";
 const faqs = [
   {
     q: "Posso iniziare gratis?",
-    a: "Sì. Il piano gratuito non scade mai e non richiede carta di credito.",
+    a: "Sì. Il piano gratuito non scade mai e non richiede carta di credito. Hai accesso alle funzionalità base da subito.",
   },
   {
-    q: "Quali metodi di pagamento accettate?",
-    a: "Tutte le principali carte di credito e PayPal tramite Lemon Squeezy.",
+    q: "Cosa succede quando supero il limite del piano gratuito?",
+    a: "Raggiunti i 50 movimenti mensili o i 3 upload Excel, ti verrà chiesto di fare l'upgrade. Non perdi nessun dato.",
   },
   {
-    q: "Posso annullare in qualsiasi momento?",
-    a: "Sì, puoi annullare il tuo abbonamento in qualsiasi momento. Manterrai l'accesso fino alla fine del periodo di fatturazione.",
+    q: "Che formato Excel supportate?",
+    a: "Supportiamo i formati .xlsx e .csv esportati dalle principali banche italiane. Il sistema rileva automaticamente le colonne.",
+  },
+  {
+    q: "Cos'è una regola di categorizzazione?",
+    a: "Una regola ti permette di dire: \"se la descrizione contiene 'Esselunga', categorizzi come Alimentari\". Le crei una volta, funzionano per sempre.",
   },
   {
     q: "Cos'è il piano Founder?",
-    a: "Il piano Founder è un pagamento unico che ti dà accesso a vita a tutte le funzionalità, inclusi gli aggiornamenti futuri.",
+    a: "Paghi una volta e hai accesso a vita a tutte le funzionalità Premium, inclusi tutti gli aggiornamenti futuri.",
   },
   {
     q: "Offrite rimborsi?",
-    a: "Sì, offriamo una garanzia di rimborso di 30 giorni, senza fare domande.",
+    a: "Sì, garanzia di rimborso di 30 giorni, senza fare domande.",
   },
 ];
 
@@ -36,7 +40,7 @@ export default function PricingPage() {
         <section className="w-full max-w-5xl px-5 py-20 flex flex-col items-center text-center gap-5">
           <h1 className="text-4xl md:text-5xl font-bold">Prezzi semplici e trasparenti</h1>
           <p className="text-muted-foreground text-lg max-w-xl">
-            Inizia gratis. Fai l&apos;upgrade quando ne hai bisogno. Nessun costo nascosto.
+            Inizia gratis. Fai l&apos;upgrade solo quando hai bisogno di più. Nessun costo nascosto.
           </p>
         </section>
 
@@ -49,8 +53,49 @@ export default function PricingPage() {
           </div>
         </section>
 
-        {/* FAQ */}
+        {/* Feature comparison */}
         <section className="w-full bg-muted/30 py-24">
+          <div className="max-w-4xl mx-auto px-5 flex flex-col gap-8">
+            <h2 className="text-2xl font-bold text-center">Confronto funzionalità</h2>
+
+            <div className="rounded-xl border overflow-hidden bg-background">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left px-4 py-3 font-semibold">Funzionalità</th>
+                    <th className="text-center px-4 py-3 font-semibold">Gratuito</th>
+                    <th className="text-center px-4 py-3 font-semibold text-primary">Premium</th>
+                    <th className="text-center px-4 py-3 font-semibold">Founder</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ["Transazioni/mese", "50", "Illimitate", "Illimitate"],
+                    ["Upload Excel", "3/mese", "Illimitati", "Illimitati"],
+                    ["Categorie base", "✅", "✅", "✅"],
+                    ["Regole categorizzazione", "5", "Illimitate", "Illimitate"],
+                    ["Obiettivi finanziari", "1", "Illimitati", "Illimitati"],
+                    ["Previsioni spese", "❌", "✅", "✅"],
+                    ["Consigli di risparmio", "❌", "✅", "✅"],
+                    ["Export dati", "❌", "✅", "✅"],
+                    ["Supporto prioritario", "❌", "❌", "✅"],
+                    ["Accesso a vita", "❌", "❌", "✅"],
+                  ].map(([feature, free, premium, founder]) => (
+                    <tr key={feature} className="border-b last:border-b-0 hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3 text-muted-foreground">{feature}</td>
+                      <td className="px-4 py-3 text-center">{free}</td>
+                      <td className="px-4 py-3 text-center font-medium text-primary">{premium}</td>
+                      <td className="px-4 py-3 text-center">{founder}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        {/* FAQ */}
+        <section className="w-full py-24">
           <div className="max-w-2xl mx-auto px-5 flex flex-col gap-10">
             <h2 className="text-2xl font-bold text-center">Domande frequenti</h2>
             <div className="flex flex-col gap-6">
@@ -65,10 +110,10 @@ export default function PricingPage() {
         </section>
 
         {/* CTA */}
-        <section className="w-full max-w-5xl px-5 py-24 flex flex-col items-center text-center gap-6">
-          <h2 className="text-3xl font-bold">Hai ancora domande?</h2>
+        <section className="w-full max-w-5xl px-5 py-16 flex flex-col items-center text-center gap-6">
+          <h2 className="text-2xl font-bold">Hai altre domande?</h2>
           <p className="text-muted-foreground">
-            Siamo felici di aiutarti. Scrivici e ti risponderemo al più presto.
+            Scrivici, ti rispondiamo entro 24 ore.
           </p>
           <Link
             href="/auth/sign-up"
