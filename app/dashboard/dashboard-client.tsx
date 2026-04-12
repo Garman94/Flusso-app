@@ -453,7 +453,7 @@ export function DashboardClient({
         const pct = Math.round((uncategorized / currentTxs.length) * 100);
         return (
           <Link
-            href="/dashboard/transazioni"
+            href="/dashboard/transazioni?filter=uncategorized"
             className="rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 py-3 flex items-center justify-between gap-3 text-sm hover:bg-orange-500/15 transition-colors group"
           >
             <div className="flex items-center gap-3">

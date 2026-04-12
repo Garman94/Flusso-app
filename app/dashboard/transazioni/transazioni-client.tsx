@@ -24,19 +24,22 @@ function formatEuro(n: number) {
 
 const FREE_LIMIT = 50;
 
+type FilterType = "all" | "entrate" | "uscite" | "senza_cat";
+
 type Props = {
   userId: string;
   plan: string;
   initialTransactions: Transaction[];
   categories: Category[];
+  initialFilter?: FilterType;
 };
 
-export function TransazioniClient({ userId, plan, initialTransactions, categories }: Props) {
+export function TransazioniClient({ userId, plan, initialTransactions, categories, initialFilter = "all" }: Props) {
   const [transactions, setTransactions] = useState(initialTransactions);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [filter, setFilter] = useState<"all" | "entrate" | "uscite">("all");
+  const [filter, setFilter] = useState<FilterType>(initialFilter);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Form state
@@ -105,6 +108,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
   const filtered = transactions.filter(t => {
     if (filter === "entrate" && Number(t.amount) <= 0) return false;
     if (filter === "uscite" && Number(t.amount) >= 0) return false;
+    if (filter === "senza_cat" && t.category_id !== null && t.categories?.name?.toLowerCase() !== "altro") return false;
     if (searchQuery && !t.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
@@ -243,10 +247,10 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
           className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
         />
         <div className="flex rounded-md border overflow-hidden text-sm">
-          {(["all", "entrate", "uscite"] as const).map(f => (
+          {(["all", "entrate", "uscite", "senza_cat"] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className={`px-4 py-2 transition-colors ${filter === f ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}>
-              {f === "all" ? "Tutte" : f === "entrate" ? "Entrate" : "Uscite"}
+              {f === "all" ? "Tutte" : f === "entrate" ? "Entrate" : f === "uscite" ? "Uscite" : "🏷️ Senza cat."}
             </button>
           ))}
         </div>
