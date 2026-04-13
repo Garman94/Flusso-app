@@ -361,7 +361,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
             <p className="text-sm text-muted-foreground">Cosa vuoi aggiungere?</p>
             <div className="grid grid-cols-3 gap-3">
               <button
-                onClick={() => { setShowAddModal(false); setShowForm(true); }}
+                onClick={() => { setShowAddModal(false); setShowForm(true); setRulesPanel(null); }}
                 disabled={atLimit}
                 title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto.` : ""}
                 className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -371,7 +371,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
                 <span className="text-xs text-muted-foreground text-center">Singolo movimento</span>
               </button>
               <button
-                onClick={() => { setShowAddModal(false); setShowImport(true); }}
+                onClick={() => { setShowAddModal(false); setShowImport(true); setRulesPanel(null); }}
                 className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors"
               >
                 <span className="text-3xl">📊</span>
@@ -379,7 +379,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
                 <span className="text-xs text-muted-foreground text-center">Importa estratto conto</span>
               </button>
               <button
-                onClick={() => { setShowAddModal(false); setShowCatForm(true); }}
+                onClick={() => { setShowAddModal(false); setShowCatForm(true); setRulesPanel(null); }}
                 className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors"
               >
                 <span className="text-3xl">🏷️</span>
