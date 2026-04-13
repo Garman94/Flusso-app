@@ -218,24 +218,6 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
       ),
     );
 
-    // Crea automaticamente una regola per le prossime transazioni con la stessa descrizione
-    if (newCategoryId) {
-      const tx = transactions.find(t => t.id === txId);
-      if (tx?.description) {
-        const result = await createCategoryRule(tx.description, newCategoryId);
-        if (!result.error && (result.count ?? 0) > 0) {
-          toast.success(`${result.count} altre transazioni con la stessa descrizione sono state categorizzate automaticamente.`);
-          // Aggiorna lo stato locale per le transazioni appena categorizzate dalla regola
-          setTransactions(prev =>
-            prev.map(t =>
-              (result.affectedIds ?? []).includes(t.id)
-                ? { ...t, category_id: newCategoryId, categories: category }
-                : t,
-            ),
-          );
-        }
-      }
-    }
   }
 
   const filtered = transactions.filter(t => {
