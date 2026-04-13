@@ -139,6 +139,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
   // Form state
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState("");
+  const [txType, setTxType] = useState<"uscita" | "entrata" | "neutra">("uscita");
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [notes, setNotes] = useState("");
@@ -158,7 +159,8 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
     setSubmitting(true);
 
     const supabase = createClient();
-    const numAmount = parseFloat(amount.replace(",", "."));
+    const raw = Math.abs(parseFloat(amount.replace(",", ".")));
+    const numAmount = txType === "entrata" ? raw : txType === "uscita" ? -raw : raw;
 
     const { data, error } = await supabase
       .from("transactions")
@@ -181,6 +183,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
       toast.success("Transazione aggiunta!");
       setShowForm(false);
       setAmount("");
+      setTxType("uscita");
       setDescription("");
       setCategoryId("");
       setNotes("");
@@ -681,6 +684,27 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
       {showForm && (
         <form onSubmit={handleAddTransaction} className="rounded-xl border p-5 flex flex-col gap-4 bg-card">
           <h2 className="font-semibold">Nuova transazione</h2>
+          {/* Toggle tipo */}
+          <div className="flex rounded-md border overflow-hidden text-sm w-fit">
+            {(["uscita", "entrata", "neutra"] as const).map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTxType(t)}
+                className={`px-4 py-2 transition-colors capitalize ${
+                  txType === t
+                    ? t === "entrata"
+                      ? "bg-green-600 text-white"
+                      : t === "uscita"
+                      ? "bg-red-500 text-white"
+                      : "bg-muted text-foreground"
+                    : "hover:bg-muted/50"
+                }`}
+              >
+                {t === "entrata" ? "↑ Entrata" : t === "uscita" ? "↓ Uscita" : "↔ Neutra"}
+              </button>
+            ))}
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium">Data</label>
@@ -689,8 +713,8 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium">Importo (€)</label>
-              <input type="text" value={amount} onChange={e => setAmount(e.target.value)}
-                placeholder="-25.50 per uscita, +1500 per entrata" required
+              <input type="text" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)}
+                placeholder="es. 25.50" required
                 className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
