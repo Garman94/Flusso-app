@@ -384,8 +384,14 @@ export function DashboardClient({
     : now.toLocaleString("it-IT", { month: "long", year: "numeric" });
 
   // ── Aggregates ────────────────────────────────────────────────────────────
-  const income      = currentTxs.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
-  const expensesAbs = currentTxs.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+  // Spostamenti e Salvadanaio sono trasferimenti interni: esclusi da entrate/uscite/score
+  const TRANSFER_CATS = new Set(['spostamenti', 'salvadanaio']);
+  const isTransfer = (t: typeof currentTxs[number]) =>
+    TRANSFER_CATS.has(t.categories?.name?.toLowerCase() ?? '');
+
+  const spendableTxs = currentTxs.filter(t => !isTransfer(t));
+  const income      = spendableTxs.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
+  const expensesAbs = spendableTxs.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   const prevMonthNet = prevTxsAmounts.reduce((s, a) => s + a, 0);
 
   // ── Calculations ─────────────────────────────────────────────────────────
@@ -393,7 +399,7 @@ export function DashboardClient({
   const projected = calculateProjectedBalance(profile.balance, expensesAbs, daysPassed, daysRemaining);
   const startDay  = payDay > 0 ? periodStart.getDate() : 1;
   const trendData = calculateTrendData(currentTxs, profile.balance, year, month, startDay);
-  const macro     = calculateMacroBreakdown(currentTxs);
+  const macro     = calculateMacroBreakdown(spendableTxs);
   const monthlySavings = income - expensesAbs;
 
   const hasTransactions    = currentTxs.length > 0;
