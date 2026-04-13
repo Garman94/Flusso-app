@@ -25,12 +25,35 @@ function formatEuro(n: number) {
 }
 
 /** Applica le regole display alla descrizione: sostituisce il testo trovato col replacement, il resto rimane */
+// Parole che segnalano fine del nome (comuni nelle causali bancarie italiane)
+const NAME_STOP = new Set(["per", "causale", "data", "motivo", "rif", "riferimento", "cro", "iban", "bic", "swift", "id", "vs", "ns"]);
+
+/**
+ * Dal testo dopo il match estrae le parole iniziali che sembrano nome/cognome:
+ * - solo lettere (e trattini), nessun numero
+ * - si ferma alla prima parola-stop (per, causale, data…) o dopo max 3 parole
+ * - capitalizza ogni parola (TIZIANO ROSSI → Tiziano Rossi)
+ */
+function extractName(after: string): string {
+  const words = after.trim().split(/\s+/);
+  const nameWords: string[] = [];
+  for (const w of words) {
+    if (!w) break;
+    if (/[0-9:/\\.,]/.test(w)) break;                  // numeri o punteggiatura
+    if (NAME_STOP.has(w.toLowerCase())) break;          // parola-stop
+    nameWords.push(w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+    if (nameWords.length >= 3) break;
+  }
+  return nameWords.join(" ");
+}
+
 function applyDisplayRules(description: string, rules: DisplayRule[]): string {
   for (const rule of rules) {
     const idx = description.toLowerCase().indexOf(rule.find_text.toLowerCase());
     if (idx !== -1) {
       const after = description.slice(idx + rule.find_text.length).trim();
-      return (rule.replace_with + (after ? " " + after : "")).trim();
+      const name  = extractName(after);
+      return (rule.replace_with + (name ? " " + name : "")).trim();
     }
   }
   return description;
