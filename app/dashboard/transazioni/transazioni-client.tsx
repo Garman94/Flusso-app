@@ -83,16 +83,17 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
   const [editMode, setEditMode] = useState(false);
   const [filter, setFilter] = useState<FilterType>(initialFilter);
   const [displayRules, setDisplayRules] = useState<DisplayRule[]>(initialDisplayRules);
-  const [showRules, setShowRules] = useState(false);
   const [newFind, setNewFind] = useState("");
   const [newReplace, setNewReplace] = useState("");
   const [savingRule, setSavingRule] = useState(false);
 
   const [categoryRules, setCategoryRules] = useState<CategoryRule[]>(initialCategoryRules);
-  const [showCatRules, setShowCatRules] = useState(false);
   const [newCatKeyword, setNewCatKeyword] = useState("");
   const [newCatId, setNewCatId] = useState("");
   const [savingCatRule, setSavingCatRule] = useState(false);
+
+  // Pannello regole unificato: null = chiuso, "display" | "categorie" = aperto sul tipo selezionato
+  const [rulesPanel, setRulesPanel] = useState<null | "display" | "categorie">(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Navigazione mese/anno
@@ -429,16 +430,10 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           ) : (
             <>
               <button
-                onClick={() => setShowCatRules(v => !v)}
-                className={`text-sm border rounded-md px-4 py-2 transition-colors ${showCatRules ? "bg-muted" : "hover:bg-muted/50"}`}
+                onClick={() => setRulesPanel(v => v ? null : "display")}
+                className={`text-sm border rounded-md px-4 py-2 transition-colors ${rulesPanel ? "bg-muted" : "hover:bg-muted/50"}`}
               >
-                Regole categorie
-              </button>
-              <button
-                onClick={() => setShowRules(v => !v)}
-                className={`text-sm border rounded-md px-4 py-2 transition-colors ${showRules ? "bg-muted" : "hover:bg-muted/50"}`}
-              >
-                Regole display
+                Regole
               </button>
               <button
                 onClick={() => enterEditMode()}
@@ -480,117 +475,127 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
         </div>
       )}
 
-      {/* Sezione regole categorie */}
-      {showCatRules && (
+      {/* Pannello regole unificato */}
+      {rulesPanel && (
         <div className="rounded-xl border p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-sm">Regole categorie automatiche</h2>
-            <button onClick={() => setShowCatRules(false)} className="text-muted-foreground hover:text-foreground text-xs transition-colors">✕ Chiudi</button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Se la descrizione contiene il testo indicato, la categoria viene assegnata automaticamente — sovrascrive anche le categorie importate da Excel.
-          </p>
-
-          {categoryRules.length > 0 && (
-            <div className="flex flex-col gap-2">
-              {categoryRules.map(r => (
-                <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
-                  <span className="text-muted-foreground shrink-0">Contiene:</span>
-                  <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.value}>"{r.value}"</span>
-                  <span className="text-muted-foreground shrink-0">→</span>
-                  <span className="shrink-0 text-xs">
-                    {r.categories?.icon} {r.categories?.name ?? r.category_id}
-                  </span>
-                  <button onClick={() => handleDeleteCatRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
-                </div>
-              ))}
+          {/* Header con selector tipo e chiudi */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex rounded-md border overflow-hidden text-xs">
+              <button
+                onClick={() => setRulesPanel("display")}
+                className={`px-3 py-1.5 transition-colors ${rulesPanel === "display" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+              >
+                Regole display
+              </button>
+              <button
+                onClick={() => setRulesPanel("categorie")}
+                className={`px-3 py-1.5 transition-colors ${rulesPanel === "categorie" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+              >
+                Regole categorie
+              </button>
             </div>
+            <button onClick={() => setRulesPanel(null)} className="text-muted-foreground hover:text-foreground text-xs transition-colors">✕ Chiudi</button>
+          </div>
+
+          {/* Contenuto: Regole display */}
+          {rulesPanel === "display" && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Quando la descrizione contiene il testo cercato, viene sostituito con il testo breve — il resto della descrizione rimane visibile.
+                <br />Es: <em>"Bonifico istantaneo da voi disposto a favore di"</em> → <em>"B.I. verso"</em> → mostra <em>"B.I. verso TIZIANO ROSSI"</em>
+              </p>
+              {displayRules.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {displayRules.map(r => (
+                    <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
+                      <span className="text-muted-foreground shrink-0">Contiene:</span>
+                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.find_text}>"{r.find_text}"</span>
+                      <span className="text-muted-foreground shrink-0">→</span>
+                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.replace_with}>"{r.replace_with}"</span>
+                      <button onClick={() => handleDeleteRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <form onSubmit={handleSaveRule} className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={newFind}
+                  onChange={e => setNewFind(e.target.value)}
+                  placeholder='Testo da cercare (es. "Bonifico istantaneo da voi disposto a favore di")'
+                  className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
+                  required
+                />
+                <input
+                  type="text"
+                  value={newReplace}
+                  onChange={e => setNewReplace(e.target.value)}
+                  placeholder='Sostituisci con (es. "B.I. verso")'
+                  className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
+                  required
+                />
+                <button
+                  type="submit"
+                  disabled={savingRule}
+                  className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors whitespace-nowrap"
+                >
+                  {savingRule ? "..." : "+ Aggiungi"}
+                </button>
+              </form>
+            </>
           )}
 
-          <form onSubmit={handleSaveCatRule} className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={newCatKeyword}
-              onChange={e => setNewCatKeyword(e.target.value)}
-              placeholder='Testo da cercare nella descrizione (es. "esselunga")'
-              className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
-              required
-            />
-            <select
-              value={newCatId}
-              onChange={e => setNewCatId(e.target.value)}
-              className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-              required
-            >
-              <option value="">— Categoria —</option>
-              {categories.map(c => (
-                <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              disabled={savingCatRule}
-              className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors whitespace-nowrap"
-            >
-              {savingCatRule ? "..." : "+ Aggiungi"}
-            </button>
-          </form>
-        </div>
-      )}
-
-      {/* Sezione regole display */}
-      {showRules && (
-        <div className="rounded-xl border p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-sm">Regole display descrizioni</h2>
-            <button onClick={() => setShowRules(false)} className="text-muted-foreground hover:text-foreground text-xs transition-colors">✕ Chiudi</button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Quando la descrizione contiene il testo cercato, viene sostituito con il testo breve — il resto della descrizione rimane visibile.
-            <br />Es: <em>"Bonifico istantaneo da voi disposto a favore di"</em> → <em>"B.I. verso"</em> → mostra <em>"B.I. verso TIZIANO ROSSI"</em>
-          </p>
-
-          {/* Lista regole esistenti */}
-          {displayRules.length > 0 && (
-            <div className="flex flex-col gap-2">
-              {displayRules.map(r => (
-                <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
-                  <span className="text-muted-foreground shrink-0">Contiene:</span>
-                  <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.find_text}>"{r.find_text}"</span>
-                  <span className="text-muted-foreground shrink-0">→</span>
-                  <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.replace_with}>"{r.replace_with}"</span>
-                  <button onClick={() => handleDeleteRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
+          {/* Contenuto: Regole categorie */}
+          {rulesPanel === "categorie" && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Se la descrizione contiene il testo indicato, la categoria viene assegnata automaticamente — sovrascrive anche le categorie importate da Excel.
+              </p>
+              {categoryRules.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {categoryRules.map(r => (
+                    <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
+                      <span className="text-muted-foreground shrink-0">Contiene:</span>
+                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.value}>"{r.value}"</span>
+                      <span className="text-muted-foreground shrink-0">→</span>
+                      <span className="shrink-0 text-xs">
+                        {r.categories?.icon} {r.categories?.name ?? r.category_id}
+                      </span>
+                      <button onClick={() => handleDeleteCatRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+              <form onSubmit={handleSaveCatRule} className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={newCatKeyword}
+                  onChange={e => setNewCatKeyword(e.target.value)}
+                  placeholder='Testo da cercare nella descrizione (es. "esselunga")'
+                  className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
+                  required
+                />
+                <select
+                  value={newCatId}
+                  onChange={e => setNewCatId(e.target.value)}
+                  className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                  required
+                >
+                  <option value="">— Categoria —</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  disabled={savingCatRule}
+                  className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors whitespace-nowrap"
+                >
+                  {savingCatRule ? "..." : "+ Aggiungi"}
+                </button>
+              </form>
+            </>
           )}
-
-          {/* Nuova regola */}
-          <form onSubmit={handleSaveRule} className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={newFind}
-              onChange={e => setNewFind(e.target.value)}
-              placeholder='Testo da cercare (es. "Bonifico istantaneo da voi disposto a favore di")'
-              className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
-              required
-            />
-            <input
-              type="text"
-              value={newReplace}
-              onChange={e => setNewReplace(e.target.value)}
-              placeholder='Sostituisci con (es. "B.I. verso")'
-              className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
-              required
-            />
-            <button
-              type="submit"
-              disabled={savingRule}
-              className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors whitespace-nowrap"
-            >
-              {savingRule ? "..." : "+ Aggiungi"}
-            </button>
-          </form>
         </div>
       )}
 
