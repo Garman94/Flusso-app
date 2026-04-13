@@ -45,6 +45,40 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
   const [filter, setFilter] = useState<FilterType>(initialFilter);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Navigazione mese/anno
+  const _now = new Date();
+  const [navYear, setNavYear]   = useState(_now.getFullYear());
+  const [navMonth, setNavMonth] = useState(_now.getMonth()); // 0-indexed
+  const [navView, setNavView]   = useState<"mese" | "anno">("mese");
+
+  const isAtPresent = navView === "mese"
+    ? navYear === _now.getFullYear() && navMonth === _now.getMonth()
+    : navYear === _now.getFullYear();
+
+  const navLabel = navView === "mese"
+    ? new Date(navYear, navMonth, 1)
+        .toLocaleDateString("it-IT", { month: "long", year: "numeric" })
+        .replace(/^\w/, c => c.toUpperCase())
+    : String(navYear);
+
+  function goToPrev() {
+    if (navView === "mese") {
+      if (navMonth === 0) { setNavMonth(11); setNavYear(y => y - 1); }
+      else setNavMonth(m => m - 1);
+    } else {
+      setNavYear(y => y - 1);
+    }
+  }
+
+  function goToNext() {
+    if (navView === "mese") {
+      if (navMonth === 11) { setNavMonth(0); setNavYear(y => y + 1); }
+      else setNavMonth(m => m + 1);
+    } else {
+      setNavYear(y => y + 1);
+    }
+  }
+
   // Form state
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState("");
@@ -148,6 +182,14 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
   }
 
   const filtered = transactions.filter(t => {
+    // Filtro data (navigazione mese/anno)
+    const d = new Date(t.date + "T00:00:00");
+    if (navView === "mese") {
+      if (d.getFullYear() !== navYear || d.getMonth() !== navMonth) return false;
+    } else {
+      if (d.getFullYear() !== navYear) return false;
+    }
+    // Filtri tipo
     if (filter === "entrate" && Number(t.amount) <= 0) return false;
     if (filter === "uscite" && Number(t.amount) >= 0) return false;
     if (filter === "senza_cat" && t.category_id !== null && t.categories?.name?.toLowerCase() !== "altro") return false;
@@ -216,6 +258,40 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           onImported={handleImported}
         />
       )}
+
+      {/* Navigazione mese / anno */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
+        <button
+          onClick={goToPrev}
+          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted/50"
+          aria-label="Periodo precedente"
+        >
+          ←
+        </button>
+        <span className="font-semibold text-sm tabular-nums flex-1 text-center">{navLabel}</span>
+        <button
+          onClick={goToNext}
+          disabled={isAtPresent}
+          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted/50 disabled:opacity-30 disabled:cursor-default"
+          aria-label="Periodo successivo"
+        >
+          →
+        </button>
+        <div className="flex rounded-md border overflow-hidden text-xs ml-2">
+          <button
+            onClick={() => setNavView("mese")}
+            className={`px-3 py-1.5 transition-colors ${navView === "mese" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+          >
+            Mese
+          </button>
+          <button
+            onClick={() => setNavView("anno")}
+            className={`px-3 py-1.5 transition-colors ${navView === "anno" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+          >
+            Anno
+          </button>
+        </div>
+      </div>
 
       {/* Header */}
       <div className="flex items-center justify-between">

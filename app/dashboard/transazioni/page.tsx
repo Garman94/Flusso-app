@@ -23,8 +23,7 @@ async function TransazioniContent({
       .from("transactions")
       .select("*, categories(id, name, color, icon)")
       .eq("user_id", userId)
-      .order("date", { ascending: false })
-      .limit(100),
+      .order("date", { ascending: false }),
     supabase
       .from("categories")
       .select("id, name, color, icon")
