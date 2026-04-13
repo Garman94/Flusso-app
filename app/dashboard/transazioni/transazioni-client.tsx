@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { ImportExcelModal } from "./import-excel-modal";
+import { createCategoryRule } from "./actions";
 
 type Category = { id: string; name: string; color: string; icon: string };
 type Transaction = {
@@ -40,7 +41,6 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
   const [showAddModal, setShowAddModal] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [showGearMenu, setShowGearMenu] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [filter, setFilter] = useState<FilterType>(initialFilter);
   const [searchQuery, setSearchQuery] = useState("");
@@ -126,6 +126,25 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
         t.id === txId ? { ...t, category_id: newCategoryId || null, categories: category } : t,
       ),
     );
+
+    // Crea automaticamente una regola per le prossime transazioni con la stessa descrizione
+    if (newCategoryId) {
+      const tx = transactions.find(t => t.id === txId);
+      if (tx?.description) {
+        const result = await createCategoryRule(tx.description, newCategoryId);
+        if (!result.error && (result.count ?? 0) > 0) {
+          toast.success(`${result.count} altre transazioni con la stessa descrizione sono state categorizzate automaticamente.`);
+          // Aggiorna lo stato locale per le transazioni appena categorizzate dalla regola
+          setTransactions(prev =>
+            prev.map(t =>
+              (result.affectedIds ?? []).includes(t.id)
+                ? { ...t, category_id: newCategoryId, categories: category }
+                : t,
+            ),
+          );
+        }
+      }
+    }
   }
 
   const filtered = transactions.filter(t => {
@@ -145,10 +164,8 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
     window.location.reload();
   }
 
-  function enterEditMode(filterTo?: FilterType) {
-    setShowGearMenu(false);
+  function enterEditMode() {
     setEditMode(true);
-    if (filterTo) setFilter(filterTo);
   }
 
   function exitEditMode() {
@@ -213,41 +230,12 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
             </button>
           ) : (
             <>
-              {/* Gear menu */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowGearMenu(v => !v)}
-                  className="border rounded-md p-2 hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-                  title="Impostazioni transazioni"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                  </svg>
-                </button>
-                {showGearMenu && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setShowGearMenu(false)} />
-                    <div className="absolute right-0 top-full mt-1 z-20 bg-background border rounded-lg shadow-lg py-1 min-w-[240px]">
-                      <button
-                        onClick={() => enterEditMode("senza_cat")}
-                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
-                      >
-                        <span>🏷️</span>
-                        <span>Definisci categorie senza categoria</span>
-                      </button>
-                      <button
-                        onClick={() => enterEditMode()}
-                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
-                      >
-                        <span>✏️</span>
-                        <span>Modifica tutte le categorie</span>
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-
+              <button
+                onClick={() => enterEditMode()}
+                className="text-sm border rounded-md px-4 py-2 hover:bg-muted/50 transition-colors"
+              >
+                Modifica categorie
+              </button>
               <button
                 onClick={() => setShowAddModal(true)}
                 disabled={atLimit}
