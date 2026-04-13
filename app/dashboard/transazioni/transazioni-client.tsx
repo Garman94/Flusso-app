@@ -18,9 +18,22 @@ type Transaction = {
   source: string;
   categories: Category | null;
 };
+type DisplayRule = { id: string; find_text: string; replace_with: string };
 
 function formatEuro(n: number) {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
+}
+
+/** Applica le regole display alla descrizione: sostituisce il testo trovato col replacement, il resto rimane */
+function applyDisplayRules(description: string, rules: DisplayRule[]): string {
+  for (const rule of rules) {
+    const idx = description.toLowerCase().indexOf(rule.find_text.toLowerCase());
+    if (idx !== -1) {
+      const after = description.slice(idx + rule.find_text.length).trim();
+      return (rule.replace_with + (after ? " " + after : "")).trim();
+    }
+  }
+  return description;
 }
 
 const FREE_LIMIT = 50;
@@ -32,17 +45,23 @@ type Props = {
   plan: string;
   initialTransactions: Transaction[];
   initialUncategorized: Transaction[];
+  initialDisplayRules: DisplayRule[];
   categories: Category[];
   initialFilter?: FilterType;
 };
 
-export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, categories, initialFilter = "all" }: Props) {
+export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, categories, initialFilter = "all" }: Props) {
   const [transactions, setTransactions] = useState(initialTransactions);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [filter, setFilter] = useState<FilterType>(initialFilter);
+  const [displayRules, setDisplayRules] = useState<DisplayRule[]>(initialDisplayRules);
+  const [showRules, setShowRules] = useState(false);
+  const [newFind, setNewFind] = useState("");
+  const [newReplace, setNewReplace] = useState("");
+  const [savingRule, setSavingRule] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Navigazione mese/anno
@@ -206,6 +225,37 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
     window.location.reload();
   }
 
+  async function handleSaveRule(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newFind.trim() || !newReplace.trim()) return;
+    setSavingRule(true);
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("display_rules")
+      .insert({ user_id: userId, find_text: newFind.trim(), replace_with: newReplace.trim() })
+      .select("id, find_text, replace_with")
+      .single();
+    if (error) {
+      toast.error("Errore nel salvataggio della regola.");
+    } else {
+      setDisplayRules(prev => [...prev, data as DisplayRule]);
+      setNewFind("");
+      setNewReplace("");
+      toast.success("Regola salvata!");
+    }
+    setSavingRule(false);
+  }
+
+  async function handleDeleteRule(id: string) {
+    const supabase = createClient();
+    const { error } = await supabase.from("display_rules").delete().eq("id", id);
+    if (error) {
+      toast.error("Errore nella cancellazione.");
+    } else {
+      setDisplayRules(prev => prev.filter(r => r.id !== id));
+    }
+  }
+
   function enterEditMode() {
     setEditMode(true);
   }
@@ -307,6 +357,12 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           ) : (
             <>
               <button
+                onClick={() => setShowRules(v => !v)}
+                className={`text-sm border rounded-md px-4 py-2 transition-colors ${showRules ? "bg-muted" : "hover:bg-muted/50"}`}
+              >
+                Regole display
+              </button>
+              <button
                 onClick={() => enterEditMode()}
                 className="text-sm border rounded-md px-4 py-2 hover:bg-muted/50 transition-colors"
               >
@@ -343,6 +399,62 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           <button onClick={exitEditMode} className="text-muted-foreground hover:text-foreground transition-colors text-xs shrink-0">
             ✕ Esci
           </button>
+        </div>
+      )}
+
+      {/* Sezione regole display */}
+      {showRules && (
+        <div className="rounded-xl border p-5 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-sm">Regole display descrizioni</h2>
+            <button onClick={() => setShowRules(false)} className="text-muted-foreground hover:text-foreground text-xs transition-colors">✕ Chiudi</button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Quando la descrizione contiene il testo cercato, viene sostituito con il testo breve — il resto della descrizione rimane visibile.
+            <br />Es: <em>"Bonifico istantaneo da voi disposto a favore di"</em> → <em>"B.I. verso"</em> → mostra <em>"B.I. verso TIZIANO ROSSI"</em>
+          </p>
+
+          {/* Lista regole esistenti */}
+          {displayRules.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {displayRules.map(r => (
+                <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
+                  <span className="text-muted-foreground shrink-0">Contiene:</span>
+                  <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.find_text}>"{r.find_text}"</span>
+                  <span className="text-muted-foreground shrink-0">→</span>
+                  <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.replace_with}>"{r.replace_with}"</span>
+                  <button onClick={() => handleDeleteRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Nuova regola */}
+          <form onSubmit={handleSaveRule} className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={newFind}
+              onChange={e => setNewFind(e.target.value)}
+              placeholder='Testo da cercare (es. "Bonifico istantaneo da voi disposto a favore di")'
+              className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
+              required
+            />
+            <input
+              type="text"
+              value={newReplace}
+              onChange={e => setNewReplace(e.target.value)}
+              placeholder='Sostituisci con (es. "B.I. verso")'
+              className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
+              required
+            />
+            <button
+              type="submit"
+              disabled={savingRule}
+              className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {savingRule ? "..." : "+ Aggiungi"}
+            </button>
+          </form>
         </div>
       )}
 
@@ -438,7 +550,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-xl shrink-0">{t.categories?.icon ?? "📦"}</span>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{t.description || "—"}</p>
+                    <p className="text-sm font-medium truncate">{applyDisplayRules(t.description, displayRules) || "—"}</p>
                     {editMode ? (
                       <select
                         defaultValue={t.category_id ?? ""}
@@ -488,7 +600,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                       {new Date(t.date).toLocaleDateString("it-IT")}
                     </td>
-                    <td className="px-4 py-3 max-w-[200px] truncate">{t.description || "—"}</td>
+                    <td className="px-4 py-3 max-w-[200px] truncate">{applyDisplayRules(t.description, displayRules) || "—"}</td>
                     <td className="px-4 py-3">
                       {editMode ? (
                         <select
