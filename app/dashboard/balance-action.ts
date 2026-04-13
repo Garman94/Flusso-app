@@ -17,7 +17,10 @@ export async function updateBalance(formData: FormData) {
     .update({ balance })
     .eq("id", data.claims.sub);
 
-  if (error) return { error: "Errore nel salvataggio." };
+  if (error) {
+    console.error("[balance-action]", error);
+    return { error: `Errore: ${error.message}` };
+  }
 
   revalidatePath("/dashboard");
   return { success: true };

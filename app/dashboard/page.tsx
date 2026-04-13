@@ -86,7 +86,7 @@ async function DashboardContent() {
   const payDay: number = profileRes.data?.pay_day ?? 0;
   const { from: mFrom, to: mTo, year, month, prevFrom, prevTo } = getDateRanges(payDay);
 
-  const [currentTxsRes, prevTxsRes, goalsRes, totalCountRes, lastTxRes] = await Promise.all([
+  const [currentTxsRes, prevTxsRes, goalsRes, totalCountRes, lastTxRes, uncategorizedCountRes] = await Promise.all([
     supabase.from("transactions")
       .select("id, amount, date, description, category_id, categories(name, color, icon)")
       .eq("user_id", userId).gte("date", mFrom).lte("date", mTo).order("date", { ascending: true }),
@@ -99,6 +99,8 @@ async function DashboardContent() {
       .select("id", { count: "exact", head: true }).eq("user_id", userId),
     supabase.from("transactions")
       .select("date").eq("user_id", userId).order("date", { ascending: false }).limit(1).single(),
+    supabase.from("transactions")
+      .select("id", { count: "exact", head: true }).eq("user_id", userId).is("category_id", null),
   ]);
 
   return (
@@ -115,6 +117,7 @@ async function DashboardContent() {
       year={year}
       month={month}
       totalTxCount={totalCountRes.count ?? 0}
+      uncategorizedCount={uncategorizedCountRes.count ?? 0}
       lastTxDate={lastTxRes.data?.date ?? null}
       payDay={payDay}
       periodFrom={mFrom}

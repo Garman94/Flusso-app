@@ -17,7 +17,7 @@ async function TransazioniContent({
   const initialFilter =
     params.filter === "uncategorized" ? "senza_cat" : "all";
 
-  const [profileRes, transactionsRes, categoriesRes] = await Promise.all([
+  const [profileRes, transactionsRes, categoriesRes, uncategorizedRes] = await Promise.all([
     supabase.from("profiles").select("plan").eq("id", userId).single(),
     supabase
       .from("transactions")
@@ -30,6 +30,12 @@ async function TransazioniContent({
       .select("id, name, color, icon")
       .or(`user_id.eq.${userId},user_id.is.null`)
       .order("name"),
+    supabase
+      .from("transactions")
+      .select("id, date, amount, description, category_id")
+      .eq("user_id", userId)
+      .is("category_id", null)
+      .order("date", { ascending: false }),
   ]);
 
   return (
@@ -38,6 +44,7 @@ async function TransazioniContent({
       plan={profileRes.data?.plan ?? "free"}
       initialTransactions={transactionsRes.data ?? []}
       categories={categoriesRes.data ?? []}
+      initialUncategorized={(uncategorizedRes.data ?? []) as any}
       initialFilter={initialFilter}
     />
   );

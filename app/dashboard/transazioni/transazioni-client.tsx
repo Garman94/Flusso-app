@@ -30,15 +30,18 @@ type Props = {
   userId: string;
   plan: string;
   initialTransactions: Transaction[];
+  initialUncategorized: Transaction[];
   categories: Category[];
   initialFilter?: FilterType;
 };
 
-export function TransazioniClient({ userId, plan, initialTransactions, categories, initialFilter = "all" }: Props) {
+export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, categories, initialFilter = "all" }: Props) {
   const [transactions, setTransactions] = useState(initialTransactions);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showGearMenu, setShowGearMenu] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [filter, setFilter] = useState<FilterType>(initialFilter);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -105,6 +108,26 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
     }
   }
 
+  async function handleCategoryChange(txId: string, newCategoryId: string) {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("transactions")
+      .update({ category_id: newCategoryId || null })
+      .eq("id", txId);
+
+    if (error) {
+      toast.error("Errore nel salvataggio della categoria.");
+      return;
+    }
+
+    const category = categories.find(c => c.id === newCategoryId) ?? null;
+    setTransactions(prev =>
+      prev.map(t =>
+        t.id === txId ? { ...t, category_id: newCategoryId || null, categories: category } : t,
+      ),
+    );
+  }
+
   const filtered = transactions.filter(t => {
     if (filter === "entrate" && Number(t.amount) <= 0) return false;
     if (filter === "uscite" && Number(t.amount) >= 0) return false;
@@ -119,8 +142,17 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
   });
 
   function handleImported(count: number) {
-    // Reload transactions from server by refreshing
     window.location.reload();
+  }
+
+  function enterEditMode(filterTo?: FilterType) {
+    setShowGearMenu(false);
+    setEditMode(true);
+    if (filterTo) setFilter(filterTo);
+  }
+
+  function exitEditMode() {
+    setEditMode(false);
   }
 
   return (
@@ -171,14 +203,62 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Transazioni</h1>
-        <button
-          onClick={() => setShowAddModal(true)}
-          disabled={atLimit}
-          title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto. Passa a Premium.` : ""}
-          className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          + Aggiungi
-        </button>
+        <div className="flex items-center gap-2">
+          {editMode ? (
+            <button
+              onClick={exitEditMode}
+              className="text-sm bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 transition-colors font-medium"
+            >
+              ✓ Fatto
+            </button>
+          ) : (
+            <>
+              {/* Gear menu */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowGearMenu(v => !v)}
+                  className="border rounded-md p-2 hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                  title="Impostazioni transazioni"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </button>
+                {showGearMenu && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowGearMenu(false)} />
+                    <div className="absolute right-0 top-full mt-1 z-20 bg-background border rounded-lg shadow-lg py-1 min-w-[240px]">
+                      <button
+                        onClick={() => enterEditMode("senza_cat")}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+                      >
+                        <span>🏷️</span>
+                        <span>Definisci categorie senza categoria</span>
+                      </button>
+                      <button
+                        onClick={() => enterEditMode()}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+                      >
+                        <span>✏️</span>
+                        <span>Modifica tutte le categorie</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <button
+                onClick={() => setShowAddModal(true)}
+                disabled={atLimit}
+                title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto. Passa a Premium.` : ""}
+                className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                + Aggiungi
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {atLimit && (
@@ -187,6 +267,18 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
           <a href="/pricing" className="text-primary font-medium hover:underline whitespace-nowrap">
             Passa a Premium
           </a>
+        </div>
+      )}
+
+      {/* Banner edit mode attivo */}
+      {editMode && (
+        <div className="rounded-xl border border-primary/40 bg-primary/5 px-4 py-3 text-sm flex items-center justify-between gap-3">
+          <p className="text-primary">
+            <strong>Modalità modifica attiva</strong> — usa i dropdown per assegnare una categoria a ogni transazione.
+          </p>
+          <button onClick={exitEditMode} className="text-muted-foreground hover:text-foreground transition-colors text-xs shrink-0">
+            ✕ Esci
+          </button>
         </div>
       )}
 
@@ -278,22 +370,37 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
           {/* Mobile: card list */}
           <div className="sm:hidden flex flex-col divide-y">
             {filtered.map(t => (
-              <div key={t.id} className="flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors gap-3">
+              <div key={t.id} className="flex items-start justify-between px-4 py-3 hover:bg-muted/30 transition-colors gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-xl shrink-0">{t.categories?.icon ?? "📦"}</span>
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{t.description || "—"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(t.date).toLocaleDateString("it-IT")}
-                      {t.categories && <span> · {t.categories.name}</span>}
-                    </p>
+                    {editMode ? (
+                      <select
+                        defaultValue={t.category_id ?? ""}
+                        onChange={e => handleCategoryChange(t.id, e.target.value)}
+                        className="mt-1 border rounded px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary w-full max-w-[180px]"
+                      >
+                        <option value="">— Nessuna —</option>
+                        {categories.map(c => (
+                          <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(t.date).toLocaleDateString("it-IT")}
+                        {t.categories && <span> · {t.categories.name}</span>}
+                      </p>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 pt-0.5">
                   <span className={`text-sm font-semibold tabular-nums ${Number(t.amount) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
                     {Number(t.amount) >= 0 ? "+" : ""}{formatEuro(Number(t.amount))}
                   </span>
-                  <button onClick={() => handleDelete(t.id)} className="text-muted-foreground hover:text-destructive transition-colors text-xs p-1">✕</button>
+                  {!editMode && (
+                    <button onClick={() => handleDelete(t.id)} className="text-muted-foreground hover:text-destructive transition-colors text-xs p-1">✕</button>
+                  )}
                 </div>
               </div>
             ))}
@@ -319,7 +426,18 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
                     </td>
                     <td className="px-4 py-3 max-w-[200px] truncate">{t.description || "—"}</td>
                     <td className="px-4 py-3">
-                      {t.categories ? (
+                      {editMode ? (
+                        <select
+                          defaultValue={t.category_id ?? ""}
+                          onChange={e => handleCategoryChange(t.id, e.target.value)}
+                          className="border rounded px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          <option value="">— Nessuna —</option>
+                          {categories.map(c => (
+                            <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                          ))}
+                        </select>
+                      ) : t.categories ? (
                         <span className="inline-flex items-center gap-1 text-xs border rounded-full px-2 py-0.5">
                           {t.categories.icon} {t.categories.name}
                         </span>
@@ -331,10 +449,12 @@ export function TransazioniClient({ userId, plan, initialTransactions, categorie
                       {Number(t.amount) >= 0 ? "+" : ""}{formatEuro(Number(t.amount))}
                     </td>
                     <td className="px-4 py-3">
-                      <button onClick={() => handleDelete(t.id)}
-                        className="text-muted-foreground hover:text-destructive transition-colors text-xs">
-                        ✕
-                      </button>
+                      {!editMode && (
+                        <button onClick={() => handleDelete(t.id)}
+                          className="text-muted-foreground hover:text-destructive transition-colors text-xs">
+                          ✕
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

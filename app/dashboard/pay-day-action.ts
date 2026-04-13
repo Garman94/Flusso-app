@@ -13,7 +13,10 @@ export async function updatePayDay(payDay: number) {
     .update({ pay_day: payDay })
     .eq("id", data.claims.sub);
 
-  if (error) return { error: "Errore nel salvataggio." };
+  if (error) {
+    console.error("[pay-day-action]", error);
+    return { error: `Errore: ${error.message}` };
+  }
 
   revalidatePath("/dashboard");
   return { success: true };
