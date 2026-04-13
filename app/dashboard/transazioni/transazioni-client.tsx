@@ -504,19 +504,6 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
                 Quando la descrizione contiene il testo cercato, viene sostituito con il testo breve — il resto della descrizione rimane visibile.
                 <br />Es: <em>"Bonifico istantaneo da voi disposto a favore di"</em> → <em>"B.I. verso"</em> → mostra <em>"B.I. verso TIZIANO ROSSI"</em>
               </p>
-              {displayRules.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  {displayRules.map(r => (
-                    <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
-                      <span className="text-muted-foreground shrink-0">Contiene:</span>
-                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.find_text}>"{r.find_text}"</span>
-                      <span className="text-muted-foreground shrink-0">→</span>
-                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.replace_with}>"{r.replace_with}"</span>
-                      <button onClick={() => handleDeleteRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
               <form onSubmit={handleSaveRule} className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
@@ -542,6 +529,19 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
                   {savingRule ? "..." : "+ Aggiungi"}
                 </button>
               </form>
+              {displayRules.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {displayRules.map(r => (
+                    <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
+                      <span className="text-muted-foreground shrink-0">Contiene:</span>
+                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.find_text}>"{r.find_text}"</span>
+                      <span className="text-muted-foreground shrink-0">→</span>
+                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.replace_with}>"{r.replace_with}"</span>
+                      <button onClick={() => handleDeleteRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
 
@@ -551,21 +551,6 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
               <p className="text-xs text-muted-foreground">
                 Se la descrizione contiene il testo indicato, la categoria viene assegnata automaticamente — sovrascrive anche le categorie importate da Excel.
               </p>
-              {categoryRules.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  {categoryRules.map(r => (
-                    <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
-                      <span className="text-muted-foreground shrink-0">Contiene:</span>
-                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.value}>"{r.value}"</span>
-                      <span className="text-muted-foreground shrink-0">→</span>
-                      <span className="shrink-0 text-xs">
-                        {r.categories?.icon} {r.categories?.name ?? r.category_id}
-                      </span>
-                      <button onClick={() => handleDeleteCatRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
               <form onSubmit={handleSaveCatRule} className="flex flex-col sm:flex-row items-end gap-2">
                 <div className="flex flex-col gap-1 flex-1">
                   <label className="text-xs text-muted-foreground font-medium">Se contiene</label>
@@ -601,6 +586,21 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
                   {savingCatRule ? "..." : "+ Aggiungi"}
                 </button>
               </form>
+              {categoryRules.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {categoryRules.map(r => (
+                    <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
+                      <span className="text-muted-foreground shrink-0">Contiene:</span>
+                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.value}>"{r.value}"</span>
+                      <span className="text-muted-foreground shrink-0">→</span>
+                      <span className="shrink-0 text-xs">
+                        {r.categories?.icon} {r.categories?.name ?? r.category_id}
+                      </span>
+                      <button onClick={() => handleDeleteCatRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
