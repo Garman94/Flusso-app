@@ -204,3 +204,49 @@ export function estimateGoalCompletion(goal: Goal, monthlySavings: number): stri
   date.setMonth(date.getMonth() + monthsNeeded);
   return date.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
 }
+
+// ─── Historical balance trend (monthly) ──────────────────────────────────────
+export type MonthPoint = { label: string; balance: number };
+
+type MinTx = { date: string; amount: number };
+
+/**
+ * Restituisce il saldo alla fine di ogni mese, lavorando a ritroso
+ * dalla balance attuale: balance_at(T) = currentBalance - Σ(amount > T)
+ */
+function balanceAtMonthEnd(txs: MinTx[], currentBalance: number, endStr: string): number {
+  const future = txs.reduce((s, t) => t.date > endStr ? s + Number(t.amount) : s, 0);
+  return currentBalance - future;
+}
+
+/** Saldo mese per mese dalla prima transazione ad oggi */
+export function calculateAllTimeTrend(txs: MinTx[], currentBalance: number): MonthPoint[] {
+  if (txs.length === 0) return [];
+  const now = new Date();
+  const firstDate = new Date(txs.reduce((min, t) => t.date < min ? t.date : min, txs[0].date) + "T00:00:00");
+  const points: MonthPoint[] = [];
+  let y = firstDate.getFullYear();
+  let m = firstDate.getMonth();
+  while (y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth())) {
+    const monthEnd = new Date(y, m + 1, 0);
+    const endStr   = (monthEnd > now ? now : monthEnd).toISOString().split("T")[0];
+    const label    = new Date(y, m, 1).toLocaleDateString("it-IT", { month: "short", year: "2-digit" });
+    points.push({ label, balance: balanceAtMonthEnd(txs, currentBalance, endStr) });
+    if (++m > 11) { m = 0; y++; }
+  }
+  return points;
+}
+
+/** Saldo mese per mese per un anno specifico */
+export function calculateYearTrend(txs: MinTx[], currentBalance: number, year: number): MonthPoint[] {
+  const now = new Date();
+  const points: MonthPoint[] = [];
+  for (let m = 0; m < 12; m++) {
+    if (new Date(year, m, 1) > now) break;
+    const monthEnd = new Date(year, m + 1, 0);
+    const endStr   = (monthEnd > now ? now : monthEnd).toISOString().split("T")[0];
+    const label    = new Date(year, m, 1).toLocaleDateString("it-IT", { month: "short" });
+    points.push({ label, balance: balanceAtMonthEnd(txs, currentBalance, endStr) });
+  }
+  return points;
+}

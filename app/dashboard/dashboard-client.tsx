@@ -8,11 +8,15 @@ import {
   calculateProjectedBalance,
   calculateTrendData,
   calculateMacroBreakdown,
+  calculateAllTimeTrend,
+  calculateYearTrend,
   estimateGoalCompletion,
   type Transaction,
   type Goal,
   type DailyPoint,
+  type MonthPoint,
 } from "@/lib/calculations";
+import { createClient } from "@/lib/supabase/client";
 import { updateBalance } from "./balance-action";
 import { updatePiggyBalance } from "./piggy-action";
 import { updatePayDay } from "./pay-day-action";
@@ -101,6 +105,63 @@ function TrendChart({ points, prevMonthNet }: { points: DailyPoint[]; prevMonthN
           {d}
         </text>
       ))}
+    </svg>
+  );
+}
+
+// ─── Monthly Trend Chart ─────────────────────────────────────────────────────
+function MonthlyChart({ points }: { points: MonthPoint[] }) {
+  if (points.length < 2) {
+    return (
+      <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
+        Dati insufficienti per il grafico
+      </div>
+    );
+  }
+
+  const W = 600, H = 130;
+  const PAD = { top: 16, right: 12, bottom: 24, left: 12 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+
+  const values = points.map(p => p.balance);
+  const minVal = Math.min(...values);
+  const maxVal = Math.max(...values);
+  const pad    = (maxVal - minVal) * 0.15 || 100;
+  const lo = minVal - pad;
+  const hi = maxVal + pad;
+  const range = hi - lo;
+
+  const n = points.length;
+  function toX(i: number) { return PAD.left + (i / Math.max(n - 1, 1)) * innerW; }
+  function toY(v: number) { return PAD.top + (1 - (v - lo) / range) * innerH; }
+
+  const polyPoints = points.map((p, i) => `${toX(i).toFixed(1)},${toY(p.balance).toFixed(1)}`).join(" ");
+  const areaPoints = `${toX(0).toFixed(1)},${toY(lo).toFixed(1)} ${polyPoints} ${toX(n - 1).toFixed(1)},${toY(lo).toFixed(1)}`;
+
+  const first = points[0].balance;
+  const last  = points[n - 1].balance;
+  const isUp  = last >= first;
+  const color = isUp ? "#22c55e" : "#ef4444";
+
+  // Label ogni ~4 mesi per non sovraffollare
+  const step = Math.max(1, Math.floor(n / 6));
+  const labelIdxs = new Set<number>();
+  for (let i = 0; i < n; i += step) labelIdxs.add(i);
+  labelIdxs.add(n - 1);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
+      <polygon points={areaPoints} fill={color} fillOpacity={0.07} />
+      <polyline points={polyPoints} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={toX(n - 1)} cy={toY(last)} r={4} fill={color} />
+      {points.map((p, i) =>
+        labelIdxs.has(i) ? (
+          <text key={i} x={toX(i)} y={H - 4} fontSize={9} fill="currentColor" fillOpacity={0.4} textAnchor="middle">
+            {p.label}
+          </text>
+        ) : null,
+      )}
     </svg>
   );
 }
@@ -367,6 +428,33 @@ export function DashboardClient({
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
 
+  // ── Chart mode ────────────────────────────────────────────────────────────
+  type ChartMode = "period" | "year" | "all";
+  const [chartMode, setChartMode] = useState<ChartMode>("period");
+  const [chartYear, setChartYear] = useState(new Date().getFullYear());
+  const [histTxs, setHistTxs] = useState<{ date: string; amount: number }[] | null>(null);
+  const [histLoading, setHistLoading] = useState(false);
+
+  async function loadHistorical() {
+    if (histTxs !== null) return;
+    setHistLoading(true);
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setHistLoading(false); return; }
+    const { data } = await supabase
+      .from("transactions")
+      .select("date, amount")
+      .eq("user_id", user.id)
+      .order("date", { ascending: true });
+    setHistTxs(data ?? []);
+    setHistLoading(false);
+  }
+
+  function handleChartMode(m: ChartMode) {
+    setChartMode(m);
+    if (m !== "period") loadHistorical();
+  }
+
   const now = new Date();
 
   // ── Period-aware day calculations ──────────────────────────────────────────
@@ -511,17 +599,59 @@ export function DashboardClient({
       </div>
 
       {/* ── Trend chart ── */}
-      {hasTransactions && trendData.length >= 2 && (
+      {hasTransactions && (
         <div className="rounded-xl border p-5 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-sm">Andamento saldo — {periodLabel}</h2>
-            <span className="text-xs text-muted-foreground">
-              {trendData[trendData.length - 1].balance >= trendData[0].balance
-                ? "↑ in crescita"
-                : "↓ in calo"}
-            </span>
+          {/* Header con selettore modalità */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold text-sm">Andamento saldo</h2>
+            <div className="flex items-center gap-2">
+              {/* Anno selector (visibile solo in modalità anno) */}
+              {chartMode === "year" && (
+                <select
+                  value={chartYear}
+                  onChange={e => setChartYear(Number(e.target.value))}
+                  className="border rounded px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {Array.from({ length: now.getFullYear() - 2020 + 1 }, (_, i) => now.getFullYear() - i).map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              )}
+              {/* Modalità */}
+              <div className="flex rounded-md border overflow-hidden text-xs">
+                {(["period", "year", "all"] as const).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => handleChartMode(m)}
+                    className={`px-3 py-1.5 transition-colors ${chartMode === m ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+                  >
+                    {m === "period" ? "Periodo" : m === "year" ? "Anno" : "Da sempre"}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <TrendChart points={trendData} prevMonthNet={prevMonthNet} />
+
+          {/* Grafico */}
+          {chartMode === "period" && trendData.length >= 2 && (
+            <TrendChart points={trendData} prevMonthNet={prevMonthNet} />
+          )}
+          {chartMode === "period" && trendData.length < 2 && (
+            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
+              Dati insufficienti per il grafico
+            </div>
+          )}
+          {chartMode !== "period" && histLoading && (
+            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground animate-pulse">
+              Caricamento...
+            </div>
+          )}
+          {chartMode === "year" && !histLoading && histTxs && (
+            <MonthlyChart points={calculateYearTrend(histTxs, profile.balance, chartYear)} />
+          )}
+          {chartMode === "all" && !histLoading && histTxs && (
+            <MonthlyChart points={calculateAllTimeTrend(histTxs, profile.balance)} />
+          )}
         </div>
       )}
 
