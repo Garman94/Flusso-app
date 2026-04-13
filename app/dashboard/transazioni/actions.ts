@@ -23,8 +23,8 @@ export async function categorizeTransaction(txId: string, categoryId: string) {
 }
 
 /**
- * Crea una regola keyword → categoria e la applica subito a tutte
- * le transazioni senza categoria che contengono la keyword nella descrizione.
+ * Crea una regola keyword → categoria e la applica subito a TUTTE
+ * le transazioni corrispondenti (sovrascrive anche le categorie esistenti).
  */
 export async function createCategoryRule(keyword: string, categoryId: string) {
   const supabase = await createClient();
@@ -44,12 +44,11 @@ export async function createCategoryRule(keyword: string, categoryId: string) {
 
   if (ruleError) return { error: ruleError.message, count: 0, affectedIds: [] as string[] };
 
-  // Applica la regola a tutte le transazioni senza categoria corrispondenti
+  // Applica a TUTTE le transazioni corrispondenti, incluse quelle già categorizzate
   const { data: affected, error: updateError } = await supabase
     .from("transactions")
     .update({ category_id: categoryId })
     .eq("user_id", userId)
-    .is("category_id", null)
     .ilike("description", `%${kw}%`)
     .select("id");
 
@@ -60,4 +59,20 @@ export async function createCategoryRule(keyword: string, categoryId: string) {
 
   const affectedIds = (affected ?? []).map((t) => t.id);
   return { success: true, count: affectedIds.length, affectedIds };
+}
+
+/** Elimina una regola di categoria */
+export async function deleteCategoryRule(ruleId: string) {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  if (!data?.claims) return { error: "Non autenticato" };
+
+  const { error } = await supabase
+    .from("category_rules")
+    .delete()
+    .eq("id", ruleId)
+    .eq("user_id", data.claims.sub);
+
+  if (error) return { error: error.message };
+  return { success: true };
 }

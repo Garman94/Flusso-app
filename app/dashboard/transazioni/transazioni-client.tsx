@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { ImportExcelModal } from "./import-excel-modal";
-import { createCategoryRule } from "./actions";
+import { createCategoryRule, deleteCategoryRule } from "./actions";
 
 type Category = { id: string; name: string; color: string; icon: string };
 type Transaction = {
@@ -18,7 +18,8 @@ type Transaction = {
   source: string;
   categories: Category | null;
 };
-type DisplayRule = { id: string; find_text: string; replace_with: string };
+type DisplayRule    = { id: string; find_text: string; replace_with: string };
+type CategoryRule   = { id: string; value: string; category_id: string; categories: { name: string; icon: string; color: string } | null };
 
 function formatEuro(n: number) {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
@@ -69,11 +70,12 @@ type Props = {
   initialTransactions: Transaction[];
   initialUncategorized: Transaction[];
   initialDisplayRules: DisplayRule[];
+  initialCategoryRules: CategoryRule[];
   categories: Category[];
   initialFilter?: FilterType;
 };
 
-export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, categories, initialFilter = "all" }: Props) {
+export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories, initialFilter = "all" }: Props) {
   const [transactions, setTransactions] = useState(initialTransactions);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -85,6 +87,12 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
   const [newFind, setNewFind] = useState("");
   const [newReplace, setNewReplace] = useState("");
   const [savingRule, setSavingRule] = useState(false);
+
+  const [categoryRules, setCategoryRules] = useState<CategoryRule[]>(initialCategoryRules);
+  const [showCatRules, setShowCatRules] = useState(false);
+  const [newCatKeyword, setNewCatKeyword] = useState("");
+  const [newCatId, setNewCatId] = useState("");
+  const [savingCatRule, setSavingCatRule] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Navigazione mese/anno
@@ -279,6 +287,47 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
     }
   }
 
+  async function handleSaveCatRule(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newCatKeyword.trim() || !newCatId) return;
+    setSavingCatRule(true);
+    const result = await createCategoryRule(newCatKeyword.trim(), newCatId);
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      const cat = categories.find(c => c.id === newCatId) ?? null;
+      setCategoryRules(prev => [...prev, {
+        id: crypto.randomUUID(),
+        value: newCatKeyword.trim().toLowerCase(),
+        category_id: newCatId,
+        categories: cat,
+      }]);
+      // Aggiorna stato locale transazioni categorizzate dalla regola
+      if ((result.affectedIds ?? []).length > 0) {
+        setTransactions(prev => prev.map(t =>
+          (result.affectedIds ?? []).includes(t.id)
+            ? { ...t, category_id: newCatId, categories: cat }
+            : t,
+        ));
+        toast.success(`Regola salvata e applicata a ${result.count} transazioni.`);
+      } else {
+        toast.success("Regola salvata.");
+      }
+      setNewCatKeyword("");
+      setNewCatId("");
+    }
+    setSavingCatRule(false);
+  }
+
+  async function handleDeleteCatRule(id: string) {
+    const result = await deleteCategoryRule(id);
+    if (result.error) {
+      toast.error("Errore nella cancellazione.");
+    } else {
+      setCategoryRules(prev => prev.filter(r => r.id !== id));
+    }
+  }
+
   function enterEditMode() {
     setEditMode(true);
   }
@@ -380,6 +429,12 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           ) : (
             <>
               <button
+                onClick={() => setShowCatRules(v => !v)}
+                className={`text-sm border rounded-md px-4 py-2 transition-colors ${showCatRules ? "bg-muted" : "hover:bg-muted/50"}`}
+              >
+                Regole categorie
+              </button>
+              <button
                 onClick={() => setShowRules(v => !v)}
                 className={`text-sm border rounded-md px-4 py-2 transition-colors ${showRules ? "bg-muted" : "hover:bg-muted/50"}`}
               >
@@ -422,6 +477,64 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           <button onClick={exitEditMode} className="text-muted-foreground hover:text-foreground transition-colors text-xs shrink-0">
             ✕ Esci
           </button>
+        </div>
+      )}
+
+      {/* Sezione regole categorie */}
+      {showCatRules && (
+        <div className="rounded-xl border p-5 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-sm">Regole categorie automatiche</h2>
+            <button onClick={() => setShowCatRules(false)} className="text-muted-foreground hover:text-foreground text-xs transition-colors">✕ Chiudi</button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Se la descrizione contiene il testo indicato, la categoria viene assegnata automaticamente — sovrascrive anche le categorie importate da Excel.
+          </p>
+
+          {categoryRules.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {categoryRules.map(r => (
+                <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
+                  <span className="text-muted-foreground shrink-0">Contiene:</span>
+                  <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.value}>"{r.value}"</span>
+                  <span className="text-muted-foreground shrink-0">→</span>
+                  <span className="shrink-0 text-xs">
+                    {r.categories?.icon} {r.categories?.name ?? r.category_id}
+                  </span>
+                  <button onClick={() => handleDeleteCatRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <form onSubmit={handleSaveCatRule} className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={newCatKeyword}
+              onChange={e => setNewCatKeyword(e.target.value)}
+              placeholder='Testo da cercare nella descrizione (es. "esselunga")'
+              className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
+              required
+            />
+            <select
+              value={newCatId}
+              onChange={e => setNewCatId(e.target.value)}
+              className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            >
+              <option value="">— Categoria —</option>
+              {categories.map(c => (
+                <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              disabled={savingCatRule}
+              className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {savingCatRule ? "..." : "+ Aggiungi"}
+            </button>
+          </form>
         </div>
       )}
 
