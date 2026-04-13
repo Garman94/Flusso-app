@@ -75,11 +75,17 @@ type Props = {
   initialFilter?: FilterType;
 };
 
-export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories, initialFilter = "all" }: Props) {
+export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, initialFilter = "all" }: Props) {
   const [transactions, setTransactions] = useState(initialTransactions);
+  const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showCatForm, setShowCatForm] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatIcon, setNewCatIcon] = useState("");
+  const [newCatColor, setNewCatColor] = useState("#6366f1");
+  const [savingCat, setSavingCat] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [filter, setFilter] = useState<FilterType>(initialFilter);
   const [displayRules, setDisplayRules] = useState<DisplayRule[]>(initialDisplayRules);
@@ -253,6 +259,29 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
     return true;
   });
 
+  async function handleAddCategory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newCatName.trim()) return;
+    setSavingCat(true);
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("categories")
+      .insert({ user_id: userId, name: newCatName.trim(), icon: newCatIcon.trim() || "📦", color: newCatColor })
+      .select("id, name, color, icon")
+      .single();
+    if (error) {
+      toast.error("Errore nel salvataggio della categoria.");
+    } else {
+      setCategories(prev => [...prev, data as Category].sort((a, b) => a.name.localeCompare(b.name)));
+      toast.success(`Categoria "${data.name}" aggiunta!`);
+      setNewCatName("");
+      setNewCatIcon("");
+      setNewCatColor("#6366f1");
+      setShowCatForm(false);
+    }
+    setSavingCat(false);
+  }
+
   function handleImported(count: number) {
     window.location.reload();
   }
@@ -344,28 +373,36 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-background border rounded-xl p-6 max-w-sm w-full mx-4 flex flex-col gap-4 shadow-xl">
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-lg">Aggiungi movimenti</h2>
+              <h2 className="font-semibold text-lg">Aggiungi</h2>
               <button onClick={() => setShowAddModal(false)} className="text-muted-foreground hover:text-foreground transition-colors text-xl leading-none">✕</button>
             </div>
-            <p className="text-sm text-muted-foreground">Come vuoi aggiungere i movimenti?</p>
-            <div className="grid grid-cols-2 gap-3">
+            <p className="text-sm text-muted-foreground">Cosa vuoi aggiungere?</p>
+            <div className="grid grid-cols-3 gap-3">
               <button
                 onClick={() => { setShowAddModal(false); setShowForm(true); }}
                 disabled={atLimit}
                 title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto.` : ""}
-                className="flex flex-col items-center gap-3 border rounded-xl p-5 hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="text-3xl">✏️</span>
                 <span className="text-sm font-medium">Manuale</span>
-                <span className="text-xs text-muted-foreground text-center">Inserisci un singolo movimento</span>
+                <span className="text-xs text-muted-foreground text-center">Singolo movimento</span>
               </button>
               <button
                 onClick={() => { setShowAddModal(false); setShowImport(true); }}
-                className="flex flex-col items-center gap-3 border rounded-xl p-5 hover:border-primary hover:bg-primary/5 transition-colors"
+                className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors"
               >
                 <span className="text-3xl">📊</span>
                 <span className="text-sm font-medium">Excel / CSV</span>
                 <span className="text-xs text-muted-foreground text-center">Importa estratto conto</span>
+              </button>
+              <button
+                onClick={() => { setShowAddModal(false); setShowCatForm(true); }}
+                className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors"
+              >
+                <span className="text-3xl">🏷️</span>
+                <span className="text-sm font-medium">Categoria</span>
+                <span className="text-xs text-muted-foreground text-center">Crea nuova categoria</span>
               </button>
             </div>
           </div>
@@ -380,6 +417,58 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           onClose={() => setShowImport(false)}
           onImported={handleImported}
         />
+      )}
+
+      {/* Form nuova categoria */}
+      {showCatForm && (
+        <form onSubmit={handleAddCategory} className="rounded-xl border p-5 flex flex-col gap-4 bg-card">
+          <h2 className="font-semibold">Nuova categoria</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-1.5 sm:col-span-1">
+              <label className="text-sm font-medium">Icona (emoji)</label>
+              <input
+                type="text"
+                value={newCatIcon}
+                onChange={e => setNewCatIcon(e.target.value)}
+                placeholder="es. 🛒"
+                className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-1">
+              <label className="text-sm font-medium">Nome</label>
+              <input
+                type="text"
+                value={newCatName}
+                onChange={e => setNewCatName(e.target.value)}
+                placeholder="es. Supermercato"
+                required
+                className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-1">
+              <label className="text-sm font-medium">Colore</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={newCatColor}
+                  onChange={e => setNewCatColor(e.target.value)}
+                  className="h-9 w-14 rounded border cursor-pointer bg-background"
+                />
+                <span className="text-sm text-muted-foreground font-mono">{newCatColor}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button type="submit" disabled={savingCat}
+              className="bg-primary text-primary-foreground rounded-md px-5 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              {savingCat ? "Salvataggio..." : "Salva"}
+            </button>
+            <button type="button" onClick={() => setShowCatForm(false)}
+              className="border rounded-md px-5 py-2 text-sm hover:bg-muted/50 transition-colors">
+              Annulla
+            </button>
+          </div>
+        </form>
       )}
 
       {/* Navigazione mese / anno */}
