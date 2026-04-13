@@ -566,26 +566,33 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
                   ))}
                 </div>
               )}
-              <form onSubmit={handleSaveCatRule} className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  value={newCatKeyword}
-                  onChange={e => setNewCatKeyword(e.target.value)}
-                  placeholder='Testo da cercare nella descrizione (es. "esselunga")'
-                  className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
-                  required
-                />
-                <select
-                  value={newCatId}
-                  onChange={e => setNewCatId(e.target.value)}
-                  className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                  required
-                >
-                  <option value="">— Categoria —</option>
-                  {categories.map(c => (
-                    <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
-                  ))}
-                </select>
+              <form onSubmit={handleSaveCatRule} className="flex flex-col sm:flex-row items-end gap-2">
+                <div className="flex flex-col gap-1 flex-1">
+                  <label className="text-xs text-muted-foreground font-medium">Se contiene</label>
+                  <input
+                    type="text"
+                    value={newCatKeyword}
+                    onChange={e => setNewCatKeyword(e.target.value)}
+                    placeholder='es. "steam"'
+                    className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary w-full"
+                    required
+                  />
+                </div>
+                <span className="text-muted-foreground pb-2 hidden sm:block">→</span>
+                <div className="flex flex-col gap-1 flex-1">
+                  <label className="text-xs text-muted-foreground font-medium">Allora categoria</label>
+                  <select
+                    value={newCatId}
+                    onChange={e => setNewCatId(e.target.value)}
+                    className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary w-full"
+                    required
+                  >
+                    <option value="">— Seleziona —</option>
+                    {categories.map(c => (
+                      <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                    ))}
+                  </select>
+                </div>
                 <button
                   type="submit"
                   disabled={savingCatRule}
