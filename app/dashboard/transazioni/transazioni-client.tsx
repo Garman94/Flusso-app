@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { ImportExcelModal } from "./import-excel-modal";
+import { ScreenshotModal } from "./screenshot-modal";
 import { createCategoryRule, deleteCategoryRule } from "./actions";
 
 type Category = { id: string; name: string; color: string; icon: string };
@@ -82,6 +83,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showCatForm, setShowCatForm] = useState(false);
+  const [showScreenshot, setShowScreenshot] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatIcon, setNewCatIcon] = useState("");
   const [newCatColor, setNewCatColor] = useState("#6366f1");
@@ -267,7 +269,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
     setSavingCat(false);
   }
 
-  function handleImported(count: number) {
+  function handleImported(_result: number | any[]) {
     window.location.reload();
   }
 
@@ -362,7 +364,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
               <button onClick={() => setShowAddModal(false)} className="text-muted-foreground hover:text-foreground transition-colors text-xl leading-none">✕</button>
             </div>
             <p className="text-sm text-muted-foreground">Cosa vuoi aggiungere?</p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => { setShowAddModal(false); setShowForm(true); setRulesPanel(null); }}
                 disabled={atLimit}
@@ -380,6 +382,14 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
                 <span className="text-3xl">📊</span>
                 <span className="text-sm font-medium">Excel / CSV</span>
                 <span className="text-xs text-muted-foreground text-center">Importa estratto conto</span>
+              </button>
+              <button
+                onClick={() => { setShowAddModal(false); setShowScreenshot(true); setRulesPanel(null); }}
+                className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors"
+              >
+                <span className="text-3xl">📷</span>
+                <span className="text-sm font-medium">Screenshot</span>
+                <span className="text-xs text-muted-foreground text-center">Analisi AI dell'immagine</span>
               </button>
               <button
                 onClick={() => { setShowAddModal(false); setShowCatForm(true); setRulesPanel(null); }}
@@ -400,6 +410,16 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           userId={userId}
           categories={categories}
           onClose={() => setShowImport(false)}
+          onImported={handleImported}
+        />
+      )}
+
+      {/* Screenshot import modal */}
+      {showScreenshot && (
+        <ScreenshotModal
+          userId={userId}
+          categories={categories}
+          onClose={() => setShowScreenshot(false)}
           onImported={handleImported}
         />
       )}

@@ -7,7 +7,7 @@ import {
   calculateFinancialScore,
   calculateProjectedBalance,
   calculateTrendData,
-  calculateMacroBreakdown,
+  calculateCategoryBreakdown,
   calculateAllTimeTrend,
   calculateYearTrend,
   estimateGoalCompletion,
@@ -39,6 +39,29 @@ type Props = {
   periodFrom: string; // ISO date, start of current period
   periodTo: string;   // ISO date, end of current period
 };
+
+// ─── SVG smooth curve helper ──────────────────────────────────────────────────
+// Converts an array of [x,y] points into an SVG path `d` using cubic bezier
+// curves (midpoint control points) for a smooth look.
+function smoothLinePath(pts: Array<[number, number]>): string {
+  if (pts.length < 2) return "";
+  const parts: string[] = [`M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`];
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1];
+    const [x1, y1] = pts[i];
+    const cpx = ((x0 + x1) / 2).toFixed(1);
+    parts.push(`C ${cpx} ${y0.toFixed(1)}, ${cpx} ${y1.toFixed(1)}, ${x1.toFixed(1)} ${y1.toFixed(1)}`);
+  }
+  return parts.join(" ");
+}
+
+function smoothAreaPath(pts: Array<[number, number]>, baseY: number): string {
+  if (pts.length < 2) return "";
+  const line = smoothLinePath(pts);
+  const [lastX] = pts[pts.length - 1];
+  const [firstX] = pts[0];
+  return `${line} L ${lastX.toFixed(1)} ${baseY.toFixed(1)} L ${firstX.toFixed(1)} ${baseY.toFixed(1)} Z`;
+}
 
 // ─── SVG Trend Chart ──────────────────────────────────────────────────────────
 function TrendChart({ points, prevMonthNet }: { points: DailyPoint[]; prevMonthNet: number }) {
@@ -72,18 +95,17 @@ function TrendChart({ points, prevMonthNet }: { points: DailyPoint[]; prevMonthN
   function toX(day: number) { return PAD.left + ((day - 1) / Math.max(lastDay - 1, 1)) * innerW; }
   function toY(val: number) { return PAD.top + (1 - (val - lo) / range) * innerH; }
 
-  const polyPoints = points.map(p => `${toX(p.day).toFixed(1)},${toY(p.balance).toFixed(1)}`).join(" ");
+  const xyPts: Array<[number, number]> = points.map(p => [toX(p.day), toY(p.balance)]);
+  const baseY = toY(lo);
 
   const daysInPrevMonth = 30;
   const prevDailyNet = prevMonthNet / daysInPrevMonth;
   const prevRefBalance = points[0].balance + prevDailyNet * lastDay;
   const prevY = toY(Math.max(lo, Math.min(hi, prevRefBalance)));
 
-  const areaPoints = `${toX(1).toFixed(1)},${toY(lo).toFixed(1)} ${polyPoints} ${toX(lastDay).toFixed(1)},${toY(lo).toFixed(1)}`;
-
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
-      <polygon points={areaPoints} fill={lineColor} fillOpacity={0.07} />
+      <path d={smoothAreaPath(xyPts, baseY)} fill={lineColor} fillOpacity={0.07} />
       <line
         x1={PAD.left} y1={prevY} x2={W - PAD.right} y2={prevY}
         stroke="currentColor" strokeOpacity={0.25} strokeWidth={1.5} strokeDasharray="5 4"
@@ -91,8 +113,8 @@ function TrendChart({ points, prevMonthNet }: { points: DailyPoint[]; prevMonthN
       <text x={W - PAD.right - 2} y={prevY - 4} fontSize={9} fill="currentColor" fillOpacity={0.4} textAnchor="end">
         mese scorso
       </text>
-      <polyline
-        points={polyPoints}
+      <path
+        d={smoothLinePath(xyPts)}
         fill="none"
         stroke={lineColor}
         strokeWidth={2.5}
@@ -136,13 +158,13 @@ function MonthlyChart({ points }: { points: MonthPoint[] }) {
   function toX(i: number) { return PAD.left + (i / Math.max(n - 1, 1)) * innerW; }
   function toY(v: number) { return PAD.top + (1 - (v - lo) / range) * innerH; }
 
-  const polyPoints = points.map((p, i) => `${toX(i).toFixed(1)},${toY(p.balance).toFixed(1)}`).join(" ");
-  const areaPoints = `${toX(0).toFixed(1)},${toY(lo).toFixed(1)} ${polyPoints} ${toX(n - 1).toFixed(1)},${toY(lo).toFixed(1)}`;
-
   const first = points[0].balance;
   const last  = points[n - 1].balance;
   const isUp  = last >= first;
   const color = isUp ? "#22c55e" : "#ef4444";
+
+  const xyPts: Array<[number, number]> = points.map((p, i) => [toX(i), toY(p.balance)]);
+  const baseY = toY(lo);
 
   // Label ogni ~4 mesi per non sovraffollare
   const step = Math.max(1, Math.floor(n / 6));
@@ -152,8 +174,8 @@ function MonthlyChart({ points }: { points: MonthPoint[] }) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
-      <polygon points={areaPoints} fill={color} fillOpacity={0.07} />
-      <polyline points={polyPoints} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+      <path d={smoothAreaPath(xyPts, baseY)} fill={color} fillOpacity={0.07} />
+      <path d={smoothLinePath(xyPts)} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={toX(n - 1)} cy={toY(last)} r={4} fill={color} />
       {points.map((p, i) =>
         labelIdxs.has(i) ? (
@@ -487,7 +509,7 @@ export function DashboardClient({
   const projected = calculateProjectedBalance(profile.balance, expensesAbs, daysPassed, daysRemaining);
   const startDay  = payDay > 0 ? periodStart.getDate() : 1;
   const trendData = calculateTrendData(currentTxs, profile.balance, year, month, startDay);
-  const macro     = calculateMacroBreakdown(spendableTxs);
+  const macro     = calculateCategoryBreakdown(spendableTxs);
   const monthlySavings = income - expensesAbs;
 
   const hasTransactions    = currentTxs.length > 0;
@@ -559,6 +581,34 @@ export function DashboardClient({
           </span>
         </Link>
       )}
+
+      {/* ── Panoramica Generali ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border p-4 flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">Entrate</span>
+          <span className="text-lg font-bold tabular-nums text-green-600 dark:text-green-400">{formatEuro(income)}</span>
+          <span className="text-xs text-muted-foreground">{periodLabel}</span>
+        </div>
+        <div className="rounded-xl border p-4 flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">Uscite</span>
+          <span className="text-lg font-bold tabular-nums text-red-500">{formatEuro(expensesAbs)}</span>
+          <span className="text-xs text-muted-foreground">{periodLabel}</span>
+        </div>
+        <div className="rounded-xl border p-4 flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">Risparmio netto</span>
+          <span className={`text-lg font-bold tabular-nums ${monthlySavings >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
+            {monthlySavings >= 0 ? "+" : ""}{formatEuro(monthlySavings)}
+          </span>
+          <span className="text-xs text-muted-foreground">questo periodo</span>
+        </div>
+        <div className="rounded-xl border p-4 flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">Media giornaliera</span>
+          <span className="text-lg font-bold tabular-nums text-red-500">
+            {formatEuro(daysPassed > 0 ? expensesAbs / daysPassed : 0)}
+          </span>
+          <span className="text-xs text-muted-foreground">spesa / giorno</span>
+        </div>
+      </div>
 
       {/* ── Hero: saldo + score ── */}
       <div className="rounded-xl border p-4 sm:p-6 flex flex-col sm:flex-row gap-4 sm:gap-6 sm:items-center justify-between">

@@ -193,6 +193,40 @@ export function calculateMacroBreakdown(transactions: Transaction[]): MacroBreak
     .sort((a, b) => b.total - a.total);
 }
 
+// ─── Real category breakdown ──────────────────────────────────────────────────
+export type CategoryBreakdown = {
+  key: string;        // category_id or "__none__"
+  label: string;
+  icon: string;
+  color: string;
+  total: number;
+  pct: number;
+};
+
+export function calculateCategoryBreakdown(transactions: Transaction[]): CategoryBreakdown[] {
+  const expenses = transactions.filter(t => Number(t.amount) < 0);
+  const totalExpenses = expenses.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+  if (totalExpenses === 0) return [];
+
+  const map = new Map<string, { label: string; icon: string; color: string; total: number }>();
+  for (const t of expenses) {
+    const key   = t.category_id ?? "__none__";
+    const label = t.categories?.name  ?? "Senza categoria";
+    const icon  = t.categories?.icon  ?? "📦";
+    const color = t.categories?.color ?? "#94a3b8";
+    const entry = map.get(key);
+    if (entry) {
+      entry.total += Math.abs(Number(t.amount));
+    } else {
+      map.set(key, { label, icon, color, total: Math.abs(Number(t.amount)) });
+    }
+  }
+
+  return Array.from(map.entries())
+    .map(([key, v]) => ({ key, ...v, pct: (v.total / totalExpenses) * 100 }))
+    .sort((a, b) => b.total - a.total);
+}
+
 // ─── Goal estimated completion ────────────────────────────────────────────────
 // monthlySavings = income - expenses for current month (proxy for savings rate)
 export function estimateGoalCompletion(goal: Goal, monthlySavings: number): string | null {
