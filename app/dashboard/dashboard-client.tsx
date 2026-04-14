@@ -6,15 +6,10 @@ import {
   formatEuro,
   calculateFinancialScore,
   calculateProjectedBalance,
-  calculateTrendData,
   calculateCategoryBreakdown,
-  calculateAllTimeTrend,
-  calculateYearTrend,
   estimateGoalCompletion,
   type Transaction,
   type Goal,
-  type DailyPoint,
-  type MonthPoint,
 } from "@/lib/calculations";
 import { createClient } from "@/lib/supabase/client";
 import { updateBalance } from "./balance-action";
@@ -39,154 +34,6 @@ type Props = {
   periodFrom: string; // ISO date, start of current period
   periodTo: string;   // ISO date, end of current period
 };
-
-// ─── SVG smooth curve helper ──────────────────────────────────────────────────
-// Converts an array of [x,y] points into an SVG path `d` using cubic bezier
-// curves (midpoint control points) for a smooth look.
-function smoothLinePath(pts: Array<[number, number]>): string {
-  if (pts.length < 2) return "";
-  const parts: string[] = [`M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`];
-  for (let i = 1; i < pts.length; i++) {
-    const [x0, y0] = pts[i - 1];
-    const [x1, y1] = pts[i];
-    const cpx = ((x0 + x1) / 2).toFixed(1);
-    parts.push(`C ${cpx} ${y0.toFixed(1)}, ${cpx} ${y1.toFixed(1)}, ${x1.toFixed(1)} ${y1.toFixed(1)}`);
-  }
-  return parts.join(" ");
-}
-
-function smoothAreaPath(pts: Array<[number, number]>, baseY: number): string {
-  if (pts.length < 2) return "";
-  const line = smoothLinePath(pts);
-  const [lastX] = pts[pts.length - 1];
-  const [firstX] = pts[0];
-  return `${line} L ${lastX.toFixed(1)} ${baseY.toFixed(1)} L ${firstX.toFixed(1)} ${baseY.toFixed(1)} Z`;
-}
-
-// ─── SVG Trend Chart ──────────────────────────────────────────────────────────
-function TrendChart({ points, prevMonthNet }: { points: DailyPoint[]; prevMonthNet: number }) {
-  if (points.length < 2) {
-    return (
-      <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-        Dati insufficienti per il grafico
-      </div>
-    );
-  }
-
-  const W = 600, H = 130;
-  const PAD = { top: 16, right: 12, bottom: 24, left: 12 };
-  const innerW = W - PAD.left - PAD.right;
-  const innerH = H - PAD.top - PAD.bottom;
-
-  const values = points.map(p => p.balance);
-  const minVal = Math.min(...values);
-  const maxVal = Math.max(...values);
-  const padding = (maxVal - minVal) * 0.15 || 100;
-  const lo = minVal - padding;
-  const hi = maxVal + padding;
-  const range = hi - lo;
-
-  const lastDay = points[points.length - 1].day;
-  const firstBalance = points[0].balance;
-  const lastBalance  = points[points.length - 1].balance;
-  const isUp = lastBalance >= firstBalance;
-  const lineColor = isUp ? "#22c55e" : "#ef4444";
-
-  function toX(day: number) { return PAD.left + ((day - 1) / Math.max(lastDay - 1, 1)) * innerW; }
-  function toY(val: number) { return PAD.top + (1 - (val - lo) / range) * innerH; }
-
-  const xyPts: Array<[number, number]> = points.map(p => [toX(p.day), toY(p.balance)]);
-  const baseY = toY(lo);
-
-  const daysInPrevMonth = 30;
-  const prevDailyNet = prevMonthNet / daysInPrevMonth;
-  const prevRefBalance = points[0].balance + prevDailyNet * lastDay;
-  const prevY = toY(Math.max(lo, Math.min(hi, prevRefBalance)));
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
-      <path d={smoothAreaPath(xyPts, baseY)} fill={lineColor} fillOpacity={0.07} />
-      <line
-        x1={PAD.left} y1={prevY} x2={W - PAD.right} y2={prevY}
-        stroke="currentColor" strokeOpacity={0.25} strokeWidth={1.5} strokeDasharray="5 4"
-      />
-      <text x={W - PAD.right - 2} y={prevY - 4} fontSize={9} fill="currentColor" fillOpacity={0.4} textAnchor="end">
-        mese scorso
-      </text>
-      <path
-        d={smoothLinePath(xyPts)}
-        fill="none"
-        stroke={lineColor}
-        strokeWidth={2.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx={toX(lastDay)} cy={toY(lastBalance)} r={4} fill={lineColor} />
-      {[1, Math.round(lastDay / 2), lastDay].map(d => (
-        <text key={d} x={toX(d)} y={H - 4} fontSize={9} fill="currentColor" fillOpacity={0.35} textAnchor="middle">
-          {d}
-        </text>
-      ))}
-    </svg>
-  );
-}
-
-// ─── Monthly Trend Chart ─────────────────────────────────────────────────────
-function MonthlyChart({ points }: { points: MonthPoint[] }) {
-  if (points.length < 2) {
-    return (
-      <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-        Dati insufficienti per il grafico
-      </div>
-    );
-  }
-
-  const W = 600, H = 130;
-  const PAD = { top: 16, right: 12, bottom: 24, left: 12 };
-  const innerW = W - PAD.left - PAD.right;
-  const innerH = H - PAD.top - PAD.bottom;
-
-  const values = points.map(p => p.balance);
-  const minVal = Math.min(...values);
-  const maxVal = Math.max(...values);
-  const pad    = (maxVal - minVal) * 0.15 || 100;
-  const lo = minVal - pad;
-  const hi = maxVal + pad;
-  const range = hi - lo;
-
-  const n = points.length;
-  function toX(i: number) { return PAD.left + (i / Math.max(n - 1, 1)) * innerW; }
-  function toY(v: number) { return PAD.top + (1 - (v - lo) / range) * innerH; }
-
-  const first = points[0].balance;
-  const last  = points[n - 1].balance;
-  const isUp  = last >= first;
-  const color = isUp ? "#22c55e" : "#ef4444";
-
-  const xyPts: Array<[number, number]> = points.map((p, i) => [toX(i), toY(p.balance)]);
-  const baseY = toY(lo);
-
-  // Label ogni ~4 mesi per non sovraffollare
-  const step = Math.max(1, Math.floor(n / 6));
-  const labelIdxs = new Set<number>();
-  for (let i = 0; i < n; i += step) labelIdxs.add(i);
-  labelIdxs.add(n - 1);
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
-      <path d={smoothAreaPath(xyPts, baseY)} fill={color} fillOpacity={0.07} />
-      <path d={smoothLinePath(xyPts)} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={toX(n - 1)} cy={toY(last)} r={4} fill={color} />
-      {points.map((p, i) =>
-        labelIdxs.has(i) ? (
-          <text key={i} x={toX(i)} y={H - 4} fontSize={9} fill="currentColor" fillOpacity={0.4} textAnchor="middle">
-            {p.label}
-          </text>
-        ) : null,
-      )}
-    </svg>
-  );
-}
 
 // ─── Balance editor ───────────────────────────────────────────────────────────
 function BalanceEditor({ currentBalance }: { currentBalance: number }) {
@@ -450,33 +297,6 @@ export function DashboardClient({
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
 
-  // ── Chart mode ────────────────────────────────────────────────────────────
-  type ChartMode = "period" | "year" | "all";
-  const [chartMode, setChartMode] = useState<ChartMode>("period");
-  const [chartYear, setChartYear] = useState(new Date().getFullYear());
-  const [histTxs, setHistTxs] = useState<{ date: string; amount: number }[] | null>(null);
-  const [histLoading, setHistLoading] = useState(false);
-
-  async function loadHistorical() {
-    if (histTxs !== null) return;
-    setHistLoading(true);
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setHistLoading(false); return; }
-    const { data } = await supabase
-      .from("transactions")
-      .select("date, amount")
-      .eq("user_id", user.id)
-      .order("date", { ascending: true });
-    setHistTxs(data ?? []);
-    setHistLoading(false);
-  }
-
-  function handleChartMode(m: ChartMode) {
-    setChartMode(m);
-    if (m !== "period") loadHistorical();
-  }
-
   const now = new Date();
 
   // ── Period-aware day calculations ──────────────────────────────────────────
@@ -502,13 +322,9 @@ export function DashboardClient({
   const spendableTxs = currentTxs.filter(t => !isTransfer(t));
   const income      = spendableTxs.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
   const expensesAbs = spendableTxs.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-  const prevMonthNet = prevTxsAmounts.reduce((s, a) => s + a, 0);
-
   // ── Calculations ─────────────────────────────────────────────────────────
   const score     = calculateFinancialScore(income, expensesAbs);
   const projected = calculateProjectedBalance(profile.balance, expensesAbs, daysPassed, daysRemaining);
-  const startDay  = payDay > 0 ? periodStart.getDate() : 1;
-  const trendData = calculateTrendData(currentTxs, profile.balance, year, month, startDay);
   const macro     = calculateCategoryBreakdown(spendableTxs);
   const monthlySavings = income - expensesAbs;
 
@@ -647,63 +463,6 @@ export function DashboardClient({
           </div>
         )}
       </div>
-
-      {/* ── Trend chart ── */}
-      {hasTransactions && (
-        <div className="rounded-xl border p-5 flex flex-col gap-3">
-          {/* Header con selettore modalità */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-semibold text-sm">Andamento saldo</h2>
-            <div className="flex items-center gap-2">
-              {/* Anno selector (visibile solo in modalità anno) */}
-              {chartMode === "year" && (
-                <select
-                  value={chartYear}
-                  onChange={e => setChartYear(Number(e.target.value))}
-                  className="border rounded px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  {Array.from({ length: now.getFullYear() - 2020 + 1 }, (_, i) => now.getFullYear() - i).map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              )}
-              {/* Modalità */}
-              <div className="flex rounded-md border overflow-hidden text-xs">
-                {(["period", "year", "all"] as const).map(m => (
-                  <button
-                    key={m}
-                    onClick={() => handleChartMode(m)}
-                    className={`px-3 py-1.5 transition-colors ${chartMode === m ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
-                  >
-                    {m === "period" ? "Periodo" : m === "year" ? "Anno" : "Da sempre"}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Grafico */}
-          {chartMode === "period" && trendData.length >= 2 && (
-            <TrendChart points={trendData} prevMonthNet={prevMonthNet} />
-          )}
-          {chartMode === "period" && trendData.length < 2 && (
-            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-              Dati insufficienti per il grafico
-            </div>
-          )}
-          {chartMode !== "period" && histLoading && (
-            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground animate-pulse">
-              Caricamento...
-            </div>
-          )}
-          {chartMode === "year" && !histLoading && histTxs && (
-            <MonthlyChart points={calculateYearTrend(histTxs, profile.balance, chartYear)} />
-          )}
-          {chartMode === "all" && !histLoading && histTxs && (
-            <MonthlyChart points={calculateAllTimeTrend(histTxs, profile.balance)} />
-          )}
-        </div>
-      )}
 
       {/* ── Empty state ── */}
       {!hasAnyTransactions && (
