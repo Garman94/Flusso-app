@@ -130,6 +130,7 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
 
           {/* Preview immagine */}
           {preview && !rows && (
+            // eslint-disable-next-line @next/next/no-img-element
             <img src={preview} alt="preview" className="rounded-lg max-h-48 object-contain border w-full" />
           )}
 
