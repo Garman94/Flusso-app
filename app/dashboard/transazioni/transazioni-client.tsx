@@ -524,55 +524,77 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
             </button>
           ) : (
             <>
-              {/* + Aggiungi sempre visibile */}
-              <button
-                onClick={() => setShowAddModal(true)}
-                disabled={atLimit}
-                title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto. Passa a Premium.` : ""}
-                className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                + Aggiungi
-              </button>
-
-              {/* Hamburger menu per azioni secondarie */}
-              <div className="relative">
+              {/* Desktop: tutti i tasti in fila */}
+              <div className="hidden sm:flex items-center gap-2">
                 <button
-                  onClick={() => setShowActionsMenu(v => !v)}
-                  className={`border rounded-md p-2 transition-colors ${showActionsMenu ? "bg-muted" : "hover:bg-muted/50"}`}
-                  title="Altre azioni"
+                  onClick={() => setRulesPanel(v => v ? null : "display")}
+                  className={`text-sm border rounded-md px-4 py-2 transition-colors ${rulesPanel ? "bg-muted" : "hover:bg-muted/50"}`}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
-                  </svg>
+                  Regole
                 </button>
+                <button
+                  onClick={() => enterEditMode()}
+                  className="text-sm border rounded-md px-4 py-2 hover:bg-muted/50 transition-colors"
+                >
+                  Modifica categorie
+                </button>
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  disabled={atLimit}
+                  title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto. Passa a Premium.` : ""}
+                  className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  + Aggiungi
+                </button>
+              </div>
 
-                {showActionsMenu && (
-                  <>
-                    {/* Overlay per chiudere */}
-                    <div className="fixed inset-0 z-10" onClick={() => setShowActionsMenu(false)} />
-                    <div className="absolute right-0 top-full mt-1 z-20 bg-background border rounded-xl shadow-lg py-1 w-48 flex flex-col">
-                      <button
-                        onClick={() => { setRulesPanel(v => v ? null : "display"); setShowActionsMenu(false); }}
-                        className={`flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors text-left ${rulesPanel ? "text-primary font-medium" : ""}`}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <path d="M11 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5" />
-                          <path d="m15 14 2 2 4-4" />
-                        </svg>
-                        Regole
-                      </button>
-                      <button
-                        onClick={() => { enterEditMode(); setShowActionsMenu(false); }}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors text-left"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                        </svg>
-                        Modifica categorie
-                      </button>
-                    </div>
-                  </>
-                )}
+              {/* Mobile: + Aggiungi + hamburger */}
+              <div className="flex sm:hidden items-center gap-2">
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  disabled={atLimit}
+                  title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto. Passa a Premium.` : ""}
+                  className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  + Aggiungi
+                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setShowActionsMenu(v => !v)}
+                    className={`border rounded-md p-2 transition-colors ${showActionsMenu ? "bg-muted" : "hover:bg-muted/50"}`}
+                    title="Altre azioni"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+                    </svg>
+                  </button>
+                  {showActionsMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowActionsMenu(false)} />
+                      <div className="absolute right-0 top-full mt-1 z-20 bg-background border rounded-xl shadow-lg py-1 w-48 flex flex-col">
+                        <button
+                          onClick={() => { setRulesPanel(v => v ? null : "display"); setShowActionsMenu(false); }}
+                          className={`flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors text-left ${rulesPanel ? "text-primary font-medium" : ""}`}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path d="M11 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5" />
+                            <path d="m15 14 2 2 4-4" />
+                          </svg>
+                          Regole
+                        </button>
+                        <button
+                          onClick={() => { enterEditMode(); setShowActionsMenu(false); }}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors text-left"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                          </svg>
+                          Modifica categorie
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </>
           )}
