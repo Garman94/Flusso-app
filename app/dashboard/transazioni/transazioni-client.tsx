@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { ImportExcelModal } from "./import-excel-modal";
 import { ScreenshotModal } from "./screenshot-modal";
+import { SmartClient } from "./smart-client";
 import { createCategoryRule, deleteCategoryRule } from "./actions";
 
 type Category = { id: string; name: string; color: string; icon: string };
@@ -77,6 +78,7 @@ type Props = {
 };
 
 export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, initialFilter = "all" }: Props) {
+  const [view, setView] = useState<"transactions" | "smart">("transactions");
   const [transactions, setTransactions] = useState(initialTransactions);
   const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -512,40 +514,56 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Transazioni</h1>
-        <div className="flex items-center gap-2">
-          {editMode ? (
-            <button
-              onClick={exitEditMode}
-              className="text-sm bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 transition-colors font-medium"
-            >
-              ✓ Fatto
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={() => setRulesPanel(v => v ? null : "display")}
-                className={`text-sm border rounded-md px-4 py-2 transition-colors ${rulesPanel ? "bg-muted" : "hover:bg-muted/50"}`}
-              >
-                Regole
-              </button>
-              <button
-                onClick={() => enterEditMode()}
-                className="text-sm border rounded-md px-4 py-2 hover:bg-muted/50 transition-colors"
-              >
-                Modifica categorie
-              </button>
-              <button
-                onClick={() => setShowAddModal(true)}
-                disabled={atLimit}
-                title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto. Passa a Premium.` : ""}
-                className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                + Aggiungi
-              </button>
-            </>
-          )}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setView("transactions")}
+            className={`text-2xl font-bold transition-colors ${view === "transactions" ? "text-foreground" : "text-muted-foreground/30 hover:text-muted-foreground/60"}`}
+          >
+            Transazioni
+          </button>
+          <span className="text-muted-foreground/20 text-2xl font-light select-none">/</span>
+          <button
+            onClick={() => setView("smart")}
+            className={`text-2xl font-bold transition-colors ${view === "smart" ? "text-foreground" : "text-muted-foreground/30 hover:text-muted-foreground/60"}`}
+          >
+            Smart!
+          </button>
         </div>
+        {view === "transactions" && (
+          <div className="flex items-center gap-2">
+            {editMode ? (
+              <button
+                onClick={exitEditMode}
+                className="text-sm bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 transition-colors font-medium"
+              >
+                ✓ Fatto
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => setRulesPanel(v => v ? null : "display")}
+                  className={`text-sm border rounded-md px-4 py-2 transition-colors ${rulesPanel ? "bg-muted" : "hover:bg-muted/50"}`}
+                >
+                  Regole
+                </button>
+                <button
+                  onClick={() => enterEditMode()}
+                  className="text-sm border rounded-md px-4 py-2 hover:bg-muted/50 transition-colors"
+                >
+                  Modifica categorie
+                </button>
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  disabled={atLimit}
+                  title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto. Passa a Premium.` : ""}
+                  className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  + Aggiungi
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {atLimit && (
@@ -569,8 +587,13 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
         </div>
       )}
 
-      {/* Pannello regole unificato */}
-      {rulesPanel && (
+      {/* ── Vista Smart ── */}
+      {view === "smart" && (
+        <SmartClient userId={userId} categories={categories} transactions={transactions} />
+      )}
+
+      {/* ── Vista Transazioni ── */}
+      {view === "transactions" && rulesPanel && (
         <div className="rounded-xl border p-5 flex flex-col gap-4">
           {/* Header con selector tipo e chiudi */}
           <div className="flex items-center justify-between gap-3">
@@ -699,6 +722,8 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           )}
         </div>
       )}
+
+      {view === "transactions" && <>
 
       {/* Form aggiunta */}
       {showForm && (
@@ -902,6 +927,8 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           </div>
         </div>
       )}
+
+      </>}
     </div>
   );
 }
