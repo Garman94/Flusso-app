@@ -27,8 +27,8 @@ async function DashboardNav() {
           <Link href="/dashboard/transazioni" className="hover:text-foreground transition-colors">
             Transazioni
           </Link>
-          <Link href="/dashboard/obiettivi" className="hover:text-foreground transition-colors">
-            Obiettivi
+          <Link href="/dashboard/smart" className="hover:text-foreground transition-colors">
+            Smart
           </Link>
           <Link href="/dashboard/account" className="hover:text-foreground transition-colors">
             Impostazioni
@@ -89,11 +89,11 @@ export default function DashboardLayout({
           </svg>
           <span className="text-[10px]">Transazioni</span>
         </Link>
-        <Link href="/dashboard/obiettivi" className="flex flex-col items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors py-1 px-3">
+        <Link href="/dashboard/smart" className="flex flex-col items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors py-1 px-3">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-            <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
-          <span className="text-[10px]">Obiettivi</span>
+          <span className="text-[10px]">Smart</span>
         </Link>
         <Link href="/dashboard/account" className="flex flex-col items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors py-1 px-3">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
