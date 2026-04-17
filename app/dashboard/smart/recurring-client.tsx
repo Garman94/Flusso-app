@@ -69,8 +69,10 @@ const TEMPLATES: Template[] = [
     tipologia: "variabile",
     frequency: "bimestrale",
     matching_strategy: "historical_avg",
-    keywords: ["enel", "eni gas", "a2a", "hera", "iren", "luce", "gas", "bolletta"],
-    notes: "Previsione basata sulla media dello stesso mese negli anni precedenti",
+    // Solo nomi provider specifici — evita falsi positivi con parole generiche come "gas" o "luce"
+    // L'utente deve aggiungere il nome esatto del proprio provider (es. "enel energia", "eni gas luce")
+    keywords: ["enel energia", "enel gas", "eni gas luce", "a2a energia", "hera energia", "hera gas", "iren energia", "iren gas", "italgas", "snam rete gas", "2i rete gas"],
+    notes: "Previsione basata sulla media dello stesso mese negli anni precedenti. Personalizza le keyword con il nome esatto del tuo fornitore.",
   },
   {
     id: "affitto",
@@ -205,6 +207,7 @@ export function RecurringClient({ userId, categories, transactions }: Props) {
   const [items,      setItems]      = useState<RecurringExpense[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [showForm,   setShowForm]   = useState(false);
+  const [editingId,  setEditingId]  = useState<string | null>(null); // null = add, id = edit
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -351,7 +354,35 @@ export function RecurringClient({ userId, categories, transactions }: Props) {
   }
 
   // ── CRUD ─────────────────────────────────────────────────────────────────
-  async function handleAdd(e: React.FormEvent) {
+
+  function startEdit(it: RecurringExpense) {
+    setForm({
+      name:               it.name,
+      tipologia:          it.tipologia,
+      frequency:          it.frequency,
+      custom_days:        it.custom_days?.toString() ?? "",
+      amount:             it.amount.toString().replace(".", ","),
+      amount_max:         it.amount_max?.toString().replace(".", ",") ?? "",
+      category_id:        it.category_id ?? "",
+      notes:              it.notes ?? "",
+      matching_strategy:  it.matching_strategy,
+      keywordInput:       "",
+      keywords:           [...it.match_keywords],
+      txSearch:           "",
+      showTxSearch:       false,
+    });
+    setEditingId(it.id);
+    setShowForm(true);
+    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 50);
+  }
+
+  function cancelForm() {
+    setForm(EMPTY_FORM);
+    setEditingId(null);
+    setShowForm(false);
+  }
+
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     const amt     = parseFloat(form.amount.replace(",", "."));
     const amtMax  = form.tipologia === "variabile" && form.amount_max
@@ -364,24 +395,41 @@ export function RecurringClient({ userId, categories, transactions }: Props) {
 
     setSaving(true);
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from("recurring_expenses")
-      .insert({
-        user_id: userId, name: form.name.trim(), tipologia: form.tipologia,
-        frequency: form.frequency, custom_days: custDays,
-        amount: amt, amount_max: amtMax,
-        category_id: form.category_id || null, notes: form.notes.trim() || null,
-        match_keywords: form.keywords, matching_strategy: form.matching_strategy,
-      })
-      .select("*, categories(id, name, color, icon)")
-      .single();
+    const payload = {
+      name: form.name.trim(), tipologia: form.tipologia,
+      frequency: form.frequency, custom_days: custDays,
+      amount: amt, amount_max: amtMax,
+      category_id: form.category_id || null, notes: form.notes.trim() || null,
+      match_keywords: form.keywords, matching_strategy: form.matching_strategy,
+    };
 
-    if (error) { toast.error("Errore nel salvataggio."); }
-    else {
-      setItems(prev => [...prev, data as RecurringExpense]);
-      setForm(EMPTY_FORM);
-      setShowForm(false);
-      toast.success("Spesa ricorrente aggiunta!");
+    if (editingId) {
+      // UPDATE
+      const { data, error } = await supabase
+        .from("recurring_expenses")
+        .update(payload)
+        .eq("id", editingId)
+        .select("*, categories(id, name, color, icon)")
+        .single();
+      if (error) { toast.error("Errore nel salvataggio."); }
+      else {
+        setItems(prev => prev.map(it => it.id === editingId ? data as RecurringExpense : it));
+        cancelForm();
+        toast.success("Voce aggiornata!");
+      }
+    } else {
+      // INSERT
+      const { data, error } = await supabase
+        .from("recurring_expenses")
+        .insert({ user_id: userId, ...payload })
+        .select("*, categories(id, name, color, icon)")
+        .single();
+      if (error) { toast.error("Errore nel salvataggio."); }
+      else {
+        setItems(prev => [...prev, data as RecurringExpense]);
+        cancelForm();
+        toast.success("Spesa ricorrente aggiunta!");
+      }
     }
     setSaving(false);
   }
@@ -556,9 +604,11 @@ export function RecurringClient({ userId, categories, transactions }: Props) {
       {/* ── Lista voci ── */}
       <div className="rounded-xl border flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b">
-          <h2 className="font-semibold">Spese ricorrenti</h2>
+          <h2 className="font-semibold">
+            {showForm ? (editingId ? "Modifica voce" : "Nuova voce") : "Spese ricorrenti"}
+          </h2>
           <button
-            onClick={() => setShowForm(v => !v)}
+            onClick={() => showForm ? cancelForm() : setShowForm(true)}
             className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 transition-colors"
           >
             {showForm ? "Annulla" : "+ Aggiungi"}
@@ -567,7 +617,7 @@ export function RecurringClient({ userId, categories, transactions }: Props) {
 
         {/* ── Form ── */}
         {showForm && (
-          <form onSubmit={handleAdd} className="border-b px-5 py-5 flex flex-col gap-5 bg-muted/20">
+          <form onSubmit={handleSave} className="border-b px-5 py-5 flex flex-col gap-5 bg-muted/20">
 
             {/* Template rapidi */}
             <div className="flex flex-col gap-2">
@@ -793,13 +843,12 @@ export function RecurringClient({ userId, categories, transactions }: Props) {
             </div>
 
             <div className="flex justify-end gap-2">
-              <button type="button"
-                onClick={() => { setForm(EMPTY_FORM); setShowForm(false); }}
+              <button type="button" onClick={cancelForm}
                 className="text-sm border rounded-md px-4 py-2 hover:bg-muted/50 transition-colors"
               >Annulla</button>
               <button type="submit" disabled={saving}
                 className="text-sm bg-primary text-primary-foreground rounded-md px-5 py-2 hover:bg-primary/90 disabled:opacity-50 transition-colors font-medium"
-              >{saving ? "Salvataggio…" : "Aggiungi spesa"}</button>
+              >{saving ? "Salvataggio…" : editingId ? "Salva modifiche" : "Aggiungi spesa"}</button>
             </div>
           </form>
         )}
@@ -847,7 +896,7 @@ export function RecurringClient({ userId, categories, transactions }: Props) {
                     )}
                   </div>
                   {/* Importo + delete */}
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     <div className="text-right">
                       <p className="text-sm font-semibold tabular-nums whitespace-nowrap">
                         {hasRange ? `${formatEuro(it.amount)}–${formatEuro(it.amount_max!)}` : formatEuro(it.amount)}
@@ -856,6 +905,17 @@ export function RecurringClient({ userId, categories, transactions }: Props) {
                         {formatEuro(monthly)}/mese
                       </p>
                     </div>
+                    {/* Modifica */}
+                    <button onClick={() => startEdit(it)}
+                      className="text-muted-foreground hover:text-primary transition-colors p-1 shrink-0"
+                      title="Modifica"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </button>
+                    {/* Elimina */}
                     <button onClick={() => handleDelete(it.id)} disabled={deletingId === it.id}
                       className="text-muted-foreground hover:text-red-500 transition-colors disabled:opacity-40 p-1 shrink-0"
                       title="Rimuovi"
