@@ -13,7 +13,7 @@ async function SmartContent() {
   const [profileRes, goalsRes, transactionsRes, categoriesRes] = await Promise.all([
     supabase.from("profiles").select("plan").eq("id", userId).single(),
     supabase.from("goals").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-    supabase.from("transactions").select("date, amount").eq("user_id", userId),
+    supabase.from("transactions").select("date, amount, category_id, description, merchant").eq("user_id", userId),
     supabase.from("categories").select("id, name, color, icon").or(`user_id.eq.${userId},user_id.is.null`).order("name"),
   ]);
 
