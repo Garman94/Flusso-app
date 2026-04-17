@@ -48,6 +48,17 @@ export function SignUpForm({
       });
       if (error) throw error;
 
+      // Supabase non restituisce errore per email già esistente:
+      // lo segnala con identities vuoto (utente già registrato).
+      if (data.user && (data.user.identities?.length ?? 0) === 0) {
+        toast.error(
+          "Esiste già un account con questa email. Accedi oppure usa \"Password dimenticata?\" per recuperarla.",
+          { duration: 6000 }
+        );
+        setIsLoading(false);
+        return;
+      }
+
       // Send welcome email (fire and forget — non blocca il redirect)
       if (data.user) {
         fetch("/api/auth/welcome", { method: "POST" }).catch(() => {});

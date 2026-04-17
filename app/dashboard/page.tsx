@@ -105,6 +105,7 @@ async function DashboardContent() {
 
   return (
     <DashboardClient
+      userId={userId}
       profile={{
         full_name: profileRes.data?.full_name ?? null,
         plan: profileRes.data?.plan ?? "free",

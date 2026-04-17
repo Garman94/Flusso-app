@@ -1,6 +1,6 @@
 # CLAUDE.md — Flusso App
 
-Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-04-17.
+Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-04-17. Ultima modifica: 2026-04-17.
 
 ---
 
@@ -137,7 +137,7 @@ frequency text  -- 'mensile' | 'settimanale' | 'annuale' | 'una_tantum'
 category_id uuid FK categories NULL
 ```
 
-### `recurring_expenses` *(aggiunta con 009 + 010)*
+### `recurring_expenses` *(aggiunta con 009 + 010 + 011)*
 Spese ricorrenti per il tab "Ricorrenti" (Smart).
 ```
 id uuid PK
@@ -150,7 +150,8 @@ amount numeric           -- importo fisso o minimo del range
 amount_max numeric NULL  -- massimo del range (solo tipologia = 'variabile')
 category_id uuid FK categories NULL
 notes text NULL
-match_keywords text[]    -- parole chiave per riconoscimento automatico transazioni (default '{}')
+match_keywords text[]      -- parole chiave per riconoscimento automatico transazioni (default '{}')
+matching_strategy text     -- 'keyword' (default) | 'historical_avg' (media stesso mese anni prec.)
 ```
 
 ### `category_rules`
@@ -171,11 +172,12 @@ Regole di riscrittura descrizioni transazioni per UI.
 ## Pagine e funzionalità
 
 ### Dashboard (`/dashboard`)
-- **Saldo attuale** da `profiles.balance`
+- **Saldo attuale** da `profiles.balance` (le 4 card di riepilogo Entrate/Uscite/Risparmio/Media sono state rimosse)
 - **Proiezione fine mese** basata su tasso di spesa giornaliero del mese corrente
 - **Grafico trend** (linea) giornaliero del mese corrente (`calculateTrendData`)
 - **Breakdown macro-categorie** (casa, trasporti, cibo, salute, shopping, lavoro, risparmio, altro)
 - **Score finanziario** (🟢 Ottimo → 🔴 Critico) basato sul rapporto spese/entrate
+- **Card Spese Ricorrenti** (`RecurringDashboardCard`) — accordion per categoria, previsto vs speso, delta colorato; fetcha i propri dati in modo autonomo
 
 ### Transazioni (`/dashboard/transazioni`)
 - Lista di tutte le transazioni con filtri per mese, categoria, tipo
@@ -212,28 +214,43 @@ Componente: `app/dashboard/smart/recurring-client.tsx`
 - Campo `match_keywords text[]` su `recurring_expenses` (migration 010)
 - Il fetch di `page.tsx` include `description` e `merchant` dalle transazioni
 - Funzione `txMatchesKeywords(tx, keywords)`: ricerca case-insensitive contains su `description` e `merchant`
-  - Es: keyword "enel bolletta gas" matcha "Enel Bolletta Gas Aprile 2026"
 - Funzione `computeActual(expense, transactions, monthStart)`:
   - **Priorità keyword**: se `match_keywords.length > 0` → filtra per keyword
   - **Fallback categoria**: se nessuna keyword ma `category_id` → filtra per categoria
   - **Non tracciata**: se né keyword né categoria → restituisce `null`
-- In UI: badge `🔍 keyword` o `📂 categoria` o `non tracciata` per ogni voce nel report
-- Tasto ▼ per espandere le transazioni riconosciute con descrizione, data, importo
 
-**Logica report in tempo reale:**
-- Normalizzazione a mensile: `toMonthlyAmount(expense)`
-  - Frequenza standard: `amount / FREQ_MONTHS[frequency]` (es. semestrale → /6)
-  - Tipologia variabile: media (min+max)/2 come base del calcolo
-  - Personalizzata: `amount * (30 / custom_days)`
-- **Per ogni voce tracciata:**
-  - `actual` = somma transazioni matched nel mese corrente
-  - `delta` = actual − expectedMonthly (positivo = sforamento, negativo = risparmio)
-- **Riepilogo:**
-  - Totale previsto mensile (range min-max se variabile)
-  - Totale speso mese corrente (tutte le uscite)
-  - Sforamento / risparmio (su voci tracciate)
-  - Risparmio potenziale (se resti nel budget)
-  - Barra progresso globale con colori (verde/giallo/rosso)
+**Strategia di previsione (`matching_strategy`):**
+- `keyword` (default): la previsione usa l'importo inserito manualmente
+- `historical_avg`: la previsione usa la media delle spese dello stesso mese calendar negli anni precedenti
+  - Funzione `computeHistoricalAvg(allTxs, keywords, calMonth, calYear)`:
+    - Esclude il mese corrente dell'anno corrente
+    - Filtra per keyword + stesso mese calendar
+    - Raggruppa per anno, calcola media dei totali annuali
+  - Se nessun dato storico disponibile, fallback all'importo manuale
+  - Ideale per luce/gas con variabilità stagionale
+
+**Collega transazione anchor:**
+- Campo "Cerca transazione" nel form: filtra le transazioni dell'utente per description/merchant
+- Cliccando una transazione, auto-popola le keywords con description e merchant della transazione
+- Permette di partire da una spesa reale per configurare il riconoscimento automatico
+
+**Template rapidi (form):**
+- 🔌 Luce & Gas: variabile, bimestrale, `historical_avg`, keywords preset
+- 🏠 Affitto: fissa, mensile, keywords preset
+- 📱 Telefono: fissa, mensile, keywords operatori italiani
+- 🌐 Internet / TV: fissa, mensile, keywords preset
+- 🛡️ Assicurazione: fissa, annuale, keywords preset
+
+**Report in tempo reale — accordion per categoria:**
+- Le voci sono raggruppate per categoria nel report
+- Ogni categoria è un header espandibile (▼/▲) che mostra le singole voci
+- Per ogni categoria: totale previsto, delta totale, barra progress colorata
+- Per ogni voce (espanso): previsto/mese, speso, delta, badge 📊 storico / 🔍 kw
+
+**Fix PWA layout:**
+- Riga info nella lista voci usa `flex-1 min-w-0` + `truncate` per non andare a capo
+- Importi usano `whitespace-nowrap` per rimanere su una riga anche su mobile
+- Keywords chip limitate a max 3 visibili nella lista (+ contatore)`
 
 #### Tab: Obiettivi
 Componente: `app/dashboard/obiettivi/obiettivi-client.tsx`
@@ -311,6 +328,15 @@ una_tantum   → 0 (non conta nel mensile ricorrente)
 - `public/sw.js` — service worker (cache statica)
 - `app/layout.tsx` — `<link rel="manifest">` e meta tag PWA
 - Icone: `public/icons/icon-*.png` (192×192, 512×512)
+
+---
+
+## Auth
+
+### Login (`/auth/login`) e Sign-up (`/auth/sign-up`)
+- Entrambe le pagine sono ora **Server Components**: se l'utente è già loggato, redirect diretto a `/dashboard`
+- **Account duplicato** (sign-up email già registrata): rilevato tramite `data.user.identities?.length === 0` dopo `supabase.auth.signUp()` — mostra toast di errore con suggerimento di accedere o usare "Password dimenticata?"
+- **Google OAuth**: non serve mail di conferma (Supabase bypassa la verifica per OAuth); se email già registrata con email+password, Google logga direttamente e redirect alla dashboard
 
 ---
 

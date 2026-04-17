@@ -11,6 +11,7 @@ import {
   type Transaction,
   type Goal,
 } from "@/lib/calculations";
+import { RecurringDashboardCard } from "./recurring-dashboard-card";
 import { createClient } from "@/lib/supabase/client";
 import { updateBalance } from "./balance-action";
 import { updatePiggyBalance } from "./piggy-action";
@@ -21,6 +22,7 @@ import { toast } from "sonner";
 type Profile = { full_name: string | null; plan: string; balance: number; piggy_balance: number };
 
 type Props = {
+  userId: string;
   profile: Profile;
   currentTxs: Transaction[];
   prevTxsAmounts: number[];
@@ -291,7 +293,7 @@ function SettingsModal({ payDay, onClose }: { payDay: number; onClose: () => voi
 
 // ─── Main Dashboard Client ────────────────────────────────────────────────────
 export function DashboardClient({
-  profile, currentTxs, prevTxsAmounts, goals,
+  userId, profile, currentTxs, prevTxsAmounts, goals,
   year, month, totalTxCount, uncategorizedCount, lastTxDate,
   payDay, periodFrom, periodTo,
 }: Props) {
@@ -397,34 +399,6 @@ export function DashboardClient({
           </span>
         </Link>
       )}
-
-      {/* ── Panoramica Generali ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="rounded-xl border p-4 flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Entrate</span>
-          <span className="text-lg font-bold tabular-nums text-green-600 dark:text-green-400">{formatEuro(income)}</span>
-          <span className="text-xs text-muted-foreground">{periodLabel}</span>
-        </div>
-        <div className="rounded-xl border p-4 flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Uscite</span>
-          <span className="text-lg font-bold tabular-nums text-red-500">{formatEuro(expensesAbs)}</span>
-          <span className="text-xs text-muted-foreground">{periodLabel}</span>
-        </div>
-        <div className="rounded-xl border p-4 flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Risparmio netto</span>
-          <span className={`text-lg font-bold tabular-nums ${monthlySavings >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
-            {monthlySavings >= 0 ? "+" : ""}{formatEuro(monthlySavings)}
-          </span>
-          <span className="text-xs text-muted-foreground">questo periodo</span>
-        </div>
-        <div className="rounded-xl border p-4 flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Media giornaliera</span>
-          <span className="text-lg font-bold tabular-nums text-red-500">
-            {formatEuro(daysPassed > 0 ? expensesAbs / daysPassed : 0)}
-          </span>
-          <span className="text-xs text-muted-foreground">spesa / giorno</span>
-        </div>
-      </div>
 
       {/* ── Hero: saldo + score ── */}
       <div className="rounded-xl border p-4 sm:p-6 flex flex-col sm:flex-row gap-4 sm:gap-6 sm:items-center justify-between">
@@ -592,6 +566,9 @@ export function DashboardClient({
           </div>
         </div>
       )}
+
+      {/* ── Spese ricorrenti ── */}
+      <RecurringDashboardCard userId={userId} />
     </div>
   );
 }
