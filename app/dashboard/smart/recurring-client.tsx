@@ -449,18 +449,32 @@ export function BudgetClient({ userId, categories, transactions }: Props) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium truncate">{cat.name}</span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {hasSubcats && expectedMonthly > 0 && (
-                          <span className="text-xs text-muted-foreground tabular-nums">{formatEuro(expectedMonthly)}</span>
-                        )}
-                        {actualSpent > 0 && (
-                          <span className="text-sm font-semibold tabular-nums text-red-500">{formatEuro(actualSpent)}</span>
-                        )}
-                        {hasSubcats && expectedMonthly > 0 && actualSpent > 0 && (
-                          <span className={`text-xs font-semibold tabular-nums ${actualSpent > expectedMonthly ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
-                            {actualSpent > expectedMonthly ? "+" : ""}{formatEuro(actualSpent - expectedMonthly)}
-                          </span>
-                        )}
+                      <div className="flex items-center gap-1.5 shrink-0 text-xs">
+                        {hasSubcats && expectedMonthly > 0 && actualSpent > 0 ? (
+                          <>
+                            <span className="text-muted-foreground">Previsto:</span>
+                            <span className="font-medium tabular-nums">{formatEuro(expectedMonthly)}</span>
+                            <span className="text-muted-foreground/50">·</span>
+                            <span className="text-muted-foreground">Speso:</span>
+                            <span className="font-medium tabular-nums text-red-500">{formatEuro(actualSpent)}</span>
+                            <span className="text-muted-foreground/50">·</span>
+                            <span className="text-muted-foreground">Differenza:</span>
+                            <span className={`font-semibold tabular-nums ${actualSpent > expectedMonthly ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                              {formatEuro(Math.abs(actualSpent - expectedMonthly))}{" "}
+                              {actualSpent > expectedMonthly ? "sforati" : "risparmiati"}
+                            </span>
+                          </>
+                        ) : hasSubcats && expectedMonthly > 0 ? (
+                          <>
+                            <span className="text-muted-foreground">Previsto:</span>
+                            <span className="font-medium tabular-nums">{formatEuro(expectedMonthly)}</span>
+                          </>
+                        ) : actualSpent > 0 ? (
+                          <>
+                            <span className="text-muted-foreground">Speso:</span>
+                            <span className="font-medium tabular-nums text-red-500">{formatEuro(actualSpent)}</span>
+                          </>
+                        ) : null}
                       </div>
                     </div>
                     {hasSubcats && expectedMonthly > 0 && (
