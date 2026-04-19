@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { computePeriodRange, getCurrentPeriodAnchor } from "@/lib/period";
 
 type Category = { id: string; name: string; color: string; icon: string };
 
@@ -21,6 +22,11 @@ type Props = {
   userId: string;
   categories: Category[];
   transactions: Transaction[];
+  payDay?: number;
+  periodFrom?: string;
+  periodTo?: string;
+  periodYear?: number;
+  periodMonth?: number;
 };
 
 const FREQ_LABELS: Record<BudgetItem["frequency"], string> = {
@@ -43,7 +49,7 @@ function formatEuro(n: number) {
 
 const EMPTY_FORM = { name: "", amount: "", frequency: "mensile" as BudgetItem["frequency"], category_id: "" };
 
-export function SmartClient({ userId, categories, transactions }: Props) {
+export function SmartClient({ userId, categories, transactions, payDay = 0, periodYear, periodMonth }: Props) {
   const [items, setItems] = useState<BudgetItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -67,11 +73,16 @@ export function SmartClient({ userId, categories, transactions }: Props) {
   // ── Totale previsto mensile ───────────────────────────────────────────────
   const totalMonthly = items.reduce((s, it) => s + toMonthly(it.amount, it.frequency), 0);
 
-  // ── Spesa reale media (ultimi 3 mesi) ────────────────────────────────────
-  const now = new Date();
-  const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString().split("T")[0];
+  // ── Spesa reale media (ultimi 3 periodi) ─────────────────────────────────
+  const _anchor = getCurrentPeriodAnchor(payDay);
+  const _aY = periodYear ?? _anchor.year;
+  const _aM = periodMonth ?? _anchor.month;
+  // Start of 3 periods ago
+  const threePeriodsAgo = computePeriodRange(payDay, _aY, _aM - 3).from;
+  // End of period before current (exclude current period from the avg)
+  const periodBeforeEnd = computePeriodRange(payDay, _aY, _aM - 1).to;
   const recentExpenses = transactions
-    .filter(t => Number(t.amount) < 0 && t.date >= threeMonthsAgo)
+    .filter(t => Number(t.amount) < 0 && t.date >= threePeriodsAgo && t.date <= periodBeforeEnd)
     .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   const avgMonthly = recentExpenses / 3;
 

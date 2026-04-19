@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { TransazioniClient } from "./transazioni-client";
+import { getCurrentPeriodAnchor } from "@/lib/period";
 
 async function TransazioniContent({
   searchParams,
@@ -18,7 +19,7 @@ async function TransazioniContent({
     params.filter === "uncategorized" ? "senza_cat" : "all";
 
   const [profileRes, transactionsRes, categoriesRes, uncategorizedRes, displayRulesRes, categoryRulesRes] = await Promise.all([
-    supabase.from("profiles").select("plan").eq("id", userId).single(),
+    supabase.from("profiles").select("plan, pay_day").eq("id", userId).single(),
     supabase
       .from("transactions")
       .select("*, categories(id, name, color, icon)")
@@ -47,6 +48,9 @@ async function TransazioniContent({
       .order("created_at", { ascending: true }),
   ]);
 
+  const payDay: number = profileRes.data?.pay_day ?? 0;
+  const { year: periodYear, month: periodMonth } = getCurrentPeriodAnchor(payDay);
+
   return (
     <TransazioniClient
       userId={userId}
@@ -57,6 +61,9 @@ async function TransazioniContent({
       initialDisplayRules={(displayRulesRes.data ?? []) as any}
       initialCategoryRules={(categoryRulesRes.data ?? []) as any}
       initialFilter={initialFilter}
+      payDay={payDay}
+      periodYear={periodYear}
+      periodMonth={periodMonth}
     />
   );
 }

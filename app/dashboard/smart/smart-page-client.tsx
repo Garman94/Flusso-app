@@ -23,11 +23,16 @@ type Props = {
   initialGoals: Goal[];
   transactions: Transaction[];
   categories: Category[];
+  payDay?: number;
+  periodFrom?: string;
+  periodTo?: string;
+  periodYear?: number;
+  periodMonth?: number;
 };
 
 type Tab = "previsioni" | "budget" | "obiettivi";
 
-export function SmartPageClient({ userId, plan, initialGoals, transactions, categories }: Props) {
+export function SmartPageClient({ userId, plan, initialGoals, transactions, categories, payDay = 0, periodFrom, periodTo, periodYear, periodMonth }: Props) {
   const [tab, setTab] = useState<Tab>("previsioni");
 
   return (
@@ -59,10 +64,10 @@ export function SmartPageClient({ userId, plan, initialGoals, transactions, cate
 
       {/* Contenuto tab */}
       {tab === "previsioni" && (
-        <SmartClient userId={userId} categories={categories} transactions={transactions} />
+        <SmartClient userId={userId} categories={categories} transactions={transactions} payDay={payDay} periodFrom={periodFrom} periodTo={periodTo} periodYear={periodYear} periodMonth={periodMonth} />
       )}
       {tab === "budget" && (
-        <BudgetClient userId={userId} categories={categories} transactions={transactions} />
+        <BudgetClient userId={userId} categories={categories} transactions={transactions} payDay={payDay} periodFrom={periodFrom} periodTo={periodTo} />
       )}
       {tab === "obiettivi" && (
         <ObiettiviClient userId={userId} plan={plan} initialGoals={initialGoals} />

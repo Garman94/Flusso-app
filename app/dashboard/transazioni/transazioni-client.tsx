@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ImportExcelModal } from "./import-excel-modal";
 import { ScreenshotModal } from "./screenshot-modal";
 import { createCategoryRule, deleteCategoryRule } from "./actions";
+import { computePeriodRange, getCurrentPeriodAnchor } from "@/lib/period";
 
 type Category = { id: string; name: string; color: string; icon: string };
 type Transaction = {
@@ -74,9 +75,12 @@ type Props = {
   initialCategoryRules: CategoryRule[];
   categories: Category[];
   initialFilter?: FilterType;
+  payDay?: number;
+  periodYear?: number;
+  periodMonth?: number;
 };
 
-export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, initialFilter = "all" }: Props) {
+export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, initialFilter = "all", payDay = 0, periodYear, periodMonth }: Props) {
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -107,19 +111,30 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
 
   // Navigazione mese/anno
   const _now = new Date();
-  const [navYear, setNavYear]   = useState(_now.getFullYear());
-  const [navMonth, setNavMonth] = useState(_now.getMonth()); // 0-indexed
+  const _anchor = getCurrentPeriodAnchor(payDay);
+  const [navYear, setNavYear]   = useState(periodYear ?? _anchor.year);
+  const [navMonth, setNavMonth] = useState(periodMonth ?? _anchor.month);
   const [navView, setNavView]   = useState<"mese" | "anno">("mese");
 
   const isAtPresent = navView === "mese"
-    ? navYear === _now.getFullYear() && navMonth === _now.getMonth()
+    ? navYear === _anchor.year && navMonth === _anchor.month
     : navYear === _now.getFullYear();
 
-  const navLabel = navView === "mese"
-    ? new Date(navYear, navMonth, 1)
-        .toLocaleDateString("it-IT", { month: "long", year: "numeric" })
-        .replace(/^\w/, c => c.toUpperCase())
-    : String(navYear);
+  // For payDay > 0, show "27 mar – 26 apr 2026" instead of month name
+  const navLabel = (() => {
+    if (navView !== "mese") return String(navYear);
+    if (payDay > 0) {
+      const { from, to } = computePeriodRange(payDay, navYear, navMonth);
+      const fromDate = new Date(from + "T00:00:00");
+      const toDate   = new Date(to   + "T00:00:00");
+      const f = fromDate.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+      const t = toDate.toLocaleDateString("it-IT",   { day: "numeric", month: "short", year: "numeric" });
+      return `${f} – ${t}`;
+    }
+    return new Date(navYear, navMonth, 1)
+      .toLocaleDateString("it-IT", { month: "long", year: "numeric" })
+      .replace(/^\w/, c => c.toUpperCase());
+  })();
 
   function goToPrev() {
     if (navView === "mese") {
@@ -226,11 +241,20 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
 
   }
 
+  // Compute date range once for filtering (avoids recomputing per transaction)
+  const _periodRange = navView === "mese" && payDay > 0
+    ? computePeriodRange(payDay, navYear, navMonth)
+    : null;
+
   const filtered = transactions.filter(t => {
     // Filtro data (navigazione mese/anno)
     const d = new Date(t.date + "T00:00:00");
     if (navView === "mese") {
-      if (d.getFullYear() !== navYear || d.getMonth() !== navMonth) return false;
+      if (_periodRange) {
+        if (t.date < _periodRange.from || t.date > _periodRange.to) return false;
+      } else {
+        if (d.getFullYear() !== navYear || d.getMonth() !== navMonth) return false;
+      }
     } else {
       if (d.getFullYear() !== navYear) return false;
     }

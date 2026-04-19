@@ -37,6 +37,9 @@ type Props = {
   userId: string;
   categories: Category[];
   transactions: Transaction[];
+  payDay?: number;
+  periodFrom?: string;
+  periodTo?: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -169,7 +172,7 @@ const EMPTY_FORM = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function BudgetClient({ userId, categories, transactions }: Props) {
+export function BudgetClient({ userId, categories, transactions, payDay = 0, periodFrom, periodTo }: Props) {
   const [items, setItems] = useState<RecurringExpense[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -202,10 +205,16 @@ export function BudgetClient({ userId, categories, transactions }: Props) {
 
   // ── Date helpers ───────────────────────────────────────────────────────────
   const now = new Date();
-  const calYear = now.getFullYear();
-  const calMonth = now.getMonth();
-  const monthStart = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-01`;
-  const monthTxs = transactions.filter(t => Number(t.amount) < 0 && t.date >= monthStart);
+  const _pStart = periodFrom ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const _pEnd   = periodTo;
+  const periodStartDate = new Date(_pStart + "T00:00:00");
+  const calYear  = periodStartDate.getFullYear();
+  const calMonth = periodStartDate.getMonth();
+  const monthTxs = transactions.filter(t =>
+    Number(t.amount) < 0 &&
+    t.date >= _pStart &&
+    (_pEnd ? t.date <= _pEnd : true),
+  );
 
   // ── Match transactions to subcategories ────────────────────────────────────
   const matchedBySubcatId = new Map<string, Transaction[]>();
