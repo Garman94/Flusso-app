@@ -456,9 +456,9 @@ export function BudgetClient({ userId, categories, transactions, payDay = 0, per
                 <div className={`flex items-center gap-2 px-4 py-3 transition-colors ${isHidden ? "opacity-40" : "hover:bg-muted/10"}`}>
                   <span className="text-lg shrink-0">{cat.icon || "📦"}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-col gap-0.5">
                       <span className="text-sm font-medium truncate">{cat.name}</span>
-                      <div className="flex items-center gap-1.5 shrink-0 text-xs">
+                      <div className="flex items-center gap-1 flex-wrap text-xs">
                         {hasSubcats && expectedMonthly > 0 && actualSpent > 0 ? (
                           <>
                             <span className="text-muted-foreground">Previsto:</span>
