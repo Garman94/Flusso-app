@@ -55,6 +55,9 @@ export function PricingCard({ plan }: { plan: PricingPlan }) {
             o €{plan.annualPrice}/anno — risparmia 35%
           </p>
         )}
+        {plan.price > 0 && (
+          <p className="text-xs text-muted-foreground">IVA inclusa</p>
+        )}
         <p className="text-sm text-muted-foreground">{plan.description}</p>
       </div>
 

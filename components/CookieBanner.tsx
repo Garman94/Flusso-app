@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export function CookieBanner() {
@@ -26,7 +27,10 @@ export function CookieBanner() {
     <div className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 p-4 shadow-lg">
       <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">
-          Utilizziamo cookie tecnici necessari al funzionamento del sito. Nessun dato viene venduto a terzi.
+          Utilizziamo cookie tecnici necessari al funzionamento del sito. Nessun dato viene venduto a terzi.{" "}
+          <Link href="/cookie-policy" className="underline hover:text-foreground transition-colors">
+            Cookie Policy
+          </Link>
         </p>
         <div className="flex gap-3 shrink-0">
           <button

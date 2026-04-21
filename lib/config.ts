@@ -35,7 +35,7 @@ export const siteConfig = {
         "Categorie smart illimitate",
         "Regole personalizzate avanzate",
         "Obiettivi finanziari illimitati",
-        "Previsioni spese AI",
+        "Previsioni spese intelligenti",
         "Consigli di risparmio personalizzati",
         "Export dati",
         "30 giorni soddisfatti o rimborsati",
@@ -71,6 +71,7 @@ export const siteConfig = {
     links: [
       { label: "Privacy Policy", href: "/privacy" },
       { label: "Termini di servizio", href: "/terms" },
+      { label: "Cookie Policy", href: "/cookie-policy" },
     ],
   },
 } as const;

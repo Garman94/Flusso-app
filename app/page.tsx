@@ -117,20 +117,17 @@ export default function HomePage() {
           </div>
 
           <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
-            <span>✓ Gratis per sempre</span>
+            <span>✓ Piano gratuito senza scadenza</span>
             <span>✓ Setup in 2 minuti</span>
             <span>✓ Dati al sicuro in EU</span>
-            <span>✓ 30 giorni soddisfatti o rimborsati</span>
+            <span>✓ Rimborso garantito 30 giorni (Premium)</span>
           </div>
         </section>
 
         {/* Social proof bar */}
         <section className="w-full max-w-5xl px-5 pb-16 flex flex-col items-center gap-2">
-          <div className="flex items-center gap-1 text-amber-400 text-xl">
-            {"★★★★★"}
-          </div>
           <p className="text-sm text-muted-foreground text-center">
-            Già usato da <span className="text-foreground font-semibold">100+ persone</span> che hanno smesso di usare Excel
+            Già usato da <span className="text-foreground font-semibold">100+ persone</span> al posto di Excel
           </p>
         </section>
 
@@ -305,9 +302,9 @@ export default function HomePage() {
             <h2 className="text-2xl font-bold text-center">I tuoi dati sono al sicuro</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
               {[
-                { icon: "🔒", text: "Crittografia end-to-end" },
-                { icon: "🇪🇺", text: "Server in Europa (Frankfurt)" },
-                { icon: "🚫", text: "Non vendiamo i tuoi dati" },
+                { icon: "🔒", text: "Crittografia dei dati (in transito e a riposo)" },
+                { icon: "🇪🇺", text: "Dati conservati su infrastruttura cloud europea" },
+                { icon: "🚫", text: "Non vendiamo i tuoi dati a terzi" },
               ].map((item) => (
                 <div key={item.text} className="flex flex-col items-center text-center gap-2">
                   <span className="text-3xl">{item.icon}</span>
