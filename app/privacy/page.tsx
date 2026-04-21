@@ -27,7 +27,7 @@ export default function PrivacyPage() {
           <p>Il titolare del trattamento dei dati è:</p>
           <div className="rounded-lg bg-muted/50 p-4 text-sm space-y-1">
             <p className="font-medium text-foreground">Marco Garofalo</p>
-            <p className="text-amber-500 text-xs font-medium">[Inserire indirizzo completo — obbligatorio per legge]</p>
+            <p className="text-amber-500 text-xs font-medium">Via Giuseppe Mazzini 2 , Valbrona CO, Italia</p>
             <p>Email: <a href="mailto:garofalo.marco94@gmail.com" className="underline">garofalo.marco94@gmail.com</a></p>
           </div>
         </Section>
