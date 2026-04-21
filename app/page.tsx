@@ -303,7 +303,7 @@ export default function HomePage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
               {[
                 { icon: "🔒", text: "Crittografia dei dati (in transito e a riposo)" },
-                { icon: "🇪🇺", text: "Dati conservati su infrastruttura cloud europea" },
+                { icon: "☁️", text: "Dati conservati su infrastruttura cloud sicura (Supabase)" },
                 { icon: "🚫", text: "Non vendiamo i tuoi dati a terzi" },
               ].map((item) => (
                 <div key={item.text} className="flex flex-col items-center text-center gap-2">
