@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import "./globals.css";
 import { siteConfig } from "@/lib/config";
 import { RegisterSW } from "@/components/register-sw";
+import { CookieBanner } from "@/components/CookieBanner";
 
 const defaultUrl = process.env.NEXT_PUBLIC_SITE_URL
   ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
@@ -50,6 +51,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
+          <CookieBanner />
           <Toaster richColors closeButton position="top-right" />
         </ThemeProvider>
         <RegisterSW />

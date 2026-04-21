@@ -60,6 +60,27 @@ const steps = [
   },
 ];
 
+const painPoints = [
+  {
+    icon: "😩",
+    text: "A fine mese non sai dove sono finiti i soldi",
+  },
+  {
+    icon: "📊",
+    text: "Hai provato Excel ma è troppo complicato da tenere aggiornato",
+  },
+  {
+    icon: "🏦",
+    text: "L'app della banca mostra i movimenti ma non ti aiuta a capirli",
+  },
+];
+
+const mockCategories = [
+  { icon: "🏠", label: "Casa", amount: "€450" },
+  { icon: "🍕", label: "Cibo", amount: "€230" },
+  { icon: "🚗", label: "Trasporti", amount: "€180" },
+];
+
 export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col">
@@ -73,11 +94,11 @@ export default function HomePage() {
           </div>
 
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight max-w-3xl leading-tight">
-            {siteConfig.tagline}
+            Finalmente sai dove finiscono i tuoi soldi
           </h1>
 
           <p className="text-xl text-muted-foreground max-w-xl">
-            {siteConfig.description}
+            Carica l&apos;estratto conto della tua banca, Flusso categorizza tutto automaticamente e ti dice dove puoi risparmiare. Gratis.
           </p>
 
           <div className="flex gap-3 flex-wrap justify-center">
@@ -85,23 +106,124 @@ export default function HomePage() {
               href="/auth/sign-up"
               className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-6 py-3 text-sm font-medium hover:bg-primary/90 transition-colors"
             >
-              Inizia gratis
+              Inizia gratis — nessuna carta
             </Link>
             <Link
-              href="/pricing"
+              href="/#features"
               className="inline-flex items-center justify-center rounded-md border px-6 py-3 text-sm font-medium hover:bg-accent transition-colors"
             >
-              Vedi i prezzi
+              Guarda come funziona
             </Link>
           </div>
 
-          {/* Social proof */}
-          <p className="text-sm text-muted-foreground">
-            Gratis per sempre · Nessuna carta di credito · Setup in 2 minuti
+          <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+            <span>✓ Gratis per sempre</span>
+            <span>✓ Setup in 2 minuti</span>
+            <span>✓ Dati al sicuro in EU</span>
+            <span>✓ 30 giorni soddisfatti o rimborsati</span>
+          </div>
+        </section>
+
+        {/* Social proof bar */}
+        <section className="w-full max-w-5xl px-5 pb-16 flex flex-col items-center gap-2">
+          <div className="flex items-center gap-1 text-amber-400 text-xl">
+            {"★★★★★"}
+          </div>
+          <p className="text-sm text-muted-foreground text-center">
+            Già usato da <span className="text-foreground font-semibold">100+ persone</span> che hanno smesso di usare Excel
           </p>
         </section>
 
-        <div className="w-full max-w-5xl px-5">
+        {/* App mockup */}
+        <section className="w-full max-w-5xl px-5 pb-24 flex justify-center">
+          <div className="relative mx-auto w-[260px]">
+            {/* Phone frame */}
+            <div className="rounded-[40px] border-4 border-foreground/15 bg-card shadow-2xl overflow-hidden">
+              {/* Notch */}
+              <div className="h-7 bg-muted/50 flex items-center justify-center">
+                <div className="w-20 h-3.5 bg-foreground/10 rounded-full" />
+              </div>
+              {/* Screen content */}
+              <div className="p-4 flex flex-col gap-3 bg-background min-h-[420px]">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs text-muted-foreground">Saldo attuale</span>
+                  <span className="text-2xl font-bold">€ 2.340,50</span>
+                </div>
+
+                {/* Mini line chart */}
+                <div className="w-full h-14 rounded-lg bg-primary/5 px-2 py-1">
+                  <svg viewBox="0 0 220 48" className="w-full h-full" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="rgb(99,102,241)" stopOpacity="0.3" />
+                        <stop offset="100%" stopColor="rgb(99,102,241)" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <polyline
+                      points="0,42 30,36 60,40 90,22 120,26 150,12 180,17 220,8"
+                      fill="none"
+                      stroke="rgb(99,102,241)"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <polygon
+                      points="0,42 30,36 60,40 90,22 120,26 150,12 180,17 220,8 220,48 0,48"
+                      fill="url(#chartGrad)"
+                    />
+                  </svg>
+                </div>
+
+                {/* Score badge */}
+                <div className="rounded-lg bg-green-500/10 border border-green-500/20 px-3 py-2 text-xs font-medium text-green-600 dark:text-green-400 text-center">
+                  🟢 Ottimo mese!
+                </div>
+
+                {/* Category pills */}
+                <div className="flex flex-col gap-2">
+                  {mockCategories.map((c) => (
+                    <div
+                      key={c.label}
+                      className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-xs"
+                    >
+                      <span className="font-medium">{c.icon} {c.label}</span>
+                      <span className="font-bold">{c.amount}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {/* Glow effect */}
+            <div className="absolute -inset-4 -z-10 rounded-[50px] bg-primary/10 blur-2xl" />
+          </div>
+        </section>
+
+        {/* Pain points */}
+        <section className="w-full bg-muted/30 py-24">
+          <div className="max-w-5xl mx-auto px-5 flex flex-col gap-12">
+            <div className="text-center flex flex-col gap-3">
+              <h2 className="text-3xl font-bold">Ti riconosci in qualcuna di queste situazioni?</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {painPoints.map((p) => (
+                <div
+                  key={p.icon}
+                  className="rounded-xl border bg-background p-6 flex flex-col items-center text-center gap-4"
+                >
+                  <span className="text-4xl">{p.icon}</span>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{p.text}</p>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-center font-semibold text-lg">
+              Flusso risolve tutto questo in 2 minuti.
+            </p>
+          </div>
+        </section>
+
+        <div className="w-full max-w-5xl px-5 py-4">
           <div className="w-full h-px bg-gradient-to-r from-transparent via-foreground/10 to-transparent" />
         </div>
 
@@ -127,6 +249,15 @@ export default function HomePage() {
                 </p>
               </div>
             ))}
+          </div>
+
+          <div className="flex justify-center">
+            <Link
+              href="/auth/sign-up"
+              className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-6 py-3 text-sm font-medium hover:bg-primary/90 transition-colors"
+            >
+              Prova gratis per sempre
+            </Link>
           </div>
         </section>
 
@@ -168,6 +299,25 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Security section */}
+        <section className="w-full bg-muted/30 py-16">
+          <div className="max-w-5xl mx-auto px-5 flex flex-col items-center gap-8">
+            <h2 className="text-2xl font-bold text-center">I tuoi dati sono al sicuro</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+              {[
+                { icon: "🔒", text: "Crittografia end-to-end" },
+                { icon: "🇪🇺", text: "Server in Europa (Frankfurt)" },
+                { icon: "🚫", text: "Non vendiamo i tuoi dati" },
+              ].map((item) => (
+                <div key={item.text} className="flex flex-col items-center text-center gap-2">
+                  <span className="text-3xl">{item.icon}</span>
+                  <p className="text-sm font-medium">{item.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* CTA finale */}
         <section className="w-full bg-primary py-24">
           <div className="max-w-5xl mx-auto px-5 flex flex-col items-center text-center gap-6">
@@ -175,13 +325,13 @@ export default function HomePage() {
               Pronto a controllare le tue finanze?
             </h2>
             <p className="text-primary-foreground/80 max-w-md">
-              Unisciti a chi ha già smesso di chiedersi dove finiscono i soldi ogni mese.
+              Unisciti a chi ha già il controllo delle proprie finanze.
             </p>
             <Link
               href="/auth/sign-up"
               className="inline-flex items-center justify-center rounded-md bg-background text-foreground px-8 py-3 text-sm font-medium hover:bg-background/90 transition-colors"
             >
-              Inizia gratis ora
+              Unisciti a chi ha già il controllo delle proprie finanze →
             </Link>
           </div>
         </section>

@@ -18,7 +18,7 @@ const faqs = [
   },
   {
     q: "Cos'è una regola di categorizzazione?",
-    a: "Una regola ti permette di dire: \"se la descrizione contiene 'Esselunga', categorizzi come Alimentari\". Le crei una volta, funzionano per sempre.",
+    a: "Una regola ti permette di dire: \"se la descrizione contiene 'Esselunga', categorizza come Alimentari\". Le crei una volta, funzionano per sempre.",
   },
   {
     q: "Cos'è il piano Founder?",
@@ -27,6 +27,14 @@ const faqs = [
   {
     q: "Offrite rimborsi?",
     a: "Sì, garanzia di rimborso di 30 giorni, senza fare domande.",
+  },
+  {
+    q: "I miei dati bancari sono al sicuro?",
+    a: "Sì. Non ci colleghiamo alla tua banca. Tu carichi solo il file Excel che esporti dalla tua banca. I dati sono crittografati e conservati su server europei.",
+  },
+  {
+    q: "Funziona con la mia banca?",
+    a: "Funziona con qualsiasi banca italiana che permette di esportare i movimenti in Excel o CSV (praticamente tutte).",
   },
 ];
 
@@ -80,6 +88,8 @@ export default function PricingPage() {
                     ["Export dati", "❌", "✅", "✅"],
                     ["Supporto prioritario", "❌", "❌", "✅"],
                     ["Accesso a vita", "❌", "❌", "✅"],
+                    ["Prezzo mensile", "Gratis", "€4,99/mese", "€49 una tantum"],
+                    ["Opzione annuale", "—", "€39/anno", "—"],
                   ].map(([feature, free, premium, founder]) => (
                     <tr key={feature} className="border-b last:border-b-0 hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3 text-muted-foreground">{feature}</td>
@@ -119,7 +129,7 @@ export default function PricingPage() {
             href="/auth/sign-up"
             className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-8 py-3 text-sm font-medium hover:bg-primary/90 transition-colors"
           >
-            Inizia gratis
+            Comincia ora — è gratis
           </Link>
         </section>
       </main>

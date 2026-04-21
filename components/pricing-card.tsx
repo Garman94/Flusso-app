@@ -5,12 +5,17 @@ import { Button } from "./ui/button";
 type PricingPlan = {
   label: string;
   price: number;
+  annualPrice?: number;
   description: string;
   features: readonly string[];
   cta: string;
   href: string;
   highlighted?: boolean;
 };
+
+function formatPrice(price: number): string {
+  return price.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
 
 export function PricingCard({ plan }: { plan: PricingPlan }) {
   return (
@@ -38,13 +43,18 @@ export function PricingCard({ plan }: { plan: PricingPlan }) {
             <span className="text-4xl font-bold">Gratis</span>
           ) : (
             <>
-              <span className="text-4xl font-bold">€{plan.price}</span>
+              <span className="text-4xl font-bold">€{formatPrice(plan.price)}</span>
               <span className="text-muted-foreground text-sm">
                 {plan.label === "Founder" ? "una tantum" : "/mese"}
               </span>
             </>
           )}
         </div>
+        {plan.annualPrice && (
+          <p className="text-xs text-primary font-medium">
+            o €{plan.annualPrice}/anno — risparmia 35%
+          </p>
+        )}
         <p className="text-sm text-muted-foreground">{plan.description}</p>
       </div>
 
