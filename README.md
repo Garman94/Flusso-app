@@ -1,34 +1,21 @@
-# garman-boilerplate
+# Flusso
 
-> Read this in another language: [🇮🇹 Italiano](docs/README.it.md) · [🇪🇸 Español](docs/README.es.md)
-
-A production-ready Next.js + Supabase SaaS boilerplate with authentication, user profiles, plan management, Lemon Squeezy billing, transactional email, MDX blog, and admin panel.
+Web app di gestione finanziaria personale. Traccia entrate e uscite, pianifica budget, monitora spese ricorrenti e obiettivi di risparmio.
 
 ---
 
-## 👉 [SETUP GUIDE — Start here](SETUP.md)
+## Stack
 
-Step-by-step instructions to go from zero to running in ~30 minutes. Includes troubleshooting for the most common errors.
-
----
-
----
-
-## What's included
-
-| Feature | Details |
+| Layer | Tecnologia |
 |---|---|
-| Auth | Email/password, Google OAuth, forgot password, email confirmation |
-| Profiles | Auto-created on sign-up with `full_name` and `plan` fields |
-| Plans | `free`, `premium`, `founder` with RLS-enforced access |
-| Middleware | Protects `/dashboard/*`, redirects authenticated users from `/login` |
-| Billing | Lemon Squeezy webhook — upgrades/downgrades plan automatically |
-| Email | Resend transactional email — welcome email, password reset |
-| Blog | MDX blog with SEO metadata, OG tags, sitemap |
-| Admin panel | `/dashboard/admin` — manage all users and plans |
-| SEO | Sitemap, robots.txt, OG metadata on all pages |
-| UI | shadcn/ui, Tailwind CSS, dark mode, Sonner toasts |
-| Legal | `/terms` and `/privacy` placeholder pages |
+| Framework | Next.js 15 (App Router) |
+| Language | TypeScript + React 19 |
+| Database / Auth | Supabase (Postgres + RLS + Auth) |
+| Styling | Tailwind CSS + shadcn/ui |
+| Billing | Lemon Squeezy |
+| Email | Resend |
+| Deployment | Vercel |
+| PWA | Service Worker + manifest |
 
 ---
 
@@ -39,13 +26,13 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Apri [http://localhost:3000](http://localhost:3000).
 
 ---
 
-## Environment variables
+## Variabili d'ambiente
 
-Fill in `.env.local`:
+Crea `.env.local` con:
 
 ```env
 # Supabase — https://supabase.com/dashboard/project/_/settings/api
@@ -53,10 +40,10 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 
-# Service role — server-side only, NEVER expose to client
+# Service role — solo server-side, mai esporre al client
 SUPABASE_SERVICE_ROLE_KEY=
 
-# Site URL
+# URL dell'app
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 # Lemon Squeezy — https://app.lemonsqueezy.com
@@ -65,99 +52,126 @@ NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL=
 
 # Resend — https://resend.com
 RESEND_API_KEY=
-RESEND_FROM_EMAIL=noreply@yourdomain.com
+RESEND_FROM_EMAIL=noreply@tuodominio.com
 
-# Internal webhook secret (random secure string)
+# Secret interno per webhook Supabase (stringa casuale sicura)
 SUPABASE_WEBHOOK_SECRET=
 
-# Admin — comma-separated emails with admin access
-ADMIN_EMAILS=you@example.com
+# Admin — email separate da virgola con accesso al pannello admin
+ADMIN_EMAILS=tua@email.com
 ```
 
 ---
 
-## Setting up Supabase
+## Database — migrazioni
 
-1. Create a project at [database.new](https://database.new)
-2. Copy **Project URL** and **Publishable (anon) key** into `.env.local`
-3. Copy **Service Role key** into `.env.local` — keep it secret
-4. Run the SQL migration (see below)
+Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 
-## Running the SQL migration
+| File | Contenuto |
+|---|---|
+| `001_profiles.sql` | Tabella `profiles`, RLS, trigger auto-creazione |
+| `002_finance.sql` | `categories`, `transactions`, `goals`, `category_rules` |
+| `003_balance.sql` | Campo `balance` su `profiles` |
+| `004_payperiod.sql` | Periodo di paga |
+| `005_piggy.sql` | Salvadanaio |
+| `006_new_categories.sql` | Categorie aggiuntive |
+| `007_display_rules.sql` | Regole di visualizzazione descrizioni |
+| `008_smart_budget.sql` | Tabella `budget_items` (tab Previsioni) |
+| `009_recurring_expenses.sql` | Tabella `recurring_expenses` |
+| `010_recurring_keywords.sql` | Campo `match_keywords` su `recurring_expenses` |
+| `011_recurring_strategy.sql` | Campo `matching_strategy` su `recurring_expenses` |
+| `012_coupon_codes.sql` | Tabella `coupon_codes` per upgrade via coupon |
 
-**Option A — Supabase SQL Editor (recommended)**
-
-1. Dashboard → **SQL Editor** → **New query**
-2. Paste [`supabase/migrations/001_profiles.sql`](supabase/migrations/001_profiles.sql)
-3. Click **Run**
-
-**Option B — Supabase CLI**
-
+**Via CLI:**
 ```bash
 supabase login
-supabase link --project-ref <your-project-ref>
+supabase link --project-ref <project-ref>
 supabase db push
 ```
 
-The migration creates:
-- `profiles` table (`id`, `full_name`, `plan`, `created_at`, `updated_at`)
-- Check constraint: `plan` must be `free`, `premium`, or `founder`
-- RLS: users can only read/update their own row
-- Trigger: auto-creates a profile row on sign-up
-
 ---
 
-## Configuring Google OAuth
+## Configurazione Google OAuth
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services** → **Credentials**
-2. Create an **OAuth 2.0 Client ID** (Web application)
+1. [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials
+2. Crea OAuth 2.0 Client ID (Web application)
 3. Authorized JavaScript origins: `http://localhost:3000`
-4. Authorized redirect URIs: `https://<your-project-ref>.supabase.co/auth/v1/callback`
-5. Copy **Client ID** and **Client Secret**
-6. Supabase dashboard → **Authentication** → **Providers** → **Google** → paste and save
+4. Authorized redirect URIs: `https://<project-ref>.supabase.co/auth/v1/callback`
+5. Copia Client ID e Client Secret
+6. Supabase → Authentication → Providers → Google → incolla e salva
 
-> When deploying to production: add your production domain to the authorized origins on Google Cloud Console.
+In produzione: aggiungi il dominio di produzione agli origins autorizzati.
 
 ---
 
-## Configuring Lemon Squeezy
+## Configurazione Lemon Squeezy
 
-1. Create a product/subscription in [Lemon Squeezy](https://app.lemonsqueezy.com)
-2. Copy the checkout URL to `NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL`
-3. **Settings → Webhooks** → add webhook:
-   - URL: `https://your-domain.com/api/webhook/lemon-squeezy`
+1. Crea un prodotto/subscription su [app.lemonsqueezy.com](https://app.lemonsqueezy.com)
+2. Copia il checkout URL in `NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL`
+3. Settings → Webhooks → aggiungi webhook:
+   - URL: `https://tuodominio.com/api/webhook/lemon-squeezy`
    - Events: `order_created`, `subscription_created`, `subscription_cancelled`
-   - Copy the signing secret to `LEMON_SQUEEZY_WEBHOOK_SECRET`
-4. Pass the user's Supabase UUID as `custom_data.user_id` in the checkout URL:
+   - Copia il signing secret in `LEMON_SQUEEZY_WEBHOOK_SECRET`
 
+Il pulsante "Passa a Premium" in `/dashboard/account` aggiunge automaticamente `user_id` nella query string del checkout (richiesto dal webhook per identificare l'utente).
+
+---
+
+## Configurazione Resend
+
+1. Crea account su [resend.com](https://resend.com)
+2. Aggiungi e verifica il dominio
+3. Crea API key → `RESEND_API_KEY`
+4. Imposta `RESEND_FROM_EMAIL` con indirizzo mittente verificato
+5. La welcome email si invia via `POST /api/auth/welcome`
+
+---
+
+## Piani
+
+| Piano | Prezzo | Funzionalità |
+|---|---|---|
+| **Free** | Gratis | 50 tx/mese, 1 obiettivo, funzionalità base |
+| **Premium** | €4.99/mese o €39/anno | Tutto illimitato, previsioni smart |
+| **Founder** | €49 una tantum | Tutto Premium + accesso a vita + supporto prioritario |
+
+Tutti i prezzi e le feature sono configurabili in `lib/config.ts`.
+
+---
+
+## Sistema coupon
+
+I coupon permettono di upgraddare un utente a Premium o Founder senza pagamento (es. beta tester, omaggi, accordi diretti).
+
+**Come funziona:**
+1. Crei un coupon dal pannello admin (`/dashboard/admin` → sezione Coupon)
+2. Scegli il piano target (Premium o Founder) e aggiungi note interne opzionali
+3. Invii il codice manualmente all'utente (via email, DM, ecc.)
+4. L'utente inserisce il codice in Impostazioni account → Piano di abbonamento
+5. Il coupon viene marcato come usato e il piano aggiornato immediatamente
+
+I codici sono monouso, univoci, e non enumerabili dagli utenti (RLS: nessun accesso diretto alla tabella).
+
+**Via codice:**
 ```ts
-const url = new URL(process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL!);
-url.searchParams.set("checkout[custom][user_id]", user.id);
-window.location.href = url.toString();
+// Crea coupon programmaticamente (solo server-side con service role)
+import { createClient } from "@supabase/supabase-js";
+const service = createClient(url, serviceKey);
+await service.from("coupon_codes").insert({ code: "FLUSSO-XXXX-XXXX", plan: "founder", notes: "..." });
 ```
 
 ---
 
-## Configuring Resend (transactional email)
+## Pannello admin
 
-1. Create an account at [resend.com](https://resend.com)
-2. Add and verify your domain
-3. Create an API key → copy to `RESEND_API_KEY`
-4. Set `RESEND_FROM_EMAIL` to a verified sender address
-5. The welcome email is sent via `POST /api/auth/welcome` — call it after sign-up or trigger it via Supabase webhook
+Accedi a `/dashboard/admin` — visibile solo agli utenti in `ADMIN_EMAILS`.
 
----
+Funzionalità:
+- Lista tutti gli utenti registrati con piano attuale
+- Cambia piano a qualsiasi utente direttamente dalla tabella
+- Crea e gestisci coupon di upgrade
 
-## Admin panel
-
-Access `/dashboard/admin` — visible only to users listed in `ADMIN_EMAILS`.
-
-From the admin panel you can:
-- View all registered users
-- Change any user's plan directly from the table
-
-**Via code:**
-
+**Via codice:**
 ```ts
 import { updateUserPlan } from "@/lib/admin";
 await updateUserPlan("user-uuid-here", "founder");
@@ -167,67 +181,74 @@ await updateUserPlan("user-uuid-here", "founder");
 
 ## Blog
 
-Add MDX files to `content/blog/`:
+Aggiungi file MDX in `content/blog/`:
 
 ```mdx
 ---
-title: Your post title
-description: A short description
-date: 2026-04-11
-author: Your name
-tags: [tag1, tag2]
+title: Titolo del post
+description: Breve descrizione
+date: 2026-04-22
+author: Marco
+tags: [finanza, risparmio]
 ---
 
-Your content in **Markdown**.
+Contenuto in **Markdown**.
 ```
 
-Posts appear automatically at `/blog`.
+I post appaiono automaticamente su `/blog`.
 
 ---
 
 ## Branding
 
-All branding is in one file: [`lib/config.ts`](lib/config.ts)
+Tutto il branding è in un solo file: [`lib/config.ts`](lib/config.ts)
 
-Change `name`, `tagline`, `description`, plan features, prices, nav links — everything updates across the entire app.
+Nome, tagline, prezzi, feature dei piani, link nav — tutto aggiorna l'intera app.
 
 ---
 
-## Project structure
+## Struttura progetto
 
 ```
 app/
-  page.tsx                        # Landing page
-  pricing/                        # Pricing page
-  blog/                           # Blog list + [slug] post pages
-  terms/ privacy/                 # Legal pages
+  page.tsx                            # Landing page
+  pricing/                            # Pagina prezzi
+  blog/                               # Blog list + [slug]
+  terms/ privacy/ cookie-policy/      # Pagine legali
   dashboard/
-    page.tsx                      # User dashboard
-    account/                      # Account settings
-    admin/                        # Admin panel (ADMIN_EMAILS only)
-  auth/                           # Login, sign-up, forgot-password, confirm
+    page.tsx                          # Dashboard principale
+    account/                          # Impostazioni account + piano + coupon
+    admin/                            # Pannello admin (ADMIN_EMAILS only)
+    transazioni/                      # Lista transazioni + tab Previsioni
+    smart/                            # Tab Previsioni / Ricorrenti / Obiettivi
+    obiettivi/                        # Gestione obiettivi di risparmio
+  auth/                               # Login, sign-up, forgot-password, confirm
   api/
-    webhook/lemon-squeezy/        # Billing webhook
-    admin/update-plan/            # Admin plan update API
-    auth/welcome/                 # Welcome email trigger
+    webhook/lemon-squeezy/            # Webhook billing (upgrade/downgrade piano)
+    admin/update-plan/                # API admin cambio piano
+    admin/create-coupon/              # API admin creazione coupon
+    coupon/redeem/                    # API riscatto coupon utente
+    auth/welcome/                     # Email di benvenuto
 components/
-  navbar.tsx                      # Public navbar
-  oauth-buttons.tsx               # Google OAuth button
-  pricing-card.tsx                # Reusable pricing card
+  navbar.tsx
+  pricing-card.tsx
+  oauth-buttons.tsx
   login-form.tsx / sign-up-form.tsx / ...
+  ui/                                 # shadcn/ui components
 content/
-  blog/                           # MDX blog posts
-hooks/
-  useAuth.ts                      # Client-side auth + profile hook
+  blog/                               # File MDX blog
 lib/
-  config.ts                       # Site-wide branding & plan config
-  plans.ts                        # isPremium, isFounder, getPlanLabel
-  admin.ts                        # updateUserPlan (service role)
-  email.ts                        # Resend email templates
-  blog.ts                         # MDX blog utilities
+  config.ts                           # Branding + piani + nav
+  plans.ts                            # isPremium, isFounder, getPlanLabel
+  admin.ts                            # updateUserPlan (service role)
+  calculations.ts                     # Funzioni di calcolo finanziario
+  email.ts                            # Template email Resend
   supabase/
     client.ts / server.ts / proxy.ts
 supabase/
-  migrations/
-    001_profiles.sql
+  migrations/                         # 012 file SQL ordinati
+public/
+  icons/                              # Icone PWA
+  manifest.json                       # PWA manifest
+  sw.js                               # Service worker
 ```

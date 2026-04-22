@@ -6,9 +6,18 @@ import { getPlanLabel, getPlanBadgeColor } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { AdminPlanSelect } from "./admin-plan-select";
+import { AdminCouponManager } from "./admin-coupon-manager";
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
+}
+
+function getServiceClient() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } },
+  );
 }
 
 async function AdminContent() {
@@ -22,24 +31,25 @@ async function AdminContent() {
     redirect("/dashboard");
   }
 
-  // Fetch all profiles with service role (bypasses RLS)
-  const service = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } },
-  );
+  const service = getServiceClient();
 
-  const { data: profiles, error } = await service
-    .from("profiles")
-    .select("id, full_name, plan, created_at")
-    .order("created_at", { ascending: false });
+  const [{ data: profiles, error: profilesError }, { data: coupons }] = await Promise.all([
+    service
+      .from("profiles")
+      .select("id, full_name, plan, created_at")
+      .order("created_at", { ascending: false }),
+    service
+      .from("coupon_codes")
+      .select("id, code, plan, used, used_by, used_at, notes, created_at")
+      .order("created_at", { ascending: false }),
+  ]);
 
-  if (error) {
-    return <p className="text-destructive text-sm">Errore nel caricamento utenti: {error.message}</p>;
+  if (profilesError) {
+    return <p className="text-destructive text-sm">Errore nel caricamento utenti: {profilesError.message}</p>;
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-10">
       <div>
         <h1 className="text-2xl font-bold">Admin Panel</h1>
         <p className="text-muted-foreground mt-1">
@@ -47,6 +57,7 @@ async function AdminContent() {
         </p>
       </div>
 
+      {/* Users table */}
       <div className="rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
@@ -81,6 +92,17 @@ async function AdminContent() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Coupon manager */}
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Coupon di upgrade</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Genera codici monouso da inviare manualmente agli utenti.
+          </p>
+        </div>
+        <AdminCouponManager initialCoupons={coupons ?? []} />
       </div>
     </div>
   );

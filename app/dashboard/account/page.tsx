@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { UpdateNameForm } from "./update-name-form";
 import { DeleteAccountButton } from "./delete-account-button";
+import { PlanSection } from "./plan-section";
 
 async function AccountContent() {
   const supabase = await createClient();
@@ -22,6 +23,7 @@ async function AccountContent() {
     .single();
 
   const plan = profile?.plan ?? "free";
+  const checkoutUrl = process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL ?? null;
 
   return (
     <div className="flex flex-col gap-8 max-w-2xl">
@@ -44,35 +46,14 @@ async function AccountContent() {
         <UpdateNameForm currentName={profile?.full_name ?? ""} userId={data.claims.sub} />
       </div>
 
-      {/* Plan */}
-      <div className="rounded-xl border p-6 flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Piano di abbonamento</h2>
-          <Badge className={cn("text-sm", getPlanBadgeColor(plan))}>
-            {getPlanLabel(plan)}
-          </Badge>
-        </div>
-
-        {plan === "free" ? (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-muted-foreground">
-              Sei sul piano gratuito. Fai l&apos;upgrade per sbloccare tutte le funzionalità.
-            </p>
-            {process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL && (
-              <a
-                href={process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL}
-                className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 w-fit"
-              >
-                Passa a Premium
-              </a>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Hai un abbonamento {getPlanLabel(plan)} attivo.
-          </p>
-        )}
-      </div>
+      {/* Plan — client component to handle coupon redemption + checkout */}
+      <PlanSection
+        plan={plan}
+        userId={data.claims.sub}
+        checkoutUrl={checkoutUrl}
+        planLabel={getPlanLabel(plan)}
+        planBadgeColor={getPlanBadgeColor(plan)}
+      />
 
       {/* Delete account */}
       <div className="rounded-xl border border-destructive/30 p-6 flex flex-col gap-4">
@@ -92,7 +73,8 @@ export default function AccountPage() {
       <div className="flex flex-col gap-8 max-w-2xl animate-pulse">
         <div className="h-8 w-48 rounded bg-muted" />
         <div className="rounded-xl border p-6 h-40 bg-muted/30" />
-        <div className="rounded-xl border p-6 h-32 bg-muted/30" />
+        <div className="rounded-xl border p-6 h-48 bg-muted/30" />
+        <div className="rounded-xl border p-6 h-24 bg-muted/30" />
       </div>
     }>
       <AccountContent />
