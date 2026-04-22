@@ -18,7 +18,11 @@ async function TransazioniContent({
   const initialFilter =
     params.filter === "uncategorized" ? "senza_cat" : "all";
 
-  const [profileRes, transactionsRes, categoriesRes, uncategorizedRes, displayRulesRes, categoryRulesRes] = await Promise.all([
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  const [profileRes, transactionsRes, categoriesRes, uncategorizedRes, displayRulesRes, categoryRulesRes, excelUploadsRes] = await Promise.all([
     supabase.from("profiles").select("plan, pay_day").eq("id", userId).single(),
     supabase
       .from("transactions")
@@ -46,6 +50,11 @@ async function TransazioniContent({
       .select("id, value, category_id, categories(name, icon, color)")
       .eq("user_id", userId)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("excel_uploads")
+      .select("id", { count: "exact" })
+      .eq("user_id", userId)
+      .gte("uploaded_at", monthStart.toISOString()),
   ]);
 
   const payDay: number = profileRes.data?.pay_day ?? 0;
@@ -55,6 +64,7 @@ async function TransazioniContent({
     <TransazioniClient
       userId={userId}
       plan={profileRes.data?.plan ?? "free"}
+      excelUploadsThisMonth={excelUploadsRes.count ?? 0}
       initialTransactions={transactionsRes.data ?? []}
       categories={categoriesRes.data ?? []}
       initialUncategorized={(uncategorizedRes.data ?? []) as any}

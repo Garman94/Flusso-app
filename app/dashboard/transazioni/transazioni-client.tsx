@@ -62,13 +62,14 @@ function applyDisplayRules(description: string, rules: DisplayRule[]): string {
   return description;
 }
 
-const FREE_LIMIT = 50;
+const EXCEL_FREE_LIMIT = 3;
 
 type FilterType = "all" | "entrate" | "uscite" | "senza_cat";
 
 type Props = {
   userId: string;
   plan: string;
+  excelUploadsThisMonth: number;
   initialTransactions: Transaction[];
   initialUncategorized: Transaction[];
   initialDisplayRules: DisplayRule[];
@@ -80,7 +81,7 @@ type Props = {
   periodMonth?: number;
 };
 
-export function TransazioniClient({ userId, plan, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, initialFilter = "all", payDay = 0, periodYear, periodMonth }: Props) {
+export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, initialFilter = "all", payDay = 0, periodYear, periodMonth }: Props) {
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -163,13 +164,10 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const [excelUploadsCount, setExcelUploadsCount] = useState(excelUploadsThisMonth);
   const isFree = plan === "free";
-  const monthCount = transactions.filter(t => {
-    const d = new Date(t.date);
-    const now = new Date();
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  }).length;
-  const atLimit = isFree && monthCount >= FREE_LIMIT;
+  const canUploadExcel = !isFree || excelUploadsCount < EXCEL_FREE_LIMIT;
+  const canUploadScreenshot = !isFree;
 
   async function handleAddTransaction(e: React.FormEvent) {
     e.preventDefault();
@@ -298,6 +296,13 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
     window.location.reload();
   }
 
+  async function handleExcelImported(count: number) {
+    // Log the upload for free plan tracking (fire-and-forget, non-blocking)
+    fetch("/api/excel/log-upload", { method: "POST" }).catch(() => null);
+    setExcelUploadsCount((n) => n + 1);
+    handleImported(count);
+  }
+
   async function handleSaveRule(e: React.FormEvent) {
     e.preventDefault();
     if (!newFind.trim() || !newReplace.trim()) return;
@@ -392,29 +397,39 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => { setShowAddModal(false); setShowForm(true); setRulesPanel(null); }}
-                disabled={atLimit}
-                title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto.` : ""}
-                className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors"
               >
                 <span className="text-3xl">✏️</span>
                 <span className="text-sm font-medium">Manuale</span>
                 <span className="text-xs text-muted-foreground text-center">Singolo movimento</span>
               </button>
               <button
-                onClick={() => { setShowAddModal(false); setShowImport(true); setRulesPanel(null); }}
-                className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors"
+                onClick={() => { if (!canUploadExcel) return; setShowAddModal(false); setShowImport(true); setRulesPanel(null); }}
+                disabled={!canUploadExcel}
+                title={!canUploadExcel ? `Limite ${EXCEL_FREE_LIMIT} upload/mese raggiunto. Passa a Premium.` : ""}
+                className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="text-3xl">📊</span>
                 <span className="text-sm font-medium">Excel / CSV</span>
-                <span className="text-xs text-muted-foreground text-center">Importa estratto conto</span>
+                <span className="text-xs text-muted-foreground text-center">
+                  {isFree
+                    ? canUploadExcel
+                      ? `${EXCEL_FREE_LIMIT - excelUploadsCount}/${EXCEL_FREE_LIMIT} rimasti`
+                      : "Limite raggiunto"
+                    : "Importa estratto conto"}
+                </span>
               </button>
               <button
-                onClick={() => { setShowAddModal(false); setShowScreenshot(true); setRulesPanel(null); }}
-                className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors"
+                onClick={() => { if (!canUploadScreenshot) return; setShowAddModal(false); setShowScreenshot(true); setRulesPanel(null); }}
+                disabled={!canUploadScreenshot}
+                title={!canUploadScreenshot ? "Disponibile con Premium o Founder." : ""}
+                className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <span className="text-3xl">📷</span>
+                <span className="text-3xl">{canUploadScreenshot ? "📷" : "🔒"}</span>
                 <span className="text-sm font-medium">Screenshot</span>
-                <span className="text-xs text-muted-foreground text-center">Analisi AI dell'immagine</span>
+                <span className="text-xs text-muted-foreground text-center">
+                  {canUploadScreenshot ? "Analisi AI dell'immagine" : "Piano Premium"}
+                </span>
               </button>
               <button
                 onClick={() => { setShowAddModal(false); setShowCatForm(true); setRulesPanel(null); }}
@@ -435,7 +450,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           userId={userId}
           categories={categories}
           onClose={() => setShowImport(false)}
-          onImported={handleImported}
+          onImported={handleExcelImported}
         />
       )}
 
@@ -564,9 +579,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
                 </button>
                 <button
                   onClick={() => setShowAddModal(true)}
-                  disabled={atLimit}
-                  title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto. Passa a Premium.` : ""}
-                  className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 transition-colors"
                 >
                   + Aggiungi
                 </button>
@@ -576,9 +589,7 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
               <div className="flex sm:hidden items-center gap-2">
                 <button
                   onClick={() => setShowAddModal(true)}
-                  disabled={atLimit}
-                  title={atLimit ? `Limite ${FREE_LIMIT} transazioni/mese raggiunto. Passa a Premium.` : ""}
-                  className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 transition-colors"
                 >
                   + Aggiungi
                 </button>
@@ -624,15 +635,6 @@ export function TransazioniClient({ userId, plan, initialTransactions, initialUn
           )}
         </div>
       </div>
-
-      {atLimit && (
-        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm flex items-center justify-between gap-4">
-          <span>Hai raggiunto il limite di {FREE_LIMIT} transazioni mensili del piano gratuito.</span>
-          <a href="/pricing" className="text-primary font-medium hover:underline whitespace-nowrap">
-            Passa a Premium
-          </a>
-        </div>
-      )}
 
       {/* Banner edit mode attivo */}
       {editMode && (
