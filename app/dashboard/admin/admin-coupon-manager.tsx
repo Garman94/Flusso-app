@@ -182,7 +182,7 @@ export function AdminCouponManager({ initialCoupons }: { initialCoupons: Coupon[
                       <tr key={c.id} className="opacity-60">
                         <td className="px-4 py-2 font-mono text-xs line-through">{c.code}</td>
                         <td className="px-4 py-2">
-                          <span className="text-xs font-medium px-2 py-0.5 rounded-full border bg-gray-100 text-gray-500 border-gray-200">
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full border bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-500">
                             {PLAN_LABELS[c.plan]}
                           </span>
                         </td>

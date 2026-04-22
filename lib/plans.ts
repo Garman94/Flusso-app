@@ -28,6 +28,6 @@ export function getPlanBadgeColor(plan: string): string {
       return "bg-purple-100 text-purple-800 border-purple-300";
     case "free":
     default:
-      return "bg-gray-100 text-gray-600 border-gray-200";
+      return "bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-500";
   }
 }
