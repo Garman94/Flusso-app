@@ -83,6 +83,15 @@ export function DashboardNavLinks({ isAdmin }: Props) {
           <span className="text-[10px]">Account</span>
         </Link>
 
+        {isAdmin && (
+          <Link href="/dashboard/admin" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/admin", false) ? "text-amber-600 dark:text-amber-400" : "text-amber-600/50 dark:text-amber-400/50 hover:text-amber-600 dark:hover:text-amber-400"}`}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/admin", false) ? 2.2 : 1.8}>
+              <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+            </svg>
+            <span className="text-[10px]">Admin</span>
+          </Link>
+        )}
+
       </nav>
     </>
   );
