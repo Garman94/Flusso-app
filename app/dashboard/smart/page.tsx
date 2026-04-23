@@ -25,7 +25,7 @@ async function SmartContent() {
       <div className="flex flex-col items-center justify-center gap-6 py-20 text-center max-w-md mx-auto">
         <span className="text-6xl">🔒</span>
         <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold">Sezione Smart</h1>
+          <h1 className="text-2xl font-bold">Sezione Budget</h1>
           <p className="text-muted-foreground">
             Previsioni, spese ricorrenti e obiettivi di risparmio sono disponibili con il piano Premium o Founder.
           </p>
