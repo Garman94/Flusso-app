@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getEffectivePlan } from "@/lib/preview-plan";
 import { getPlanLabel, getPlanBadgeColor } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,7 @@ async function AccountContent() {
     .eq("id", data.claims.sub)
     .single();
 
-  const plan = profile?.plan ?? "free";
+  const plan = await getEffectivePlan(profile?.plan ?? "free");
   const checkoutUrl = process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL ?? null;
 
   return (

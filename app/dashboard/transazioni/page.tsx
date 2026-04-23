@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { getEffectivePlan } from "@/lib/preview-plan";
 import { TransazioniClient } from "./transazioni-client";
 import { getCurrentPeriodAnchor } from "@/lib/period";
 
@@ -63,7 +64,7 @@ async function TransazioniContent({
   return (
     <TransazioniClient
       userId={userId}
-      plan={profileRes.data?.plan ?? "free"}
+      plan={await getEffectivePlan(profileRes.data?.plan ?? "free")}
       excelUploadsThisMonth={excelUploadsRes.count ?? 0}
       initialTransactions={transactionsRes.data ?? []}
       categories={categoriesRes.data ?? []}

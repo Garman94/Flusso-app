@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { getEffectivePlan } from "@/lib/preview-plan";
 import { SmartPageClient } from "./smart-page-client";
 import { getCurrentPeriodAnchor, computePeriodRange } from "@/lib/period";
 
@@ -17,7 +18,7 @@ async function SmartContent() {
     .eq("id", userId)
     .single();
 
-  const plan = profile?.plan ?? "free";
+  const plan = await getEffectivePlan(profile?.plan ?? "free");
 
   if (plan === "free") {
     return (

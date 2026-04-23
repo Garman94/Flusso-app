@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { getEffectivePlan } from "@/lib/preview-plan";
 import { DashboardClient } from "./dashboard-client";
 import type { Transaction, Goal } from "@/lib/calculations";
 
@@ -108,7 +109,7 @@ async function DashboardContent() {
       userId={userId}
       profile={{
         full_name: profileRes.data?.full_name ?? null,
-        plan: profileRes.data?.plan ?? "free",
+        plan: await getEffectivePlan(profileRes.data?.plan ?? "free"),
         balance: Number(profileRes.data?.balance ?? 0),
         piggy_balance: Number(profileRes.data?.piggy_balance ?? 0),
       }}

@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { AdminPlanSelect } from "./admin-plan-select";
 import { AdminCouponManager } from "./admin-coupon-manager";
+import { AdminPreviewMode } from "./admin-preview-mode";
+import { getPreviewPlan } from "@/lib/preview-plan";
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
@@ -33,7 +35,7 @@ async function AdminContent() {
 
   const service = getServiceClient();
 
-  const [{ data: profiles, error: profilesError }, { data: coupons }] = await Promise.all([
+  const [{ data: profiles, error: profilesError }, { data: coupons }, previewPlan] = await Promise.all([
     service
       .from("profiles")
       .select("id, full_name, plan, created_at")
@@ -42,6 +44,7 @@ async function AdminContent() {
       .from("coupon_codes")
       .select("id, code, plan, used, used_by, used_at, notes, created_at")
       .order("created_at", { ascending: false }),
+    getPreviewPlan(),
   ]);
 
   if (profilesError) {
@@ -104,6 +107,9 @@ async function AdminContent() {
         </div>
         <AdminCouponManager initialCoupons={coupons ?? []} />
       </div>
+
+      {/* Preview mode */}
+      <AdminPreviewMode activePlan={previewPlan} />
     </div>
   );
 }

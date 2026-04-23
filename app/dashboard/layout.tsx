@@ -3,8 +3,10 @@ import { Suspense } from "react";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { LogoutButton } from "@/components/logout-button";
 import { DashboardNavLinks } from "@/components/dashboard-nav-links";
+import { PreviewBanner } from "@/components/preview-banner";
 import { siteConfig } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
+import { getPreviewPlan } from "@/lib/preview-plan";
 
 async function DashboardNav() {
   const supabase = await createClient();
@@ -15,19 +17,24 @@ async function DashboardNav() {
     ? adminEmails.includes(data.claims.email as string)
     : false;
 
+  const previewPlan = isAdmin ? await getPreviewPlan() : null;
+
   return (
-    <div className="w-full max-w-5xl flex justify-between items-center px-5 text-sm">
-      <div className="flex items-center gap-6">
-        <Link href="/" className="font-bold text-lg">
-          {siteConfig.name}
-        </Link>
-        <DashboardNavLinks isAdmin={isAdmin} />
+    <>
+      {previewPlan && <PreviewBanner currentPreview={previewPlan} />}
+      <div className="w-full max-w-5xl flex justify-between items-center px-5 text-sm">
+        <div className="flex items-center gap-6">
+          <Link href="/" className="font-bold text-lg">
+            {siteConfig.name}
+          </Link>
+          <DashboardNavLinks isAdmin={isAdmin} />
+        </div>
+        <div className="flex items-center gap-4">
+          <ThemeSwitcher />
+          <LogoutButton />
+        </div>
       </div>
-      <div className="flex items-center gap-4">
-        <ThemeSwitcher />
-        <LogoutButton />
-      </div>
-    </div>
+    </>
   );
 }
 
