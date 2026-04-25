@@ -13,16 +13,22 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["finance", "productivity"],
     icons: [
       {
-        src: "/icon-192.svg",
+        src: "/android/launchericon-192x192.png",
         sizes: "192x192",
-        type: "image/svg+xml",
-        purpose: "maskable",
+        type: "image/png",
+        purpose: "maskable any",
       },
       {
-        src: "/icon-512.svg",
+        src: "/android/launchericon-512x512.png",
         sizes: "512x512",
-        type: "image/svg+xml",
-        purpose: "maskable",
+        type: "image/png",
+        purpose: "maskable any",
+      },
+      {
+        src: "/ios/180.png",
+        sizes: "180x180",
+        type: "image/png",
+        purpose: "any",
       },
     ],
   };

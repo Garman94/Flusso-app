@@ -19,6 +19,10 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "default",
     title: siteConfig.name,
+    startupImage: "/ios/1024.png",
+  },
+  icons: {
+    apple: "/ios/180.png",
   },
 };
 
