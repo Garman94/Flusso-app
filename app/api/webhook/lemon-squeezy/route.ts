@@ -29,15 +29,19 @@ interface LemonSqueezyWebhookPayload {
 function verifySignature(body: string, signature: string): boolean {
   const secret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET;
   if (!secret) {
-    console.error("LEMON_SQUEEZY_WEBHOOK_SECRET is not set");
+    console.error("[lemon-squeezy] LEMON_SQUEEZY_WEBHOOK_SECRET is not set");
     return false;
   }
   const hmac = crypto.createHmac("sha256", secret);
   const digest = hmac.update(body).digest("hex");
-  return crypto.timingSafeEqual(
-    Buffer.from(digest, "hex"),
-    Buffer.from(signature, "hex"),
-  );
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(digest, "hex"),
+      Buffer.from(signature, "hex"),
+    );
+  } catch {
+    return false;
+  }
 }
 
 function createServiceClient() {

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { UpdateNameForm } from "./update-name-form";
 import { DeleteAccountButton } from "./delete-account-button";
 import { PlanSection } from "./plan-section";
+import { UpgradeSuccessModal } from "./upgrade-success-modal";
 
 async function AccountContent() {
   const supabase = await createClient();
@@ -70,7 +71,11 @@ async function AccountContent() {
 
 export default function AccountPage() {
   return (
-    <Suspense fallback={
+    <>
+      <Suspense fallback={null}>
+        <UpgradeSuccessModal />
+      </Suspense>
+      <Suspense fallback={
       <div className="flex flex-col gap-8 max-w-2xl animate-pulse">
         <div className="h-8 w-48 rounded bg-muted" />
         <div className="rounded-xl border p-6 h-40 bg-muted/30" />
@@ -80,5 +85,6 @@ export default function AccountPage() {
     }>
       <AccountContent />
     </Suspense>
+    </>
   );
 }

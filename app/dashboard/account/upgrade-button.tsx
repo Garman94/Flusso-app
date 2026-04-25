@@ -4,9 +4,8 @@
 // which is required for the webhook to identify which profile to upgrade.
 export function UpgradeButton({ userId, checkoutUrl }: { userId: string; checkoutUrl: string }) {
   function handleClick() {
-    const url = new URL(checkoutUrl);
-    url.searchParams.set("checkout[custom][user_id]", userId);
-    window.location.href = url.toString();
+    const separator = checkoutUrl.includes("?") ? "&" : "?";
+    window.location.href = `${checkoutUrl}${separator}checkout[custom][user_id]=${encodeURIComponent(userId)}`;
   }
 
   return (
