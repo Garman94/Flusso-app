@@ -22,6 +22,8 @@ type RecurringExpense = {
   custom_days: number | null; amount: number; amount_max: number | null;
   category_id: string | null; notes: string | null; match_keywords: string[];
   matching_strategy: string; due_day: number | null; due_month: number | null;
+  secondary_name: string | null;
+  end_date: string | null;
 };
 type TipoCard = "uscita_fissa" | "uscita_variabile" | "entrata";
 type View = "cover" | "add-recurring" | "edit-recurring" | "list-recurring" | "add-goal" | "list-goals" | "previsioni";
@@ -121,6 +123,8 @@ const EMPTY_R = {
   amount_max: "",
   due_day: null as number | null,
   due_month: null as number | null,
+  secondary_name: "",
+  end_date: "",
 };
 
 const EMPTY_G = {
@@ -155,6 +159,7 @@ export function SmartPageClient({
   const [eForm, setEForm] = useState(EMPTY_R);
   const [eEditId, setEEditId] = useState<string | null>(null);
   const [eSaving, setESaving] = useState(false);
+  const [eTxSearch, setETxSearch] = useState("");
 
   // Goal wizard
   const [gStep, setGStep] = useState(1);
@@ -200,8 +205,10 @@ export function SmartPageClient({
       amount_max: item.amount_max?.toString().replace(".", ",") ?? "",
       due_day: item.due_day ?? null,
       due_month: item.due_month ?? null,
+      secondary_name: item.secondary_name ?? "",
+      end_date: item.end_date ?? "",
     });
-    setEEditId(item.id); setView("edit-recurring");
+    setEEditId(item.id); setETxSearch(""); setView("edit-recurring");
   }
 
   function goAddGoal() {
@@ -244,6 +251,7 @@ export function SmartPageClient({
       custom_days: custDays, amount: amt, amount_max: amtMax,
       match_keywords: [], matching_strategy: "keyword",
       due_day: rForm.due_day, category_id: null, notes: null,
+      secondary_name: rForm.secondary_name.trim() || null,
     };
 
     if (rEditId) {
@@ -295,6 +303,8 @@ export function SmartPageClient({
       custom_days: custDays, amount: amt, amount_max: amtMax,
       due_day: eForm.due_day,
       due_month: eForm.frequency === "annuale" ? eForm.due_month : null,
+      secondary_name: eForm.secondary_name.trim() || null,
+      end_date: eForm.end_date || null,
     };
     const { data, error } = await createClient()
       .from("recurring_expenses").update(payload).eq("id", eEditId).select("*").single();
@@ -500,12 +510,21 @@ export function SmartPageClient({
                     <button
                       key={i}
                       type="button"
-                      onClick={() => setRForm(f => ({ ...f, name: t.description ?? t.merchant ?? f.name }))}
+                      onClick={() => {
+                        const d = new Date(t.date + "T00:00:00");
+                        setRForm(f => ({
+                          ...f,
+                          name: f.name || t.description || t.merchant || f.name,
+                          secondary_name: t.description ?? t.merchant ?? "",
+                          amount: Math.abs(Number(t.amount)).toString().replace(".", ","),
+                          due_day: d.getDate(),
+                        }));
+                      }}
                       className="text-left text-sm px-3 py-2 rounded-lg border hover:bg-muted/50 transition-colors"
                     >
-                      {t.description || t.merchant}
+                      <span className="font-medium">{t.description || t.merchant}</span>
                       <span className="text-muted-foreground text-xs ml-2">
-                        ({fmt(Math.abs(Number(t.amount)))})
+                        {fmt(Math.abs(Number(t.amount)))} · {new Date(t.date).toLocaleDateString("it-IT")}
                       </span>
                     </button>
                   ))}
@@ -858,6 +877,113 @@ export function SmartPageClient({
             </div>
           )}
 
+          {/* Collega a transazione */}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Collega a transazione</label>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Collega una transazione reale per dedurre importo, giorno e nome secondario.
+            </p>
+            {eForm.secondary_name ? (
+              <div className="flex items-center gap-3 rounded-xl border-2 border-primary/40 bg-primary/5 px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{eForm.secondary_name}</p>
+                  <p className="text-xs text-muted-foreground">Collegata · importo e giorno sincronizzati</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEForm(f => ({ ...f, secondary_name: "" }))}
+                  className="text-xs text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                >
+                  ✕ Scollega
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  value={eTxSearch}
+                  onChange={e => setETxSearch(e.target.value)}
+                  placeholder="Cerca nelle tue transazioni…"
+                  className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+                />
+                {eTxSearch.length >= 2 && (
+                  <div className="flex flex-col gap-1">
+                    {transactions
+                      .filter(t => {
+                        const q = eTxSearch.toLowerCase();
+                        return t.description?.toLowerCase().includes(q) || t.merchant?.toLowerCase().includes(q);
+                      })
+                      .slice(0, 5)
+                      .map((t, i) => {
+                        const d = new Date(t.date + "T00:00:00");
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => {
+                              setEForm(f => ({
+                                ...f,
+                                amount: Math.abs(Number(t.amount)).toString().replace(".", ","),
+                                due_day: d.getDate(),
+                                due_month: f.frequency === "annuale" ? d.getMonth() + 1 : f.due_month,
+                                secondary_name: t.description ?? t.merchant ?? "",
+                              }));
+                              setETxSearch("");
+                            }}
+                            className="text-left px-3 py-2.5 rounded-xl border hover:bg-muted/50 transition-colors flex items-center gap-3"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{t.description || t.merchant}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {fmt(Math.abs(Number(t.amount)))} · {d.toLocaleDateString("it-IT")}
+                              </p>
+                            </div>
+                            <span className="text-xs text-primary shrink-0">Collega →</span>
+                          </button>
+                        );
+                      })}
+                    {transactions.filter(t => {
+                      const q = eTxSearch.toLowerCase();
+                      return t.description?.toLowerCase().includes(q) || t.merchant?.toLowerCase().includes(q);
+                    }).length === 0 && (
+                      <p className="text-xs text-muted-foreground px-1">Nessuna transazione trovata.</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Data fine (rate) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">
+              Data fine{" "}
+              <span className="text-muted-foreground font-normal">— opzionale, per rate o finanziamenti</span>
+            </label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={eForm.end_date}
+                onChange={e => setEForm(f => ({ ...f, end_date: e.target.value }))}
+                className="flex-1 border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+              />
+              {eForm.end_date && (
+                <button
+                  type="button"
+                  onClick={() => setEForm(f => ({ ...f, end_date: "" }))}
+                  className="text-xs text-muted-foreground hover:text-destructive border rounded-lg px-3 py-3 transition-colors"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {eForm.end_date && (
+              <p className="text-xs text-muted-foreground">
+                La voce scadrà il {new Date(eForm.end_date).toLocaleDateString("it-IT")}
+              </p>
+            )}
+          </div>
+
           {/* Giorno del mese */}
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium">
@@ -959,7 +1085,12 @@ export function SmartPageClient({
                   {group.items.map(item => (
                     <div key={item.id} className="rounded-xl border p-4 flex items-center gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">{item.name}</div>
+                        <div className="font-medium truncate">
+                          {item.name}
+                          {item.secondary_name && (
+                            <span className="text-muted-foreground font-normal"> ({item.secondary_name})</span>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {item.tipologia === "variabile" && item.amount_max
                             ? `${fmt(item.amount)} – ${fmt(item.amount_max)}`
@@ -968,6 +1099,7 @@ export function SmartPageClient({
                           {item.frequency === "annuale" && item.due_month
                             ? ` · ${new Date(2000, item.due_month - 1).toLocaleString("it-IT", { month: "long" })}${item.due_day ? ` ${item.due_day}` : ""}`
                             : item.due_day ? ` · giorno ${item.due_day}` : ""}
+                          {item.end_date ? ` · fino al ${new Date(item.end_date).toLocaleDateString("it-IT")}` : ""}
                         </div>
                       </div>
                       <div className="flex gap-2 shrink-0">
