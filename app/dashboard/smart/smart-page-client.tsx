@@ -54,6 +54,57 @@ function toMonthlyAmount(exp: RecurringExpense): number {
   return mid / (FREQ_MONTHS[exp.frequency] ?? 1);
 }
 
+function effectiveKws(item: RecurringExpense): string[] {
+  const kws = [...item.match_keywords];
+  if (item.secondary_name) {
+    const sn = item.secondary_name.toLowerCase();
+    if (!kws.some(k => k.toLowerCase() === sn)) kws.push(item.secondary_name);
+  }
+  return kws;
+}
+
+function txMatchesKws(tx: Transaction, kws: string[]): boolean {
+  if (!kws.length) return false;
+  const d = (tx.description ?? "").toLowerCase();
+  const m = (tx.merchant ?? "").toLowerCase();
+  return kws.some(k => { const kk = k.toLowerCase().trim(); return kk.length > 0 && (d.includes(kk) || m.includes(kk)); });
+}
+
+function nextOccurrence(item: RecurringExpense, allTxs: Transaction[]): Date | null {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  if (item.end_date && new Date(item.end_date + "T00:00:00") < today) return null;
+
+  if (item.frequency === "mensile" && item.due_day) {
+    const c = new Date(today.getFullYear(), today.getMonth(), item.due_day);
+    return c >= today ? c : new Date(today.getFullYear(), today.getMonth() + 1, item.due_day);
+  }
+
+  if (item.frequency === "annuale") {
+    const mo = (item.due_month ?? 1) - 1;
+    const d = item.due_day ?? 1;
+    const c = new Date(today.getFullYear(), mo, d);
+    return c >= today ? c : new Date(today.getFullYear() + 1, mo, d);
+  }
+
+  // Per frequenze multi-mese: usa l'ultima transazione corrispondente come riferimento
+  if (item.due_day) {
+    const freqMonths = FREQ_MONTHS[item.frequency] ?? 2;
+    const kws = effectiveKws(item);
+    if (kws.length > 0) {
+      const last = [...allTxs]
+        .filter(t => Number(t.amount) < 0 && txMatchesKws(t, kws))
+        .sort((a, b) => b.date.localeCompare(a.date))[0];
+      if (last) {
+        const lastDate = new Date(last.date + "T00:00:00");
+        const next = new Date(lastDate.getFullYear(), lastDate.getMonth() + freqMonths, item.due_day);
+        if (next >= today) return next;
+      }
+    }
+  }
+
+  return null;
+}
+
 function freqLabel(exp: RecurringExpense): string {
   if (exp.frequency === "personalizzata" && exp.custom_days) {
     if (exp.custom_days % 365 === 0) return `ogni ${exp.custom_days / 365} anno`;
@@ -1101,6 +1152,53 @@ export function SmartPageClient({
                             : item.due_day ? ` · giorno ${item.due_day}` : ""}
                           {item.end_date ? ` · fino al ${new Date(item.end_date).toLocaleDateString("it-IT")}` : ""}
                         </div>
+
+                        {/* Speso questo mese + prossima uscita */}
+                        {(() => {
+                          const kws = effectiveKws(item);
+                          const isUscita = item.tipologia !== "entrata";
+                          const periodTxs = transactions.filter(
+                            t => t.date >= pStart && (pEnd ? t.date <= pEnd : true)
+                          );
+                          const matchedTxs = kws.length > 0
+                            ? periodTxs.filter(t => isUscita ? Number(t.amount) < 0 : Number(t.amount) > 0)
+                                .filter(t => txMatchesKws(t, kws))
+                            : item.category_id
+                            ? periodTxs.filter(t => isUscita ? Number(t.amount) < 0 : Number(t.amount) > 0)
+                                .filter(t => t.category_id === item.category_id)
+                            : [];
+                          const spent = matchedTxs.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+                          const next = nextOccurrence(item, transactions);
+                          const hasData = spent > 0 || next !== null;
+                          if (!hasData) return null;
+                          return (
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 pt-2 border-t border-dashed">
+                              {spent > 0 && (
+                                <span className="text-xs flex items-center gap-1">
+                                  <span className="text-muted-foreground">{isUscita ? "Speso" : "Ricevuto"} questo mese:</span>
+                                  <span className="font-semibold text-foreground">{fmt(spent)}</span>
+                                </span>
+                              )}
+                              {spent === 0 && kws.length > 0 && (
+                                <span className="text-xs text-muted-foreground italic">Nessuna transazione questo mese</span>
+                              )}
+                              {next && (
+                                <span className="text-xs flex items-center gap-1">
+                                  <span className="text-muted-foreground">Prossima:</span>
+                                  <span className="font-semibold text-foreground">
+                                    {next.toLocaleDateString("it-IT", { day: "numeric", month: "short" })}
+                                  </span>
+                                  <span className="text-muted-foreground">·</span>
+                                  <span className="font-medium">
+                                    {item.tipologia === "variabile" && item.amount_max
+                                      ? `${fmt(item.amount)}–${fmt(item.amount_max)}`
+                                      : fmt(item.amount)}
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="flex gap-2 shrink-0">
                         <button
