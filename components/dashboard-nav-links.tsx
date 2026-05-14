@@ -22,8 +22,37 @@ export function DashboardNavLinks({ isAdmin }: Props) {
 
   return (
     <>
-      {/* Bottom nav — sempre visibile su tutti i dispositivi */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t flex items-center justify-around h-16 px-2">
+      {/* Desktop */}
+      <div className="hidden md:flex items-center gap-4">
+        {NAV_LINKS.map(({ href, label, exact }) => (
+          <Link
+            key={href}
+            href={href}
+            className={`transition-colors text-sm ${
+              isActive(href, exact)
+                ? "text-foreground font-semibold"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {label}
+          </Link>
+        ))}
+        {isAdmin && (
+          <Link
+            href="/dashboard/admin"
+            className={`transition-colors text-sm ${
+              isActive("/dashboard/admin", false)
+                ? "text-amber-600 dark:text-amber-400 font-semibold"
+                : "text-amber-600/60 dark:text-amber-400/60 hover:text-amber-600 dark:hover:text-amber-400"
+            }`}
+          >
+            Admin
+          </Link>
+        )}
+      </div>
+
+      {/* Mobile/PWA bottom nav */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t flex items-center justify-around h-16 px-2">
 
         <Link href="/dashboard" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard", true) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard", true) ? 2.2 : 1.8}>

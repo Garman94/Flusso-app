@@ -59,7 +59,7 @@ export default function DashboardLayout({
         </nav>
 
         {/* Page content — extra bottom padding on mobile for the bottom nav */}
-        <div className="flex-1 w-full max-w-5xl px-4 py-6 pb-24 md:px-5 md:py-10">
+        <div className="flex-1 w-full max-w-5xl px-4 py-6 pb-24 md:px-5 md:py-10 md:pb-10">
           {children}
         </div>
       </div>
