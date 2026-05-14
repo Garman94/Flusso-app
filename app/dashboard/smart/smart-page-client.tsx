@@ -24,7 +24,7 @@ type RecurringExpense = {
   matching_strategy: string; due_day: number | null;
 };
 type TipoCard = "uscita_fissa" | "uscita_variabile" | "entrata";
-type View = "cover" | "add-recurring" | "list-recurring" | "add-goal" | "list-goals" | "previsioni";
+type View = "cover" | "add-recurring" | "edit-recurring" | "list-recurring" | "add-goal" | "list-goals" | "previsioni";
 
 type Props = {
   userId: string; plan: string; initialGoals: Goal[];
@@ -144,11 +144,16 @@ export function SmartPageClient({
   const [recurringLoading, setRecurringLoading] = useState(true);
   const [goals, setGoals] = useState(initialGoals);
 
-  // Recurring wizard
+  // Recurring wizard (add)
   const [rStep, setRStep] = useState(1);
   const [rForm, setRForm] = useState(EMPTY_R);
   const [rSaving, setRSaving] = useState(false);
   const [rEditId, setREditId] = useState<string | null>(null);
+
+  // Recurring edit form (flat, single-page)
+  const [eForm, setEForm] = useState(EMPTY_R);
+  const [eEditId, setEEditId] = useState<string | null>(null);
+  const [eSaving, setESaving] = useState(false);
 
   // Goal wizard
   const [gStep, setGStep] = useState(1);
@@ -183,7 +188,7 @@ export function SmartPageClient({
   }
 
   function goEditRecurring(item: RecurringExpense) {
-    setRForm({
+    setEForm({
       tipo: item.tipologia === "variabile" ? "uscita_variabile"
           : item.tipologia === "entrata" ? "entrata"
           : "uscita_fissa",
@@ -194,7 +199,7 @@ export function SmartPageClient({
       amount_max: item.amount_max?.toString().replace(".", ",") ?? "",
       due_day: item.due_day ?? null,
     });
-    setRStep(1); setREditId(item.id); setView("add-recurring");
+    setEEditId(item.id); setView("edit-recurring");
   }
 
   function goAddGoal() {
@@ -263,6 +268,39 @@ export function SmartPageClient({
     const { error } = await createClient().from("recurring_expenses").delete().eq("id", id);
     if (error) toast.error("Errore.");
     else { setRecurringItems(prev => prev.filter(it => it.id !== id)); toast.success("Rimossa."); }
+  }
+
+  async function handleUpdateRecurring() {
+    if (!eEditId) return;
+    const amt = parseFloat(eForm.amount.replace(",", "."));
+    if (!eForm.name.trim() || isNaN(amt) || amt <= 0) {
+      toast.error("Inserisci nome e importo."); return;
+    }
+    const tipologia: Tipologia =
+      eForm.tipo === "uscita_variabile" ? "variabile"
+      : eForm.tipo === "entrata" ? "entrata"
+      : "fissa";
+    const amtMax = tipologia === "variabile" && eForm.amount_max
+      ? parseFloat(eForm.amount_max.replace(",", ".")) : null;
+    const custDays = eForm.frequency === "personalizzata"
+      ? parseInt(eForm.custom_days) || null : null;
+    if (eForm.frequency === "personalizzata" && (!custDays || custDays <= 0)) {
+      toast.error("Inserisci un intervallo valido."); return;
+    }
+    setESaving(true);
+    const payload = {
+      name: eForm.name.trim(), tipologia, frequency: eForm.frequency,
+      custom_days: custDays, amount: amt, amount_max: amtMax,
+      due_day: eForm.due_day,
+    };
+    const { data, error } = await createClient()
+      .from("recurring_expenses").update(payload).eq("id", eEditId).select("*").single();
+    if (error) toast.error("Errore nel salvataggio.");
+    else {
+      setRecurringItems(prev => prev.map(it => it.id === eEditId ? data as RecurringExpense : it));
+      toast.success("Modificata!"); setView("list-recurring");
+    }
+    setESaving(false);
   }
 
   // ── Goal CRUD ──────────────────────────────────────────────────────────────
@@ -646,6 +684,162 @@ export function SmartPageClient({
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RECURRING EDIT (form singolo, tutti i campi visibili)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (view === "edit-recurring") {
+    const isVariabile = eForm.tipo === "uscita_variabile";
+    const TIPO_OPTIONS: { value: TipoCard; icon: string; label: string }[] = [
+      { value: "uscita_fissa",     icon: "💸", label: "Uscita fissa" },
+      { value: "uscita_variabile", icon: "📊", label: "Uscita variabile" },
+      { value: "entrata",          icon: "💰", label: "Entrata" },
+    ];
+    const FREQ_OPTIONS: { value: Frequency; label: string }[] = [
+      { value: "mensile",       label: "Ogni mese" },
+      { value: "bimestrale",    label: "Ogni 2 mesi" },
+      { value: "trimestrale",   label: "Ogni 3 mesi" },
+      { value: "semestrale",    label: "Ogni 6 mesi" },
+      { value: "annuale",       label: "Ogni anno" },
+      { value: "personalizzata", label: "Personalizzato" },
+    ];
+
+    return (
+      <div className="flex flex-col gap-6 max-w-md mx-auto w-full">
+        <div className="flex items-center gap-3">
+          <BackButton onClick={() => setView("list-recurring")} />
+          <h1 className="text-xl font-bold">Modifica voce</h1>
+        </div>
+
+        <div className="flex flex-col gap-5">
+          {/* Nome */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Nome</label>
+            <input
+              type="text" value={eForm.name}
+              onChange={e => setEForm(f => ({ ...f, name: e.target.value }))}
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            />
+          </div>
+
+          {/* Tipo */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Tipo</label>
+            <div className="flex gap-2">
+              {TIPO_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setEForm(f => ({ ...f, tipo: opt.value, amount_max: opt.value !== "uscita_variabile" ? "" : f.amount_max }))}
+                  className={`flex-1 flex flex-col items-center gap-1 rounded-xl border-2 py-3 text-xs font-medium transition-all ${
+                    eForm.tipo === opt.value
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50"
+                  }`}
+                >
+                  <span className="text-xl">{opt.icon}</span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Frequenza */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Frequenza</label>
+            <select
+              value={eForm.frequency}
+              onChange={e => setEForm(f => ({ ...f, frequency: e.target.value as Frequency }))}
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            >
+              {FREQ_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            {eForm.frequency === "personalizzata" && (
+              <input
+                type="number" value={eForm.custom_days}
+                onChange={e => setEForm(f => ({ ...f, custom_days: e.target.value }))}
+                placeholder="Ogni quanti giorni?"
+                min={1}
+                className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors mt-2"
+              />
+            )}
+          </div>
+
+          {/* Importo */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">
+              {isVariabile ? "Importo minimo (€)" : "Importo (€)"}
+            </label>
+            <input
+              type="text" value={eForm.amount}
+              onChange={e => setEForm(f => ({ ...f, amount: e.target.value }))}
+              placeholder="es. 500"
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            />
+          </div>
+
+          {isVariabile && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium">Importo massimo (€)</label>
+              <input
+                type="text" value={eForm.amount_max}
+                onChange={e => setEForm(f => ({ ...f, amount_max: e.target.value }))}
+                placeholder="es. 150"
+                className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+              />
+            </div>
+          )}
+
+          {/* Giorno del mese */}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">
+              Giorno del mese{" "}
+              <span className="text-muted-foreground font-normal">
+                {eForm.due_day ? `— ${eForm.due_day}` : "— non specificato"}
+              </span>
+            </label>
+            <div className="grid grid-cols-7 gap-1.5">
+              {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setEForm(f => ({ ...f, due_day: f.due_day === d ? null : d }))}
+                  className={`aspect-square rounded-lg text-sm font-medium transition-all ${
+                    eForm.due_day === d
+                      ? "bg-primary text-primary-foreground"
+                      : "border hover:bg-muted/50"
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+            {eForm.due_day !== null && (
+              <button
+                type="button"
+                onClick={() => setEForm(f => ({ ...f, due_day: null }))}
+                className="text-xs text-muted-foreground hover:text-foreground underline text-left"
+              >
+                Rimuovi giorno
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Salva */}
+        <button
+          onClick={handleUpdateRecurring}
+          disabled={eSaving}
+          className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        >
+          {eSaving ? "Salvataggio…" : "Salva modifiche"}
+        </button>
       </div>
     );
   }
