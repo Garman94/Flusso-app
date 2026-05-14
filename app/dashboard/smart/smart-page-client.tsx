@@ -453,7 +453,12 @@ export function SmartPageClient({
         )}
 
         {/* Step 2 — Nome */}
-        {rStep === 2 && (
+        {rStep === 2 && (() => {
+          const q = rForm.name.trim().toLowerCase();
+          const duplicate = q.length >= 2
+            ? recurringItems.find(it => it.name.toLowerCase().includes(q) || q.includes(it.name.toLowerCase()))
+            : null;
+          return (
           <div className="flex flex-col gap-6">
             <h2 className="text-xl font-bold">Come si chiama?</h2>
             <div className="flex flex-col gap-2">
@@ -462,10 +467,33 @@ export function SmartPageClient({
                 value={rForm.name}
                 onChange={e => setRForm(f => ({ ...f, name: e.target.value }))}
                 placeholder={isEntrata ? "es. Stipendio, Affitto ricevuto…" : "es. Netflix, Affitto, Enel…"}
-                className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+                className={`border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none transition-colors ${duplicate ? "border-amber-400 focus:border-amber-400" : "focus:border-primary"}`}
                 autoFocus
               />
-              {txSuggestions.length > 0 && (
+
+              {/* Avviso duplicato */}
+              {duplicate && (
+                <div className="rounded-xl border-2 border-amber-400/60 bg-amber-50 dark:bg-amber-950/30 p-3 flex flex-col gap-2">
+                  <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                    ⚠️ Hai già una voce simile: <span className="font-bold">&ldquo;{duplicate.name}&rdquo;</span>
+                  </p>
+                  <p className="text-xs text-amber-600 dark:text-amber-500">
+                    {duplicate.tipologia === "fissa" ? "Uscita fissa"
+                      : duplicate.tipologia === "variabile" ? "Uscita variabile"
+                      : "Entrata"} · {freqLabel(duplicate)} · {fmt(duplicate.amount)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { goEditRecurring(duplicate); }}
+                    className="text-xs text-amber-700 dark:text-amber-400 underline text-left hover:no-underline"
+                  >
+                    Vai a modificarla invece →
+                  </button>
+                </div>
+              )}
+
+              {/* Suggerimenti da transazioni */}
+              {txSuggestions.length > 0 && !duplicate && (
                 <div className="flex flex-col gap-1 mt-1">
                   <p className="text-xs text-muted-foreground">Trovato nelle tue transazioni:</p>
                   {txSuggestions.map((t, i) => (
@@ -491,10 +519,11 @@ export function SmartPageClient({
               }}
               className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold hover:bg-primary/90 transition-colors"
             >
-              Continua →
+              {duplicate ? "Continua comunque →" : "Continua →"}
             </button>
           </div>
-        )}
+          );
+        })()}
 
         {/* Step 3 — Frequenza */}
         {rStep === 3 && (
