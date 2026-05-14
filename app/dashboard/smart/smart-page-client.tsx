@@ -322,25 +322,24 @@ export function SmartPageClient({
 
   if (view === "cover") {
     return (
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
         <h1 className="text-2xl font-bold">Smart</h1>
-        <div className="grid grid-cols-2 gap-4">
-          {([
-            { icon: "➕", label: "Aggiungi spesa ricorrente", action: goAddRecurring },
-            { icon: "📋", label: "Le mie spese ricorrenti", action: () => setView("list-recurring") },
-            { icon: "🎯", label: "I miei obiettivi", action: () => setView("list-goals") },
-            { icon: "🔮", label: "Previsioni", action: () => setView("previsioni") },
-          ] as const).map(({ icon, label, action }) => (
-            <button
-              key={label}
-              onClick={action}
-              className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 p-6 aspect-square transition-all active:scale-95"
-            >
-              <span className="text-4xl">{icon}</span>
-              <span className="text-sm font-medium text-center leading-tight">{label}</span>
-            </button>
-          ))}
-        </div>
+        {([
+          { icon: "➕", label: "Aggiungi spesa ricorrente", action: goAddRecurring },
+          { icon: "📋", label: "Le mie spese ricorrenti", action: () => setView("list-recurring") },
+          { icon: "🎯", label: "I miei obiettivi", action: () => setView("list-goals") },
+          { icon: "🔮", label: "Previsioni", action: () => setView("previsioni") },
+        ] as const).map(({ icon, label, action }) => (
+          <button
+            key={label}
+            onClick={action}
+            className="flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 px-5 py-4 text-left transition-all active:scale-[0.98]"
+          >
+            <span className="text-2xl">{icon}</span>
+            <span className="text-base font-medium">{label}</span>
+            <span className="ml-auto text-muted-foreground">›</span>
+          </button>
+        ))}
       </div>
     );
   }
