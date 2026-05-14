@@ -8,7 +8,7 @@ type Props = { isAdmin: boolean };
 const NAV_LINKS = [
   { href: "/dashboard",              label: "Dashboard",     exact: true  },
   { href: "/dashboard/transazioni",  label: "Transazioni",   exact: false },
-  { href: "/dashboard/smart",        label: "Budget",        exact: false },
+  { href: "/dashboard/smart",        label: "Smart",         exact: false },
   { href: "/dashboard/account",      label: "Impostazioni",  exact: false },
 ];
 
@@ -73,7 +73,7 @@ export function DashboardNavLinks({ isAdmin }: Props) {
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/smart", false) ? 2.2 : 1.8}>
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
-          <span className="text-[10px]">Budget</span>
+          <span className="text-[10px]">Smart</span>
         </Link>
 
         <Link href="/dashboard/account" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/account", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
