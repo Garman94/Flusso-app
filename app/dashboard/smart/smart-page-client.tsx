@@ -21,7 +21,7 @@ type RecurringExpense = {
   id: string; name: string; tipologia: Tipologia; frequency: Frequency;
   custom_days: number | null; amount: number; amount_max: number | null;
   category_id: string | null; notes: string | null; match_keywords: string[];
-  matching_strategy: string; due_day: number | null;
+  matching_strategy: string; due_day: number | null; due_month: number | null;
 };
 type TipoCard = "uscita_fissa" | "uscita_variabile" | "entrata";
 type View = "cover" | "add-recurring" | "edit-recurring" | "list-recurring" | "add-goal" | "list-goals" | "previsioni";
@@ -120,6 +120,7 @@ const EMPTY_R = {
   amount: "",
   amount_max: "",
   due_day: null as number | null,
+  due_month: null as number | null,
 };
 
 const EMPTY_G = {
@@ -198,6 +199,7 @@ export function SmartPageClient({
       amount: item.amount.toString().replace(".", ","),
       amount_max: item.amount_max?.toString().replace(".", ",") ?? "",
       due_day: item.due_day ?? null,
+      due_month: item.due_month ?? null,
     });
     setEEditId(item.id); setView("edit-recurring");
   }
@@ -292,6 +294,7 @@ export function SmartPageClient({
       name: eForm.name.trim(), tipologia, frequency: eForm.frequency,
       custom_days: custDays, amount: amt, amount_max: amtMax,
       due_day: eForm.due_day,
+      due_month: eForm.frequency === "annuale" ? eForm.due_month : null,
     };
     const { data, error } = await createClient()
       .from("recurring_expenses").update(payload).eq("id", eEditId).select("*").single();
@@ -796,6 +799,36 @@ export function SmartPageClient({
             </div>
           )}
 
+          {/* Mese (solo se annuale) */}
+          {eForm.frequency === "annuale" && (
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">
+                Mese{" "}
+                <span className="text-muted-foreground font-normal">
+                  {eForm.due_month
+                    ? `— ${new Date(2000, eForm.due_month - 1).toLocaleString("it-IT", { month: "long" })}`
+                    : "— non specificato"}
+                </span>
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setEForm(f => ({ ...f, due_month: f.due_month === m ? null : m }))}
+                    className={`rounded-lg py-2 text-sm font-medium capitalize transition-all ${
+                      eForm.due_month === m
+                        ? "bg-primary text-primary-foreground"
+                        : "border hover:bg-muted/50"
+                    }`}
+                  >
+                    {new Date(2000, m - 1).toLocaleString("it-IT", { month: "short" })}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Giorno del mese */}
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium">
@@ -903,7 +936,9 @@ export function SmartPageClient({
                             ? `${fmt(item.amount)} – ${fmt(item.amount_max)}`
                             : fmt(item.amount)}
                           {" · "}{freqLabel(item)}
-                          {item.due_day ? ` · giorno ${item.due_day}` : ""}
+                          {item.frequency === "annuale" && item.due_month
+                            ? ` · ${new Date(2000, item.due_month - 1).toLocaleString("it-IT", { month: "long" })}${item.due_day ? ` ${item.due_day}` : ""}`
+                            : item.due_day ? ` · giorno ${item.due_day}` : ""}
                         </div>
                       </div>
                       <div className="flex gap-2 shrink-0">
