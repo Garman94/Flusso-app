@@ -400,26 +400,32 @@ export function DashboardClient({
         </Link>
       )}
 
-      {/* ── Hero: saldo + score ── */}
+      {/* ── Hero: spese mese + score ── */}
       <div className="rounded-xl border p-4 sm:p-6 flex flex-col sm:flex-row gap-4 sm:gap-6 sm:items-center justify-between">
-        {/* Saldo attuale */}
+        {/* Spese questo mese */}
         <div className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Saldo attuale</span>
-          <span className="text-4xl font-bold tabular-nums">
-            {formatEuro(profile.balance)}
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">Spese questo mese</span>
+          <span className="text-4xl font-bold tabular-nums text-red-500">
+            {formatEuro(expensesAbs)}
           </span>
-          <BalanceEditor currentBalance={profile.balance} />
+
+          {/* Saldo attuale — secondario */}
+          <div className="mt-3 pt-3 border-t flex flex-col gap-0.5">
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">Saldo attuale</span>
+            <span className="text-xl font-semibold tabular-nums">
+              {formatEuro(profile.balance)}
+            </span>
+            <BalanceEditor currentBalance={profile.balance} />
+          </div>
 
           {/* Salvadanaio */}
           <div className="mt-3 pt-3 border-t flex flex-col gap-0.5">
-            <span className="text-xs text-muted-foreground uppercase tracking-wide">Saldo salvadanaio 🐷</span>
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">Salvadanaio 🐷</span>
             <span className="text-xl font-semibold tabular-nums">
               {formatEuro(profile.piggy_balance)}
             </span>
             <PiggyBalanceEditor currentPiggy={profile.piggy_balance} />
           </div>
-
-          {/* Saldo previsto — nascosto finché non vengono impostate le spese ricorrenti */}
         </div>
 
         {/* Score */}

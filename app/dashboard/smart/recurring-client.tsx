@@ -178,6 +178,7 @@ export function BudgetClient({ userId, categories, transactions, payDay = 0, per
 
   // accordion + visibility
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
+  const [openItems, setOpenItems] = useState<Set<string>>(new Set());
   const [editMode, setEditMode] = useState(false);
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -289,6 +290,14 @@ export function BudgetClient({ userId, categories, transactions, payDay = 0, per
     setOpenCategories(prev => {
       const next = new Set(prev);
       next.has(catId) ? next.delete(catId) : next.add(catId);
+      return next;
+    });
+  }
+
+  function toggleItem(itemId: string) {
+    setOpenItems(prev => {
+      const next = new Set(prev);
+      next.has(itemId) ? next.delete(itemId) : next.add(itemId);
       return next;
     });
   }
@@ -444,8 +453,7 @@ export function BudgetClient({ userId, categories, transactions, payDay = 0, per
             const isOpen = openCategories.has(cat.id);
             const isPanelOpen = panelCategoryId === cat.id;
             const isHidden = hiddenCategories.has(cat.id);
-            const matchedSubcats = subcats.filter(s => s.matchedTxs.length > 0);
-            const canExpand = matchedSubcats.length > 0 || unmatchedTxs.length > 0;
+            const canExpand = unmatchedTxs.length > 0;
             const hasSubcats = subcats.length > 0;
             const pct = expectedMonthly > 0 ? Math.min(100, (actualSpent / expectedMonthly) * 100) : 0;
 
@@ -716,24 +724,29 @@ export function BudgetClient({ userId, categories, transactions, payDay = 0, per
                   </div>
                 )}
 
-                {/* Transactions accordion */}
-                {isOpen && canExpand && (
-                  <div className="border-t bg-muted/5 divide-y">
-
-                    {/* Grouped by subcategory */}
-                    {matchedSubcats.map(sd => (
-                      <div key={sd.item.id} className="px-5 py-2.5">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-xs font-semibold truncate">{sd.item.name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${sd.item.tipologia === "fissa" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : "bg-orange-500/10 text-orange-600 dark:text-orange-400"}`}>
-                              {sd.item.tipologia}
+                {/* Per-item transaction dropdowns — visible inline, no category expand needed */}
+                {subcats.map(sd => {
+                  const isItemOpen = openItems.has(sd.item.id);
+                  const hasTxs = sd.matchedTxs.length > 0;
+                  return (
+                    <div key={sd.item.id} className="border-t">
+                      <button
+                        onClick={() => toggleItem(sd.item.id)}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-muted/10 transition-colors text-left"
+                      >
+                        <div className="flex-1 min-w-0 flex items-center gap-2">
+                          <span className="text-xs font-medium truncate">{sd.item.name}</span>
+                          {hasTxs && (
+                            <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full shrink-0">
+                              {sd.matchedTxs.length}
                             </span>
-                            {sd.item.matching_strategy === "historical_avg" && (
-                              <span className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full">📊 storico</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-right shrink-0">
+                          )}
+                          {sd.item.matching_strategy === "historical_avg" && (
+                            <span className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full shrink-0">📊 storico</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="text-xs text-right">
                             <span className="text-muted-foreground">prev. </span>
                             <span className="font-semibold tabular-nums">{formatEuro(sd.expectedMonthly)}</span>
                             <span className="mx-1 text-muted-foreground">→</span>
@@ -741,35 +754,19 @@ export function BudgetClient({ userId, categories, transactions, payDay = 0, per
                               {formatEuro(sd.actualSpent)}
                             </span>
                           </div>
+                          <span className="text-muted-foreground text-xs w-5 text-center">
+                            {hasTxs ? (isItemOpen ? "▲" : "▼") : ""}
+                          </span>
                         </div>
-                        {sd.forecastHint && (
-                          <p className="text-xs text-amber-600 dark:text-amber-400 mb-1.5">{sd.forecastHint}</p>
-                        )}
-                        <div className="flex flex-col gap-0.5">
-                          {sd.matchedTxs.map((tx, i) => (
-                            <div key={i} className="flex items-center justify-between gap-2 pl-3 py-1 text-xs text-muted-foreground">
-                              <span className="truncate">{tx.description || tx.merchant || "Transazione"}</span>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="text-[10px] text-muted-foreground/60">
-                                  {new Date(tx.date + "T00:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" })}
-                                </span>
-                                <span className="text-red-500 font-medium tabular-nums">{formatEuro(Math.abs(Number(tx.amount)))}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                      </button>
 
-                    {/* Unmatched transactions */}
-                    {unmatchedTxs.length > 0 && (
-                      <div className="px-5 py-2.5">
-                        {matchedSubcats.length > 0 && (
-                          <p className="text-xs text-muted-foreground font-medium mb-1.5">Altre transazioni</p>
-                        )}
-                        <div className="flex flex-col gap-0.5">
-                          {unmatchedTxs.map((tx, i) => (
-                            <div key={i} className="flex items-center justify-between gap-2 pl-3 py-1 text-xs text-muted-foreground">
+                      {isItemOpen && hasTxs && (
+                        <div className="bg-muted/5 flex flex-col gap-0">
+                          {sd.forecastHint && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400 px-5 pt-1.5">{sd.forecastHint}</p>
+                          )}
+                          {sd.matchedTxs.map((tx, i) => (
+                            <div key={i} className="flex items-center justify-between gap-2 px-5 py-1.5 text-xs text-muted-foreground border-t first:border-t-0 border-muted/50">
                               <span className="truncate">{tx.description || tx.merchant || "Transazione"}</span>
                               <div className="flex items-center gap-2 shrink-0">
                                 <span className="text-[10px] text-muted-foreground/60">
@@ -780,8 +777,28 @@ export function BudgetClient({ userId, categories, transactions, payDay = 0, per
                             </div>
                           ))}
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Unmatched transactions — still shown via category accordion */}
+                {isOpen && unmatchedTxs.length > 0 && (
+                  <div className="border-t bg-muted/5 px-5 py-2.5">
+                    <p className="text-xs text-muted-foreground font-medium mb-1.5">Altre transazioni</p>
+                    <div className="flex flex-col gap-0.5">
+                      {unmatchedTxs.map((tx, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 pl-3 py-1 text-xs text-muted-foreground">
+                          <span className="truncate">{tx.description || tx.merchant || "Transazione"}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] text-muted-foreground/60">
+                              {new Date(tx.date + "T00:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" })}
+                            </span>
+                            <span className="text-red-500 font-medium tabular-nums">{formatEuro(Math.abs(Number(tx.amount)))}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
