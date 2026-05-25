@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   formatEuro,
   calculateFinancialScore,
-  calculateProjectedBalance,
   calculateCategoryBreakdown,
   estimateGoalCompletion,
   type Transaction,
@@ -13,13 +12,12 @@ import {
 } from "@/lib/calculations";
 import { RecurringDashboardCard } from "./recurring-dashboard-card";
 import { createClient } from "@/lib/supabase/client";
-import { updateBalance } from "./balance-action";
 import { updatePiggyBalance } from "./piggy-action";
 import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Profile = { full_name: string | null; plan: string; balance: number; piggy_balance: number };
+type Profile = { full_name: string | null; plan: string; piggy_balance: number };
 
 type Props = {
   userId: string;
@@ -36,69 +34,6 @@ type Props = {
   periodFrom: string; // ISO date, start of current period
   periodTo: string;   // ISO date, end of current period
 };
-
-// ─── Balance editor ───────────────────────────────────────────────────────────
-function BalanceEditor({ currentBalance }: { currentBalance: number }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(currentBalance.toFixed(2).replace(".", ","));
-  const [isPending, startTransition] = useTransition();
-
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    startTransition(async () => {
-      const res = await updateBalance(fd);
-      if (res?.error) {
-        toast.error(res.error);
-      } else {
-        toast.success("Saldo aggiornato!");
-        setEditing(false);
-      }
-    });
-  }
-
-  if (!editing) {
-    return (
-      <button
-        onClick={() => setEditing(true)}
-        className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 mt-1"
-        title="Aggiorna saldo reale"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-        </svg>
-        Aggiorna saldo
-      </button>
-    );
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="flex items-center gap-2 mt-2">
-      <input
-        name="balance"
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        className="border rounded-md px-2 py-1 text-sm bg-background w-32 focus:outline-none focus:ring-2 focus:ring-primary"
-        autoFocus
-      />
-      <button
-        type="submit"
-        disabled={isPending}
-        className="text-xs bg-primary text-primary-foreground rounded px-3 py-1.5 hover:bg-primary/90 disabled:opacity-50 transition-colors"
-      >
-        {isPending ? "..." : "Salva"}
-      </button>
-      <button
-        type="button"
-        onClick={() => setEditing(false)}
-        className="text-xs border rounded px-3 py-1.5 hover:bg-muted/50 transition-colors"
-      >
-        ✕
-      </button>
-    </form>
-  );
-}
 
 // ─── Piggy balance editor ─────────────────────────────────────────────────────
 function PiggyBalanceEditor({ currentPiggy }: { currentPiggy: number }) {
@@ -326,14 +261,12 @@ export function DashboardClient({
   const expensesAbs = spendableTxs.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   // ── Calculations ─────────────────────────────────────────────────────────
   const score     = calculateFinancialScore(income, expensesAbs);
-  const projected = calculateProjectedBalance(profile.balance, expensesAbs, daysPassed, daysRemaining);
   const macro     = calculateCategoryBreakdown(spendableTxs);
   const monthlySavings = income - expensesAbs;
 
   const hasTransactions    = currentTxs.length > 0;
   const hasAnyTransactions = totalTxCount > 0;
   const recentTxs          = [...currentTxs].reverse().slice(0, 5);
-  const projectedDiff      = projected - profile.balance;
 
   return (
     <div className="flex flex-col gap-6">
@@ -408,15 +341,6 @@ export function DashboardClient({
           <span className="text-4xl font-bold tabular-nums text-red-500">
             {formatEuro(expensesAbs)}
           </span>
-
-          {/* Saldo attuale — secondario */}
-          <div className="mt-3 pt-3 border-t flex flex-col gap-0.5">
-            <span className="text-xs text-muted-foreground uppercase tracking-wide">Saldo attuale</span>
-            <span className="text-xl font-semibold tabular-nums">
-              {formatEuro(profile.balance)}
-            </span>
-            <BalanceEditor currentBalance={profile.balance} />
-          </div>
 
           {/* Salvadanaio */}
           <div className="mt-3 pt-3 border-t flex flex-col gap-0.5">
