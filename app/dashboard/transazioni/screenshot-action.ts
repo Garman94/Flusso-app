@@ -1,6 +1,9 @@
 "use server";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { createClient } from "@/lib/supabase/server";
+import { getEffectivePlan } from "@/lib/preview-plan";
+import { isPremium } from "@/lib/plans";
 
 export type ExtractedTransaction = {
   date: string;       // YYYY-MM-DD
@@ -12,6 +15,14 @@ export async function extractTransactionsFromScreenshot(
   base64Image: string,
   mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif",
 ): Promise<{ transactions?: ExtractedTransaction[]; error?: string }> {
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { error: "Non autenticato." };
+  const { data: profile } = await supabase
+    .from("profiles").select("plan").eq("id", claims.claims.sub).single();
+  const plan = await getEffectivePlan(profile?.plan ?? "free");
+  if (!isPremium(plan)) return { error: "L'import da screenshot è una funzione Premium." };
+
   if (!process.env.ANTHROPIC_API_KEY) {
     return { error: "ANTHROPIC_API_KEY non configurata nel server." };
   }
@@ -21,7 +32,7 @@ export async function extractTransactionsFromScreenshot(
   let raw = "";
   try {
     const response = await client.messages.create({
-      model: "claude-opus-4-6",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 2048,
       messages: [
         {
@@ -49,7 +60,11 @@ Esempio: [{"date":"2024-03-15","amount":-25.50,"description":"Esselunga"},{"date
       ],
     });
 
-    raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+    raw = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
 
     // Rimuovi eventuali backtick markdown
     const cleaned = raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();

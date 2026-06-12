@@ -15,7 +15,7 @@ interface Props {
   planBadgeColor: string;
 }
 
-export function PlanSection({ plan: initialPlan, userId, checkoutUrl, planLabel, planBadgeColor }: Props) {
+export function PlanSection({ plan: initialPlan, userId, checkoutUrl, planLabel: _planLabel, planBadgeColor: _planBadgeColor }: Props) {
   const [plan, setPlan] = useState(initialPlan);
 
   const label = getPlanLabel(plan);

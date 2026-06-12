@@ -172,7 +172,7 @@ const EMPTY_FORM = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function BudgetClient({ userId, categories, transactions, payDay = 0, periodFrom, periodTo }: Props) {
+export function BudgetClient({ userId, categories, transactions, payDay: _payDay = 0, periodFrom, periodTo }: Props) {
   const [items, setItems] = useState<RecurringExpense[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -289,7 +289,7 @@ export function BudgetClient({ userId, categories, transactions, payDay = 0, per
   function toggleCategory(catId: string) {
     setOpenCategories(prev => {
       const next = new Set(prev);
-      next.has(catId) ? next.delete(catId) : next.add(catId);
+      if (next.has(catId)) { next.delete(catId); } else { next.add(catId); }
       return next;
     });
   }
@@ -297,7 +297,7 @@ export function BudgetClient({ userId, categories, transactions, payDay = 0, per
   function toggleItem(itemId: string) {
     setOpenItems(prev => {
       const next = new Set(prev);
-      next.has(itemId) ? next.delete(itemId) : next.add(itemId);
+      if (next.has(itemId)) { next.delete(itemId); } else { next.add(itemId); }
       return next;
     });
   }
@@ -305,7 +305,7 @@ export function BudgetClient({ userId, categories, transactions, payDay = 0, per
   function toggleHide(catId: string) {
     setHiddenCategories(prev => {
       const next = new Set(prev);
-      next.has(catId) ? next.delete(catId) : next.add(catId);
+      if (next.has(catId)) { next.delete(catId); } else { next.add(catId); }
       localStorage.setItem("budget_hidden_categories", JSON.stringify(Array.from(next)));
       return next;
     });

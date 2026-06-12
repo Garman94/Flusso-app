@@ -3,8 +3,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectivePlan } from "@/lib/preview-plan";
 import { getPlanLabel, getPlanBadgeColor } from "@/lib/plans";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 import { UpdateNameForm } from "./update-name-form";
 import { DeleteAccountButton } from "./delete-account-button";
 import { PlanSection } from "./plan-section";

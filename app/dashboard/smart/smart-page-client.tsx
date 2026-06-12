@@ -193,7 +193,7 @@ const FREE_GOAL_LIMIT = 1;
 
 export function SmartPageClient({
   userId, plan, initialGoals, transactions,
-  payDay = 0, periodFrom, periodTo,
+  payDay: _payDay = 0, periodFrom, periodTo,
 }: Props) {
   const [view, setView] = useState<View>("cover");
   const [recurringItems, setRecurringItems] = useState<RecurringExpense[]>([]);

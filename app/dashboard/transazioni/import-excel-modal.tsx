@@ -227,6 +227,21 @@ export function ImportExcelModal({ userId, categories, onClose, onImported }: Pr
 
   async function handleImport() {
     setImporting(true);
+
+    try {
+      const res = await fetch("/api/excel/log-upload", { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        toast.error(body?.error ?? "Impossibile importare in questo momento.");
+        setImporting(false);
+        return;
+      }
+    } catch {
+      toast.error("Errore di rete. Riprova.");
+      setImporting(false);
+      return;
+    }
+
     const supabase = createClient();
 
     // Fetch existing transactions for the same date range to deduplicate

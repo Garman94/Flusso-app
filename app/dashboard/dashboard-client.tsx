@@ -11,7 +11,6 @@ import {
   type Goal,
 } from "@/lib/calculations";
 import { RecurringDashboardCard } from "./recurring-dashboard-card";
-import { createClient } from "@/lib/supabase/client";
 import { updatePiggyBalance } from "./piggy-action";
 import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
@@ -228,8 +227,8 @@ function SettingsModal({ payDay, onClose }: { payDay: number; onClose: () => voi
 
 // ─── Main Dashboard Client ────────────────────────────────────────────────────
 export function DashboardClient({
-  userId, profile, currentTxs, prevTxsAmounts, goals,
-  year, month, totalTxCount, uncategorizedCount, lastTxDate,
+  userId, profile, currentTxs, prevTxsAmounts: _prevTxsAmounts, goals,
+  year: _year, month: _month, totalTxCount, uncategorizedCount, lastTxDate,
   payDay, periodFrom, periodTo,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
@@ -243,7 +242,7 @@ export function DashboardClient({
   const daysPassed  = Math.max(1, Math.min(totalDays,
     Math.floor((now.getTime() - periodStart.getTime()) / 86_400_000) + 1
   ));
-  const daysRemaining = Math.max(0, totalDays - daysPassed);
+  const _daysRemaining = Math.max(0, totalDays - daysPassed);
 
   // ── Period label ─────────────────────────────────────────────────────────
   const periodLabel = payDay > 0
@@ -428,7 +427,7 @@ export function DashboardClient({
                 {recentTxs.map((t, i) => (
                   <div key={t.id ?? i} className="flex items-center justify-between py-1.5 border-b last:border-b-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-base">{(t as any).categories?.icon ?? "📦"}</span>
+                      <span className="text-base">{t.categories?.icon ?? "📦"}</span>
                       <p className="text-sm truncate max-w-[160px]">{t.description || "Transazione"}</p>
                     </div>
                     <span className={`text-xs font-semibold tabular-nums ${Number(t.amount) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>

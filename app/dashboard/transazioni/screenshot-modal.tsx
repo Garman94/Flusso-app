@@ -11,7 +11,7 @@ type Props = {
   userId: string;
   categories: Category[];
   onClose: () => void;
-  onImported: (transactions: any[]) => void;
+  onImported: (transactions: ExtractedTransaction[]) => void;
 };
 
 type Row = ExtractedTransaction & { selected: boolean; category_id: string };

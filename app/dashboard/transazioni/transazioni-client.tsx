@@ -8,8 +8,8 @@ import { ScreenshotModal } from "./screenshot-modal";
 import { createCategoryRule, deleteCategoryRule } from "./actions";
 import { computePeriodRange, getCurrentPeriodAnchor } from "@/lib/period";
 
-type Category = { id: string; name: string; color: string; icon: string };
-type Transaction = {
+export type Category = { id: string; name: string; color: string; icon: string };
+export type Transaction = {
   id: string;
   date: string;
   amount: number;
@@ -20,8 +20,8 @@ type Transaction = {
   source: string;
   categories: Category | null;
 };
-type DisplayRule    = { id: string; find_text: string; replace_with: string };
-type CategoryRule   = { id: string; value: string; category_id: string; categories: { name: string; icon: string; color: string } | null };
+export type DisplayRule    = { id: string; find_text: string; replace_with: string };
+export type CategoryRule   = { id: string; value: string; category_id: string; categories: { name: string; icon: string; color: string } | null };
 
 function formatEuro(n: number) {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
@@ -245,16 +245,19 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
     : null;
 
   const filtered = transactions.filter(t => {
-    // Filtro data (navigazione mese/anno)
-    const d = new Date(t.date + "T00:00:00");
-    if (navView === "mese") {
-      if (_periodRange) {
-        if (t.date < _periodRange.from || t.date > _periodRange.to) return false;
+    // Filtro data (navigazione mese/anno) — saltato in modalità "senza categoria"
+    // perché il contatore della dashboard include tutta la storia
+    if (filter !== "senza_cat") {
+      const d = new Date(t.date + "T00:00:00");
+      if (navView === "mese") {
+        if (_periodRange) {
+          if (t.date < _periodRange.from || t.date > _periodRange.to) return false;
+        } else {
+          if (d.getFullYear() !== navYear || d.getMonth() !== navMonth) return false;
+        }
       } else {
-        if (d.getFullYear() !== navYear || d.getMonth() !== navMonth) return false;
+        if (d.getFullYear() !== navYear) return false;
       }
-    } else {
-      if (d.getFullYear() !== navYear) return false;
     }
     // Filtri tipo
     if (filter === "entrate" && Number(t.amount) <= 0) return false;
@@ -292,13 +295,11 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
     setSavingCat(false);
   }
 
-  function handleImported(_result: number | any[]) {
+  function handleImported(_result: number | unknown[]) {
     window.location.reload();
   }
 
-  async function handleExcelImported(count: number) {
-    // Log the upload for free plan tracking (fire-and-forget, non-blocking)
-    fetch("/api/excel/log-upload", { method: "POST" }).catch(() => null);
+  function handleExcelImported(count: number) {
     setExcelUploadsCount((n) => n + 1);
     handleImported(count);
   }
@@ -675,7 +676,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
             <>
               <p className="text-xs text-muted-foreground">
                 Quando la descrizione contiene il testo cercato, viene sostituito con il testo breve — il resto della descrizione rimane visibile.
-                <br />Es: <em>"Bonifico istantaneo da voi disposto a favore di"</em> → <em>"B.I. verso"</em> → mostra <em>"B.I. verso TIZIANO ROSSI"</em>
+                <br />Es: <em>&quot;Bonifico istantaneo da voi disposto a favore di&quot;</em> → <em>&quot;B.I. verso&quot;</em> → mostra <em>&quot;B.I. verso TIZIANO ROSSI&quot;</em>
               </p>
               <form onSubmit={handleSaveRule} className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -707,9 +708,9 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                   {displayRules.map(r => (
                     <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
                       <span className="text-muted-foreground shrink-0">Contiene:</span>
-                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.find_text}>"{r.find_text}"</span>
+                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.find_text}>&quot;{r.find_text}&quot;</span>
                       <span className="text-muted-foreground shrink-0">→</span>
-                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.replace_with}>"{r.replace_with}"</span>
+                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.replace_with}>&quot;{r.replace_with}&quot;</span>
                       <button onClick={() => handleDeleteRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
                     </div>
                   ))}
@@ -764,7 +765,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                   {categoryRules.map(r => (
                     <div key={r.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-muted/20">
                       <span className="text-muted-foreground shrink-0">Contiene:</span>
-                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.value}>"{r.value}"</span>
+                      <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.value}>&quot;{r.value}&quot;</span>
                       <span className="text-muted-foreground shrink-0">→</span>
                       <span className="shrink-0 text-xs">
                         {r.categories?.icon} {r.categories?.name ?? r.category_id}

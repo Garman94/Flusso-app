@@ -88,7 +88,7 @@ export function RecurringDashboardCard({ userId }: Props) {
   useEffect(() => {
     const supabase = createClient();
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+    const _monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
 
     Promise.all([
       supabase

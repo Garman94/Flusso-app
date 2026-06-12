@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectivePlan } from "@/lib/preview-plan";
 import { TransazioniClient } from "./transazioni-client";
+import type { Transaction as TxClientType, DisplayRule, CategoryRule } from "./transazioni-client";
 import { getCurrentPeriodAnchor } from "@/lib/period";
 
 async function TransazioniContent({
@@ -33,7 +34,6 @@ async function TransazioniContent({
     supabase
       .from("categories")
       .select("id, name, color, icon")
-      .or(`user_id.eq.${userId},user_id.is.null`)
       .order("name"),
     supabase
       .from("transactions")
@@ -68,9 +68,9 @@ async function TransazioniContent({
       excelUploadsThisMonth={excelUploadsRes.count ?? 0}
       initialTransactions={transactionsRes.data ?? []}
       categories={categoriesRes.data ?? []}
-      initialUncategorized={(uncategorizedRes.data ?? []) as any}
-      initialDisplayRules={(displayRulesRes.data ?? []) as any}
-      initialCategoryRules={(categoryRulesRes.data ?? []) as any}
+      initialUncategorized={(uncategorizedRes.data ?? []) as unknown as TxClientType[]}
+      initialDisplayRules={(displayRulesRes.data ?? []) as unknown as DisplayRule[]}
+      initialCategoryRules={(categoryRulesRes.data ?? []) as unknown as CategoryRule[]}
       initialFilter={initialFilter}
       payDay={payDay}
       periodYear={periodYear}
