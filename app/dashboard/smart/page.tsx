@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectivePlan } from "@/lib/preview-plan";
 import { SmartPageClient } from "./smart-page-client";
+import type { RecurringExpense as SmartRecurringExpense } from "./smart-page-client";
 import { getCurrentPeriodAnchor, computePeriodRange } from "@/lib/period";
 
 async function SmartContent() {
@@ -14,7 +15,7 @@ async function SmartContent() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, pay_day")
+    .select("plan, pay_day, piggy_balance")
     .eq("id", userId)
     .single();
 
@@ -48,10 +49,11 @@ async function SmartContent() {
     );
   }
 
-  const [goalsRes, transactionsRes, categoriesRes] = await Promise.all([
+  const [goalsRes, transactionsRes, categoriesRes, recurringRes] = await Promise.all([
     supabase.from("goals").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
     supabase.from("transactions").select("date, amount, category_id, description, merchant").eq("user_id", userId),
     supabase.from("categories").select("id, name, color, icon").or(`user_id.eq.${userId},user_id.is.null`).order("name"),
+    supabase.from("recurring_expenses").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
   ]);
 
   const payDay: number = profile?.pay_day ?? 0;
@@ -65,6 +67,8 @@ async function SmartContent() {
       initialGoals={goalsRes.data ?? []}
       transactions={transactionsRes.data ?? []}
       categories={categoriesRes.data ?? []}
+      initialRecurring={(recurringRes.data ?? []) as unknown as SmartRecurringExpense[]}
+      piggyBalance={Number(profile?.piggy_balance ?? 0)}
       payDay={payDay}
       periodFrom={periodFrom}
       periodTo={periodTo}

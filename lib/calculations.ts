@@ -180,3 +180,114 @@ export function estimateGoalCompletion(goal: Goal, monthlySavings: number): stri
   return date.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
 }
 
+// ─── Sinking funds (Accantonamenti) ──────────────────────────────────────────
+// Test mentale: 120€/anno, start 2026-01-01, due 2026-12-31, oggi 2026-06-13
+// → total_months=12, monthly_quota=10, months_elapsed=6, expected=60 ✓
+
+export type SinkingFundInput = {
+  id: string;
+  name: string;
+  amount_per_cycle: number;     // importo del ciclo (es. assicurazione annua = 120)
+  saving_start_date: string;    // YYYY-MM-DD
+  next_due_date: string;        // YYYY-MM-DD
+};
+
+export type SinkingFundProjection = {
+  input: SinkingFundInput;
+  total_months: number;          // mesi totali dal setup alla scadenza (inclusi entrambi)
+  months_elapsed: number;        // mesi già passati, incluso il corrente (clampato 0..total_months)
+  months_remaining: number;      // total_months - months_elapsed
+  monthly_quota: number;         // amount_per_cycle / total_months
+  expected_saved_so_far: number; // monthly_quota * months_elapsed
+};
+
+/**
+ * Numero di "1 del mese" tra due date.
+ * monthsBetween(2026-06-13, 2026-12-15) = 6
+ * monthsBetween(2026-01-01, 2026-12-31) = 11
+ */
+export function monthsBetween(from: Date, to: Date): number {
+  return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+}
+
+export function projectSinkingFund(
+  input: SinkingFundInput,
+  today: Date = new Date(),
+): SinkingFundProjection {
+  const start = new Date(input.saving_start_date + "T00:00:00");
+  const due   = new Date(input.next_due_date + "T00:00:00");
+
+  // total_months include sia il mese di setup sia il mese di scadenza
+  const total_months = Math.max(1, monthsBetween(start, due) + 1);
+
+  // mese corrente incluso (mese 1 = mese di setup)
+  const elapsed_raw    = monthsBetween(start, today) + 1;
+  const months_elapsed = Math.max(0, Math.min(total_months, elapsed_raw));
+
+  const monthly_quota         = input.amount_per_cycle / total_months;
+  const expected_saved_so_far = monthly_quota * months_elapsed;
+
+  return {
+    input,
+    total_months,
+    months_elapsed,
+    months_remaining: total_months - months_elapsed,
+    monthly_quota,
+    expected_saved_so_far,
+  };
+}
+
+export type SinkingFundsSummary = {
+  projections: SinkingFundProjection[];
+  this_month_total: number;      // somma delle monthly_quota delle voci ancora attive
+  expected_saved_total: number;  // somma degli expected_saved_so_far
+  piggy_balance: number;         // valore attuale del piggy_balance del profilo
+  delta: number;                 // piggy_balance - expected_saved_total
+  status: "ahead" | "on_track" | "behind";
+};
+
+export function aggregateSinkingFunds(
+  inputs: SinkingFundInput[],
+  piggy_balance: number,
+  today: Date = new Date(),
+): SinkingFundsSummary {
+  const projections = inputs.map((i) => projectSinkingFund(i, today));
+  const active = projections.filter((p) => p.months_remaining > 0);
+
+  const this_month_total     = active.reduce((s, p) => s + p.monthly_quota, 0);
+  const expected_saved_total = projections.reduce((s, p) => s + p.expected_saved_so_far, 0);
+  const delta = piggy_balance - expected_saved_total;
+  const status: SinkingFundsSummary["status"] =
+    delta > 0.01 ? "ahead" : delta < -0.01 ? "behind" : "on_track";
+
+  return { projections, this_month_total, expected_saved_total, piggy_balance, delta, status };
+}
+
+/**
+ * Aggiunge n mesi a una data, clampando al giorno valido del mese risultante.
+ * addMonths(2026-01-31, 1) = 2026-02-28
+ */
+export function addMonths(date: Date, n: number): Date {
+  const d = new Date(date.getTime());
+  const targetMonth = d.getMonth() + n;
+  d.setDate(1);
+  d.setMonth(targetMonth);
+  const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(date.getDate(), daysInMonth));
+  return d;
+}
+
+/**
+ * Mesi per ciclo di una voce ricorrente.
+ * mensile=1, bimestrale=2, trimestrale=3, semestrale=6, annuale=12.
+ * personalizzata: round(custom_days/30), min 1.
+ */
+export function monthsPerCycle(frequency: string, customDays?: number | null): number {
+  const map: Record<string, number> = {
+    mensile: 1, bimestrale: 2, trimestrale: 3, semestrale: 6, annuale: 12,
+  };
+  if (frequency === "personalizzata") {
+    return Math.max(1, Math.round((customDays ?? 30) / 30));
+  }
+  return map[frequency] ?? 1;
+}

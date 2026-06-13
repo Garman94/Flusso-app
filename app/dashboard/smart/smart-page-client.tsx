@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween } from "@/lib/calculations";
+import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
+import { resetSavingStartDate, markSinkingFundPaid } from "./sinking-fund-actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,20 +20,24 @@ type Goal = {
 };
 type Tipologia = "fissa" | "variabile" | "entrata";
 type Frequency = "mensile" | "bimestrale" | "trimestrale" | "semestrale" | "annuale" | "personalizzata";
-type RecurringExpense = {
+export type RecurringExpense = {
   id: string; name: string; tipologia: Tipologia; frequency: Frequency;
   custom_days: number | null; amount: number; amount_max: number | null;
   category_id: string | null; notes: string | null; match_keywords: string[];
   matching_strategy: string; due_day: number | null; due_month: number | null;
   secondary_name: string | null;
   end_date: string | null;
+  next_due_date: string | null;
+  saving_start_date: string | null;
 };
 type TipoCard = "uscita_fissa" | "uscita_variabile" | "entrata";
-type View = "cover" | "add-recurring" | "edit-recurring" | "list-recurring" | "add-goal" | "list-goals" | "previsioni";
+type View = "cover" | "add-recurring" | "edit-recurring" | "list-recurring" | "add-goal" | "list-goals" | "previsioni" | "accantonamenti";
 
 type Props = {
   userId: string; plan: string; initialGoals: Goal[];
   transactions: Transaction[]; categories: Category[];
+  initialRecurring?: RecurringExpense[];
+  piggyBalance?: number;
   payDay?: number; periodFrom?: string; periodTo?: string;
   periodYear?: number; periodMonth?: number;
 };
@@ -176,6 +183,7 @@ const EMPTY_R = {
   due_month: null as number | null,
   secondary_name: "",
   end_date: "",
+  next_due_date: "",
 };
 
 const EMPTY_G = {
@@ -193,11 +201,12 @@ const FREE_GOAL_LIMIT = 1;
 
 export function SmartPageClient({
   userId, plan, initialGoals, transactions,
+  initialRecurring, piggyBalance = 0,
   payDay: _payDay = 0, periodFrom, periodTo,
 }: Props) {
   const [view, setView] = useState<View>("cover");
-  const [recurringItems, setRecurringItems] = useState<RecurringExpense[]>([]);
-  const [recurringLoading, setRecurringLoading] = useState(true);
+  const [recurringItems, setRecurringItems] = useState<RecurringExpense[]>(initialRecurring ?? []);
+  const [recurringLoading, setRecurringLoading] = useState(!initialRecurring);
   const [goals, setGoals] = useState(initialGoals);
 
   // Recurring wizard (add)
@@ -218,7 +227,17 @@ export function SmartPageClient({
   const [gSaving, setGSaving] = useState(false);
   const [gEditId, setGEditId] = useState<string | null>(null);
 
+  // Mark-paid dialog
+  const [paidDialog, setPaidDialog] = useState<{
+    proj: SinkingFundProjection;
+    item: RecurringExpense;
+  } | null>(null);
+  const [paidAmount, setPaidAmount] = useState("");
+  const [paidDeduct, setPaidDeduct] = useState(true);
+  const [paidSaving, setPaidSaving] = useState(false);
+
   useEffect(() => {
+    if (initialRecurring) return;
     createClient()
       .from("recurring_expenses")
       .select("*")
@@ -228,7 +247,7 @@ export function SmartPageClient({
         setRecurringItems((data ?? []) as RecurringExpense[]);
         setRecurringLoading(false);
       });
-  }, [userId]);
+  }, [userId, initialRecurring]);
 
   // ── Period helpers ─────────────────────────────────────────────────────────
   const now = new Date();
@@ -258,6 +277,7 @@ export function SmartPageClient({
       due_month: item.due_month ?? null,
       secondary_name: item.secondary_name ?? "",
       end_date: item.end_date ?? "",
+      next_due_date: item.next_due_date ?? "",
     });
     setEEditId(item.id); setETxSearch(""); setView("edit-recurring");
   }
@@ -297,12 +317,15 @@ export function SmartPageClient({
 
     setRSaving(true);
     const supabase = createClient();
+    const nextDueDate = rForm.next_due_date || null;
     const payload = {
       name: rForm.name.trim(), tipologia, frequency: rForm.frequency,
       custom_days: custDays, amount: amt, amount_max: amtMax,
       match_keywords: [], matching_strategy: "keyword",
       due_day: rForm.due_day, category_id: null, notes: null,
       secondary_name: rForm.secondary_name.trim() || null,
+      next_due_date: nextDueDate,
+      saving_start_date: nextDueDate ? new Date().toISOString().split("T")[0] : null,
     };
 
     if (rEditId) {
@@ -349,6 +372,11 @@ export function SmartPageClient({
       toast.error("Inserisci un intervallo valido."); return;
     }
     setESaving(true);
+    const nextDueDate = eForm.next_due_date || null;
+    const originalItem = recurringItems.find(it => it.id === eEditId);
+    const savingStartDate = nextDueDate
+      ? (originalItem?.saving_start_date ?? new Date().toISOString().split("T")[0])
+      : null;
     const payload = {
       name: eForm.name.trim(), tipologia, frequency: eForm.frequency,
       custom_days: custDays, amount: amt, amount_max: amtMax,
@@ -356,6 +384,8 @@ export function SmartPageClient({
       due_month: eForm.frequency === "annuale" ? eForm.due_month : null,
       secondary_name: eForm.secondary_name.trim() || null,
       end_date: eForm.end_date || null,
+      next_due_date: nextDueDate,
+      saving_start_date: savingStartDate,
     };
     const { data, error } = await createClient()
       .from("recurring_expenses").update(payload).eq("id", eEditId).select("*").single();
@@ -431,6 +461,7 @@ export function SmartPageClient({
           { icon: "📋", label: "Le mie spese ricorrenti", action: () => setView("list-recurring") },
           { icon: "🎯", label: "I miei obiettivi", action: () => setView("list-goals") },
           { icon: "🔮", label: "Previsioni", action: () => setView("previsioni") },
+          { icon: "🏦", label: "Accantonamenti", action: () => setView("accantonamenti") },
         ] as const).map(({ icon, label, action }) => (
           <button
             key={label}
@@ -732,6 +763,23 @@ export function SmartPageClient({
             >
               Non so / varia
             </button>
+            {rForm.frequency !== "mensile" && (
+              <div className="flex flex-col gap-2 pt-2 border-t">
+                <label className="text-sm font-medium">
+                  Prossima scadenza{" "}
+                  <span className="text-muted-foreground font-normal">— per accantonamento</span>
+                </label>
+                <p className="text-xs text-muted-foreground -mt-1">
+                  Inserisci quando sarà il prossimo pagamento per calcolare quanto accantonare ogni mese.
+                </p>
+                <input
+                  type="date"
+                  value={rForm.next_due_date}
+                  onChange={e => setRForm(f => ({ ...f, next_due_date: e.target.value }))}
+                  className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+                />
+              </div>
+            )}
             <button
               onClick={() => setRStep(6)}
               className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold hover:bg-primary/90 transition-colors"
@@ -1069,6 +1117,39 @@ export function SmartPageClient({
               </button>
             )}
           </div>
+
+          {/* Prossima scadenza (accantonamento) */}
+          {eForm.frequency !== "mensile" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium">
+                Prossima scadenza{" "}
+                <span className="text-muted-foreground font-normal">— per accantonamento</span>
+              </label>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="date"
+                  value={eForm.next_due_date}
+                  onChange={e => setEForm(f => ({ ...f, next_due_date: e.target.value }))}
+                  className="flex-1 border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+                />
+                {eForm.next_due_date && (
+                  <button
+                    type="button"
+                    onClick={() => setEForm(f => ({ ...f, next_due_date: "" }))}
+                    className="text-xs text-muted-foreground hover:text-destructive border rounded-lg px-3 py-3 transition-colors"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              {eForm.next_due_date && (
+                <p className="text-xs text-muted-foreground">
+                  Calcoleremo quanto accantonare ogni mese fino al{" "}
+                  {new Date(eForm.next_due_date).toLocaleDateString("it-IT")}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Salva */}
@@ -1702,6 +1783,387 @@ export function SmartPageClient({
           </div>
         )}
       </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ACCANTONAMENTI
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (view === "accantonamenti") {
+    const sinkingInputs: SinkingFundInput[] = recurringItems
+      .filter(it => it.next_due_date && it.saving_start_date)
+      .map(it => ({
+        id: it.id,
+        name: it.name,
+        amount_per_cycle: it.tipologia === "variabile" && it.amount_max != null
+          ? (it.amount + it.amount_max) / 2
+          : it.amount,
+        saving_start_date: it.saving_start_date!,
+        next_due_date: it.next_due_date!,
+      }));
+
+    const summary = aggregateSinkingFunds(sinkingInputs, piggyBalance);
+
+    const statusConfig = {
+      ahead:    { color: "text-green-600 dark:text-green-400",  bg: "bg-green-500/10 border-green-500/30",   label: "In anticipo 🟢" },
+      on_track: { color: "text-primary",                        bg: "bg-primary/5 border-primary/30",        label: "In pari ✅" },
+      behind:   { color: "text-destructive",                    bg: "bg-destructive/5 border-destructive/30", label: "In ritardo 🔴" },
+    }[summary.status];
+
+    const readyToPay = summary.projections.filter(p => p.months_remaining <= 0);
+
+    // ── Mark-paid dialog preview calculations ─────────────────────────────────
+    const dialogItem = paidDialog?.item ?? null;
+    const dialogProj = paidDialog?.proj ?? null;
+    const dialogDefaultAmount = dialogProj
+      ? dialogProj.input.amount_per_cycle
+      : 0;
+    const dialogPaidAmt = parseFloat(paidAmount.replace(",", "."));
+    const dialogEffectiveAmt = !isNaN(dialogPaidAmt) && dialogPaidAmt > 0
+      ? dialogPaidAmt
+      : dialogDefaultAmount;
+    const dialogNewDueDate = dialogItem
+      ? addMonths(
+          new Date(dialogItem.next_due_date! + "T00:00:00"),
+          monthsPerCycle(dialogItem.frequency, dialogItem.custom_days),
+        )
+      : null;
+    const dialogNewDueDateStr = dialogNewDueDate
+      ? dialogNewDueDate.toLocaleDateString("it-IT")
+      : "";
+    const dialogNewCycleMonths = dialogItem
+      ? Math.max(
+          1,
+          monthsBetween(new Date(), dialogNewDueDate ?? new Date()) + 1,
+        )
+      : 0;
+    const dialogNewQuota = dialogNewCycleMonths > 0
+      ? dialogEffectiveAmt / dialogNewCycleMonths
+      : 0;
+    const dialogPiggyAfter = piggyBalance - dialogEffectiveAmt;
+    const dialogGoesNegative = paidDeduct && dialogPiggyAfter < 0;
+
+    return (
+      <>
+        {/* ── Mark-paid dialog ─────────────────────────────────────────────── */}
+        {paidDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => { if (!paidSaving) setPaidDialog(null); }}
+            />
+            <div className="relative bg-background border rounded-2xl p-6 max-w-sm w-full flex flex-col gap-5 shadow-xl">
+              <div className="flex items-center justify-between">
+                <h2 className="font-bold text-base">Marca come pagata</h2>
+                <button
+                  onClick={() => setPaidDialog(null)}
+                  disabled={paidSaving}
+                  className="text-muted-foreground hover:text-foreground text-lg leading-none disabled:opacity-50"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-1.5 text-sm text-muted-foreground rounded-xl bg-muted/40 p-3">
+                <p>
+                  <span className="font-medium text-foreground">&ldquo;{paidDialog.item.name}&rdquo;</span>{" "}
+                  sarà marcata come pagata.
+                </p>
+                {dialogNewDueDate && (
+                  <p>La prossima scadenza diventerà <span className="font-medium text-foreground">{dialogNewDueDateStr}</span>.</p>
+                )}
+                {dialogNewQuota > 0 && (
+                  <p>
+                    Nuovo accantonamento:{" "}
+                    <span className="font-medium text-foreground">{fmt(dialogNewQuota)}/mese</span>
+                    {" "}per {dialogNewCycleMonths} {dialogNewCycleMonths === 1 ? "mese" : "mesi"}.
+                  </p>
+                )}
+              </div>
+
+              {/* Importo pagato */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium">Importo pagato (€)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={paidAmount}
+                  onChange={e => setPaidAmount(e.target.value)}
+                  placeholder={dialogDefaultAmount.toFixed(2)}
+                  className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Modifica se l&apos;importo effettivo è diverso da quello previsto.
+                </p>
+              </div>
+
+              {/* Scala dal salvadanaio */}
+              <div className="flex flex-col gap-2">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={paidDeduct}
+                    onChange={e => setPaidDeduct(e.target.checked)}
+                    className="mt-0.5 shrink-0"
+                  />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium">Scala dal salvadanaio</span>
+                    <span className="text-xs text-muted-foreground">
+                      Salvadanaio: {fmt(piggyBalance)} → dopo: {fmt(dialogPiggyAfter)}
+                    </span>
+                  </div>
+                </label>
+                {dialogGoesNegative && (
+                  <p className="text-xs text-destructive font-medium pl-6">
+                    ⚠️ Il salvadanaio andrebbe in negativo ({fmt(dialogPiggyAfter)}).
+                  </p>
+                )}
+              </div>
+
+              <p className="text-xs text-muted-foreground -mt-2">
+                Questa azione modificherà la scadenza e, se selezionato, il salvadanaio.
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setPaidDialog(null)}
+                  disabled={paidSaving}
+                  className="flex-1 rounded-xl border-2 px-4 py-2.5 text-sm font-medium hover:bg-muted/50 disabled:opacity-50 transition-colors"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={async () => {
+                    setPaidSaving(true);
+                    const res = await markSinkingFundPaid(paidDialog.proj.input.id, {
+                      deductFromPiggy: paidDeduct,
+                      paidAmount: !isNaN(dialogPaidAmt) && dialogPaidAmt > 0
+                        ? dialogPaidAmt
+                        : undefined,
+                    });
+                    setPaidSaving(false);
+                    if ("error" in res && res.error) {
+                      toast.error(res.error);
+                    } else if ("success" in res && res.success) {
+                      const r = res as {
+                        newDueDate: string; newSavingStart: string;
+                        deducted: number; newPiggyBalance: number | null;
+                      };
+                      if (paidDeduct && r.deducted > 0) {
+                        toast.success(`Pagato ${fmt(r.deducted)}. Prossima scadenza: ${new Date(r.newDueDate + "T00:00:00").toLocaleDateString("it-IT")}.`);
+                      } else {
+                        toast.success("Marcata come pagata.");
+                      }
+                      setRecurringItems(prev => prev.map(it =>
+                        it.id === paidDialog.proj.input.id
+                          ? { ...it, next_due_date: r.newDueDate, saving_start_date: r.newSavingStart }
+                          : it
+                      ));
+                      setPaidDialog(null);
+                      setPaidAmount("");
+                    }
+                  }}
+                  disabled={paidSaving}
+                  className="flex-1 bg-primary text-primary-foreground rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {paidSaving ? "Conferma…" : "Conferma pagamento"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center gap-3">
+            <BackButton onClick={() => setView("cover")} />
+            <h1 className="text-xl font-bold">Accantonamenti</h1>
+          </div>
+
+          {recurringLoading ? (
+            <div className="animate-pulse flex flex-col gap-4">
+              {[1, 2, 3].map(i => <div key={i} className="h-24 rounded-2xl bg-muted" />)}
+            </div>
+          ) : sinkingInputs.length === 0 ? (
+            <div className="flex flex-col items-center gap-4 py-16 text-center">
+              <span className="text-5xl">🏦</span>
+              <h2 className="text-lg font-bold">Nessun accantonamento</h2>
+              <p className="text-muted-foreground text-sm max-w-xs">
+                Configura una spesa ricorrente non mensile con una &ldquo;Prossima scadenza&rdquo; per attivare il calcolo dell&apos;accantonamento mensile.
+              </p>
+              <button
+                onClick={goAddRecurring}
+                className="bg-primary text-primary-foreground rounded-xl px-5 py-2.5 text-sm font-medium hover:bg-primary/90 transition-colors"
+              >
+                Aggiungi spesa ricorrente
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {/* Banner "tocca pagare" */}
+              {readyToPay.length > 0 && (
+                <div className="rounded-xl border border-amber-400/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+                  ⏰{" "}
+                  <span className="font-medium">
+                    {readyToPay.length === 1 ? "1 accantonamento pronto" : `${readyToPay.length} accantonamenti pronti`}
+                  </span>
+                  {" "}per il pagamento:{" "}
+                  {readyToPay.map(p => p.input.name).join(", ")}
+                </div>
+              )}
+
+              {/* Riepilogo globale */}
+              <div className={`rounded-2xl border-2 p-5 flex flex-col gap-4 ${statusConfig.bg}`}>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Situazione accantonamenti
+                  </h2>
+                  <span className={`text-xs font-semibold ${statusConfig.color}`}>
+                    {statusConfig.label}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Da accantonare questo mese</span>
+                    <span className="font-bold text-base">{fmt(summary.this_month_total)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Previsto accantonato finora</span>
+                    <span className="font-semibold">{fmt(summary.expected_saved_total)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Salvadanaio attuale</span>
+                    <span className="font-semibold">{fmt(summary.piggy_balance)}</span>
+                  </div>
+                  <div className="border-t pt-2 flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Delta</span>
+                    <span className={`font-bold ${summary.delta >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                      {summary.delta >= 0 ? "+" : ""}{fmt(summary.delta)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista voci */}
+              <div className="flex flex-col gap-3">
+                {summary.projections.map(proj => {
+                  const item = recurringItems.find(it => it.id === proj.input.id);
+                  if (!item) return null;
+                  const pct = proj.total_months > 0
+                    ? Math.round((proj.months_elapsed / proj.total_months) * 100)
+                    : 100;
+                  const isExpired = proj.months_remaining <= 0;
+                  const showPaidProminent = proj.months_remaining <= 1;
+
+                  return (
+                    <div
+                      key={proj.input.id}
+                      className={`rounded-2xl border-2 p-4 flex flex-col gap-3 ${isExpired ? "border-amber-400/50 bg-amber-50/30 dark:bg-amber-950/10" : "border-border"}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold truncate">{proj.input.name}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            Scadenza: {new Date(proj.input.next_due_date + "T00:00:00").toLocaleDateString("it-IT")}
+                            {" · "}
+                            {proj.months_remaining > 0
+                              ? `${proj.months_remaining} ${proj.months_remaining === 1 ? "mese rimasto" : "mesi rimasti"}`
+                              : "pronto per il pagamento"}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => goEditRecurring(item)}
+                          className="text-xs text-muted-foreground hover:text-foreground border rounded-lg px-2 py-1 transition-colors shrink-0"
+                          title="Modifica"
+                        >
+                          ✏️
+                        </button>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>
+                            Quota mensile:{" "}
+                            <span className="font-semibold text-foreground">{fmt(proj.monthly_quota)}</span>
+                          </span>
+                          <span>{Math.min(100, pct)}%</span>
+                        </div>
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              isExpired ? "bg-amber-500" : "bg-primary"
+                            }`}
+                            style={{ width: `${Math.min(100, pct)}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>Previsto: {fmt(proj.expected_saved_so_far)}</span>
+                          <span>Totale: {fmt(proj.input.amount_per_cycle)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        {/* Pagata button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const defaultAmt = proj.input.amount_per_cycle;
+                            setPaidAmount(defaultAmt % 1 === 0
+                              ? defaultAmt.toString()
+                              : defaultAmt.toFixed(2));
+                            setPaidDeduct(piggyBalance >= defaultAmt);
+                            setPaidDialog({ proj, item });
+                          }}
+                          className={`text-xs font-medium rounded-lg px-3 py-1.5 transition-colors ${
+                            showPaidProminent
+                              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                              : "border hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          ✓ Pagata
+                        </button>
+
+                        {/* Ricalcola da oggi */}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const res = await resetSavingStartDate(proj.input.id);
+                            if (res.error) toast.error(res.error);
+                            else {
+                              toast.success("Ricalcolo aggiornato.");
+                              const today = new Date().toISOString().split("T")[0];
+                              setRecurringItems(prev => prev.map(it =>
+                                it.id === proj.input.id
+                                  ? { ...it, saving_start_date: today }
+                                  : it
+                              ));
+                            }
+                          }}
+                          className="text-xs text-muted-foreground hover:text-foreground underline"
+                        >
+                          🔄 Ricalcola da oggi
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Info salvadanaio */}
+              <div className="rounded-xl border border-dashed p-4 flex flex-col gap-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Come funziona il salvadanaio?</p>
+                <p className="text-xs text-muted-foreground">
+                  Accantonando {fmt(summary.this_month_total)} ogni mese nel salvadanaio, arriverai pronto a ogni scadenza non mensile.
+                </p>
+                <a href="/dashboard/account" className="text-xs text-primary hover:underline mt-1">
+                  Aggiorna il saldo del salvadanaio →
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
     );
   }
 

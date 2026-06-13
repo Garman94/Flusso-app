@@ -11,6 +11,7 @@ import {
   type Goal,
 } from "@/lib/calculations";
 import { RecurringDashboardCard } from "./recurring-dashboard-card";
+import { SinkingFundsCard } from "./sinking-funds-card";
 import { updatePiggyBalance } from "./piggy-action";
 import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
@@ -498,6 +499,9 @@ export function DashboardClient({
 
       {/* ── Spese ricorrenti ── */}
       <RecurringDashboardCard userId={userId} />
+
+      {/* ── Accantonamenti ── */}
+      <SinkingFundsCard userId={userId} />
     </div>
   );
 }
