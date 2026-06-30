@@ -233,6 +233,7 @@ export function DashboardClient({
   payDay, periodFrom, periodTo,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
+  const [expandedCat, setExpandedCat] = useState<string | null>(null);
 
   const now = new Date();
 
@@ -396,26 +397,64 @@ export function DashboardClient({
               <p className="text-sm text-muted-foreground">Nessuna uscita questo periodo.</p>
             ) : (
               <div className="flex flex-col gap-3">
-                {macro.map(mc => (
-                  <div key={mc.key} className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2">
-                        <span>{mc.icon}</span>
-                        <span className="font-medium">{mc.label}</span>
-                      </span>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-muted-foreground">{mc.pct.toFixed(0)}%</span>
-                        <span className="font-semibold tabular-nums">{formatEuro(mc.total)}</span>
+                {macro.map(mc => {
+                  const isOpen = expandedCat === mc.key;
+                  const catTxs = spendableTxs
+                    .filter(t => Number(t.amount) < 0 && (mc.key === "__none__" ? t.category_id === null : t.category_id === mc.key))
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                  return (
+                    <div key={mc.key} className="flex flex-col gap-1.5">
+                      <button
+                        onClick={() => setExpandedCat(isOpen ? null : mc.key)}
+                        className="flex items-center justify-between text-sm w-full text-left hover:opacity-80 transition-opacity"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span>{mc.icon}</span>
+                          <span className="font-medium">{mc.label}</span>
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground">{mc.pct.toFixed(0)}%</span>
+                          <span className="font-semibold tabular-nums">{formatEuro(mc.total)}</span>
+                          <svg
+                            width="14" height="14" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" strokeWidth={2.5}
+                            className={`text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+                          >
+                            <path d="M6 9l6 6 6-6" />
+                          </svg>
+                        </div>
+                      </button>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${mc.pct}%`, backgroundColor: mc.color }}
+                        />
                       </div>
+                      {isOpen && (
+                        <div className="mt-1 mb-1 flex flex-col rounded-lg border bg-muted/30 overflow-hidden">
+                          {catTxs.length === 0 ? (
+                            <p className="text-xs text-muted-foreground px-3 py-2">Nessun movimento.</p>
+                          ) : catTxs.map((t, i) => (
+                            <div
+                              key={t.id ?? i}
+                              className="flex items-center justify-between px-3 py-2 border-b last:border-b-0 hover:bg-muted/50 transition-colors"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                  {new Date(t.date + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" })}
+                                </span>
+                                <span className="text-xs truncate">{t.description || "Transazione"}</span>
+                              </div>
+                              <span className="text-xs font-semibold tabular-nums text-red-500 whitespace-nowrap ml-3">
+                                {formatEuro(Number(t.amount))}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{ width: `${mc.pct}%`, backgroundColor: mc.color }}
-                      />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
