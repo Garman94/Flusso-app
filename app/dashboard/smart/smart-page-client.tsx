@@ -331,7 +331,7 @@ export function SmartPageClient({
     if (rEditId) {
       const { data, error } = await supabase
         .from("recurring_expenses").update(payload).eq("id", rEditId).select("*").single();
-      if (error) toast.error("Errore nel salvataggio.");
+      if (error) toast.error(`Errore: ${error.message}`);
       else {
         setRecurringItems(prev => prev.map(it => it.id === rEditId ? data as RecurringExpense : it));
         toast.success("Modificata!"); setView("list-recurring");
@@ -339,7 +339,7 @@ export function SmartPageClient({
     } else {
       const { data, error } = await supabase
         .from("recurring_expenses").insert({ user_id: userId, ...payload }).select("*").single();
-      if (error) toast.error("Errore nel salvataggio.");
+      if (error) toast.error(`Errore: ${error.message}`);
       else {
         setRecurringItems(prev => [...prev, data as RecurringExpense]);
         toast.success("Aggiunta!"); setView("list-recurring");
@@ -389,7 +389,7 @@ export function SmartPageClient({
     };
     const { data, error } = await createClient()
       .from("recurring_expenses").update(payload).eq("id", eEditId).select("*").single();
-    if (error) toast.error("Errore nel salvataggio.");
+    if (error) toast.error(`Errore: ${error.message}`);
     else {
       setRecurringItems(prev => prev.map(it => it.id === eEditId ? data as RecurringExpense : it));
       toast.success("Modificata!"); setView("list-recurring");

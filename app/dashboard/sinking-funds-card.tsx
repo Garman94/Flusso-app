@@ -13,7 +13,7 @@ type RecurringRow = {
   amount_max: number | null;
   next_due_date: string | null;
   saving_start_date: string | null;
-  categories?: { icon: string | null } | null;
+  categories?: { icon: string | null }[] | null;
 };
 
 function fmt(n: number) {
@@ -97,7 +97,7 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
     .slice(0, 3)
     .map(p => {
       const row = items.find(it => it.id === p.input.id);
-      return { ...p, icon: row?.categories?.icon ?? "💰" };
+      return { ...p, icon: row?.categories?.[0]?.icon ?? "💰" };
     });
 
   return (
