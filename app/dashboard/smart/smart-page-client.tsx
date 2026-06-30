@@ -1805,6 +1805,21 @@ export function SmartPageClient({
 
     const summary = aggregateSinkingFunds(sinkingInputs, piggyBalance);
 
+    // Catch-up: per ogni voce calcola la quota "a regime" (= importo ÷ mesi del ciclo completo)
+    // Se total_months < cycle_months significa che la saving_start_date è più vicina
+    // della scadenza del ciclo normale → l'utente sta recuperando mesi non accantonati.
+    const catchupData = summary.projections.map(p => {
+      const item = recurringItems.find(it => it.id === p.input.id)!;
+      const cycle_months = monthsPerCycle(item.frequency, item.custom_days);
+      const steady_monthly = p.input.amount_per_cycle / cycle_months;
+      const is_catchup = p.months_remaining > 0 && p.total_months < cycle_months;
+      return { proj: p, cycle_months, steady_monthly, is_catchup };
+    });
+    const steady_state_total = catchupData.reduce(
+      (s, d) => s + (d.proj.months_remaining > 0 ? d.steady_monthly : 0), 0,
+    );
+    const in_catchup = summary.this_month_total > steady_state_total + 0.01;
+
     const statusConfig = {
       ahead:    { color: "text-green-600 dark:text-green-400",  bg: "bg-green-500/10 border-green-500/30",   label: "In anticipo 🟢" },
       on_track: { color: "text-primary",                        bg: "bg-primary/5 border-primary/30",        label: "In pari ✅" },
@@ -2013,6 +2028,24 @@ export function SmartPageClient({
                 </div>
               )}
 
+              {/* Banner recupero */}
+              {in_catchup && (
+                <div className="rounded-xl border border-amber-400/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 flex flex-col gap-1.5 text-sm">
+                  <p className="font-semibold text-amber-700 dark:text-amber-400">
+                    ⏫ Sei in fase di recupero
+                  </p>
+                  <p className="text-amber-700/80 dark:text-amber-500 text-xs leading-relaxed">
+                    Alcune scadenze arrivano prima che tu abbia avuto il tempo di accantonare l&apos;importo completo,
+                    quindi la rata mensile attuale è più alta del normale.
+                    Una volta superate queste prime scadenze, la quota mensile si stabilizzerà.
+                  </p>
+                  <div className="flex justify-between items-center pt-1 border-t border-amber-400/30">
+                    <span className="text-xs text-amber-700/80 dark:text-amber-500">Quota a regime (da prossimo ciclo)</span>
+                    <span className="text-sm font-bold text-amber-700 dark:text-amber-400">{fmt(steady_state_total)}/mese</span>
+                  </div>
+                </div>
+              )}
+
               {/* Riepilogo globale */}
               <div className={`rounded-2xl border-2 p-5 flex flex-col gap-4 ${statusConfig.bg}`}>
                 <div className="flex items-center justify-between">
@@ -2025,9 +2058,18 @@ export function SmartPageClient({
                 </div>
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Da accantonare questo mese</span>
+                    <span className="text-muted-foreground">
+                      Da accantonare questo mese
+                      {in_catchup && <span className="ml-1 text-xs text-amber-500">(recupero)</span>}
+                    </span>
                     <span className="font-bold text-base">{fmt(summary.this_month_total)}</span>
                   </div>
+                  {in_catchup && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-muted-foreground">A regime</span>
+                      <span className="font-semibold text-muted-foreground">{fmt(steady_state_total)}/mese</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Previsto accantonato finora</span>
                     <span className="font-semibold">{fmt(summary.expected_saved_total)}</span>
@@ -2055,6 +2097,8 @@ export function SmartPageClient({
                     : 100;
                   const isExpired = proj.months_remaining <= 0;
                   const showPaidProminent = proj.months_remaining <= 1;
+                  const catchup = catchupData.find(c => c.proj.input.id === proj.input.id);
+                  const isCatchup = catchup?.is_catchup ?? false;
 
                   return (
                     <div
@@ -2063,7 +2107,14 @@ export function SmartPageClient({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <div className="font-semibold truncate">{proj.input.name}</div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold truncate">{proj.input.name}</span>
+                            {isCatchup && (
+                              <span className="text-xs bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-300/50 rounded-full px-2 py-0.5 whitespace-nowrap">
+                                ⏫ recupero
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
                             Scadenza: {new Date(proj.input.next_due_date + "T00:00:00").toLocaleDateString("it-IT")}
                             {" · "}
@@ -2071,6 +2122,11 @@ export function SmartPageClient({
                               ? `${proj.months_remaining} ${proj.months_remaining === 1 ? "mese rimasto" : "mesi rimasti"}`
                               : "pronto per il pagamento"}
                           </div>
+                          {isCatchup && catchup && (
+                            <div className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                              A regime: {fmt(catchup.steady_monthly)}/mese
+                            </div>
+                          )}
                         </div>
                         <button
                           onClick={() => goEditRecurring(item)}
