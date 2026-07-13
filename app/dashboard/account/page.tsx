@@ -71,7 +71,9 @@ async function AccountContent() {
       </div>
 
       {/* Feedback */}
-      <FeedbackChat userId={data.claims.sub} />
+      <div data-tour="account-feedback">
+        <FeedbackChat userId={data.claims.sub} />
+      </div>
 
       {/* Delete account */}
       <div className="rounded-xl border border-destructive/30 p-6 flex flex-col gap-4">

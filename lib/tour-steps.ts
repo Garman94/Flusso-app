@@ -139,8 +139,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/account": {
-    version: "1.1",
-    whatIsNew: "sezione Componenti e modalità Smanettone",
+    version: "1.2",
+    whatIsNew: "chat feedback diretta con Marco",
     steps: [
       {
         title: "Impostazioni account ⚙️",
@@ -155,6 +155,11 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
         target: "[data-tour='account-power-user']",
         title: "Modalità smanettone",
         message: "Attivala per sbloccare le regole avanzate di rinomina e categorizzazione automatica delle transazioni.",
+      },
+      {
+        target: "[data-tour='account-feedback']",
+        title: "Scrivi a Marco 💬",
+        message: "Hai un'idea, un problema o una domanda? Scrivimi direttamente qui — rispondo personalmente in app. È il modo più diretto per migliorare Flusso insieme.",
       },
     ],
   },
