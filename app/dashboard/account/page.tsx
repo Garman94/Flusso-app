@@ -8,6 +8,7 @@ import { DeleteAccountButton } from "./delete-account-button";
 import { PlanSection } from "./plan-section";
 import { UpgradeSuccessModal } from "./upgrade-success-modal";
 import { FamilyMembersSection } from "./family-members-section";
+import { PowerUserToggle } from "./power-user-toggle";
 
 async function AccountContent() {
   const supabase = await createClient();
@@ -58,6 +59,9 @@ async function AccountContent() {
 
       {/* Family members */}
       <FamilyMembersSection userId={data.claims.sub} />
+
+      {/* Power user toggle */}
+      <PowerUserToggle userId={data.claims.sub} enabled={profile?.power_user ?? false} />
 
       {/* Delete account */}
       <div className="rounded-xl border border-destructive/30 p-6 flex flex-col gap-4">

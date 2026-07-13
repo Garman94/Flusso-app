@@ -25,7 +25,7 @@ async function TransazioniContent({
   monthStart.setHours(0, 0, 0, 0);
 
   const [profileRes, transactionsRes, categoriesRes, uncategorizedRes, displayRulesRes, categoryRulesRes, excelUploadsRes, familyMembersRes] = await Promise.all([
-    supabase.from("profiles").select("plan, pay_day").eq("id", userId).single(),
+    supabase.from("profiles").select("plan, pay_day, power_user").eq("id", userId).single(),
     supabase
       .from("transactions")
       .select("*, categories(id, name, color, icon), family_members(id, name, color)")
@@ -81,6 +81,7 @@ async function TransazioniContent({
       periodYear={periodYear}
       periodMonth={periodMonth}
       familyMembers={(familyMembersRes.data ?? []) as { id: string; name: string; color: string }[]}
+      powerUser={profileRes.data?.power_user ?? false}
     />
   );
 }
