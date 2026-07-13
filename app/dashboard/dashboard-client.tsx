@@ -12,6 +12,7 @@ import {
 } from "@/lib/calculations";
 import { RecurringDashboardCard } from "./recurring-dashboard-card";
 import { SinkingFundsCard } from "./sinking-funds-card";
+import { MonthReportModal } from "./month-report-modal";
 import { updatePiggyBalance } from "./piggy-action";
 import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
@@ -233,6 +234,7 @@ export function DashboardClient({
   payDay, periodFrom, periodTo,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
+  const [showMonthReport, setShowMonthReport] = useState(false);
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
 
   const now = new Date();
@@ -277,6 +279,11 @@ export function DashboardClient({
         <SettingsModal payDay={payDay} onClose={() => setShowSettings(false)} />
       )}
 
+      {/* Month report modal */}
+      {showMonthReport && (
+        <MonthReportModal userId={userId} onClose={() => setShowMonthReport(false)} />
+      )}
+
       {/* ── Header ── */}
       <div className="flex items-start justify-between">
         <div>
@@ -297,6 +304,21 @@ export function DashboardClient({
           </div>
           <p className="text-muted-foreground text-sm mt-0.5">{periodLabel}</p>
         </div>
+
+        {/* Report mesi precedenti */}
+        <button
+          onClick={() => setShowMonthReport(true)}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border rounded-lg px-3 py-2 hover:bg-muted/50 transition-colors shrink-0"
+          title="Vedi report mesi precedenti"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          <span className="hidden sm:inline">Mesi precedenti</span>
+        </button>
       </div>
 
       {/* ── Banner: nessun movimento questo periodo ── */}

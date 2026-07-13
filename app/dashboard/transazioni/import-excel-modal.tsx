@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 
 type Category = { id: string; name: string; color: string; icon: string };
+type FamilyMember = { id: string; name: string; color: string };
 
 type ParsedRow = {
   date: string;
@@ -17,6 +18,7 @@ type ParsedRow = {
 type Props = {
   userId: string;
   categories: Category[];
+  familyMembers?: FamilyMember[];
   onClose: () => void;
   onImported: (count: number) => void;
 };
@@ -140,12 +142,13 @@ function formatEuro(n: number) {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
 }
 
-export function ImportExcelModal({ userId, categories, onClose, onImported }: Props) {
+export function ImportExcelModal({ userId, categories, familyMembers = [], onClose, onImported }: Props) {
   const [step, setStep] = useState<"upload" | "preview">("upload");
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [detectedBank, setDetectedBank] = useState<BankFormat | null>(null);
   const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function processFile(file: File) {
@@ -272,6 +275,7 @@ export function ImportExcelModal({ userId, categories, onClose, onImported }: Pr
         amount: r.amount,
         description: r.description,
         category_id: r.category_id || null,
+        member_id: selectedMemberId || null,
         source: "excel" as const,
       }));
 
@@ -338,6 +342,41 @@ export function ImportExcelModal({ userId, categories, onClose, onImported }: Pr
               </div>
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
 
+              {/* Selettore membro */}
+              {familyMembers.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Di chi è questo estratto conto?</label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMemberId(null)}
+                      className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${selectedMemberId === null ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted/50"}`}
+                    >
+                      Nessuno
+                    </button>
+                    {familyMembers.map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setSelectedMemberId(m.id)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium border-2 transition-all ${selectedMemberId === m.id ? "scale-105" : "hover:scale-105"}`}
+                        style={selectedMemberId === m.id
+                          ? { backgroundColor: m.color, color: "#fff", borderColor: m.color }
+                          : { backgroundColor: m.color + "22", color: m.color, borderColor: m.color + "66" }
+                        }
+                      >
+                        {m.name}
+                      </button>
+                    ))}
+                  </div>
+                  {selectedMemberId && (
+                    <p className="text-xs text-muted-foreground">
+                      Tutte le transazioni importate saranno associate a <strong>{familyMembers.find(m => m.id === selectedMemberId)?.name}</strong>.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="rounded-lg bg-muted/40 p-4 text-xs text-muted-foreground flex flex-col gap-1">
                 <p className="font-medium text-foreground">Banche supportate</p>
                 <p>Isybank e qualsiasi estratto conto con colonne <em>Data</em> e <em>Importo</em>. Il supporto per altri formati verrà aggiunto nel tempo.</p>
@@ -363,10 +402,21 @@ export function ImportExcelModal({ userId, categories, onClose, onImported }: Pr
                 </div>
               </div>
 
-              <p className="text-sm text-muted-foreground">
-                {detectedBank === "isybank" && <span className="text-primary font-medium">Isybank rilevato · </span>}
-                Puoi modificare le categorie prima di importare.
-              </p>
+              <div className="flex items-center gap-2 flex-wrap text-sm text-muted-foreground">
+                {detectedBank === "isybank" && <span className="text-primary font-medium">Isybank rilevato ·</span>}
+                <span>Puoi modificare le categorie prima di importare.</span>
+                {selectedMemberId && (() => {
+                  const m = familyMembers.find(x => x.id === selectedMemberId);
+                  return m ? (
+                    <span
+                      className="text-xs font-medium px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: m.color + "33", color: m.color }}
+                    >
+                      {m.name}
+                    </span>
+                  ) : null;
+                })()}
+              </div>
 
               <div className="rounded-xl border overflow-hidden">
                 <div className="overflow-x-auto">

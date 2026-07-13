@@ -9,6 +9,7 @@ import { createCategoryRule, deleteCategoryRule } from "./actions";
 import { computePeriodRange, getCurrentPeriodAnchor } from "@/lib/period";
 
 export type Category = { id: string; name: string; color: string; icon: string };
+export type FamilyMember = { id: string; name: string; color: string };
 export type Transaction = {
   id: string;
   date: string;
@@ -17,8 +18,10 @@ export type Transaction = {
   merchant: string | null;
   notes: string | null;
   category_id: string | null;
+  member_id: string | null;
   source: string;
   categories: Category | null;
+  family_members: FamilyMember | null;
 };
 export type DisplayRule    = { id: string; find_text: string; replace_with: string };
 export type CategoryRule   = { id: string; value: string; category_id: string; categories: { name: string; icon: string; color: string } | null };
@@ -75,13 +78,14 @@ type Props = {
   initialDisplayRules: DisplayRule[];
   initialCategoryRules: CategoryRule[];
   categories: Category[];
+  familyMembers?: FamilyMember[];
   initialFilter?: FilterType;
   payDay?: number;
   periodYear?: number;
   periodMonth?: number;
 };
 
-export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, initialFilter = "all", payDay = 0, periodYear, periodMonth }: Props) {
+export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], initialFilter = "all", payDay = 0, periodYear, periodMonth }: Props) {
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -450,6 +454,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
         <ImportExcelModal
           userId={userId}
           categories={categories}
+          familyMembers={familyMembers}
           onClose={() => setShowImport(false)}
           onImported={handleExcelImported}
         />
@@ -878,6 +883,34 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
         </div>
       </div>
 
+      {/* Riepilogo voci visualizzate */}
+      {filtered.length > 0 && (() => {
+        const fIncome   = filtered.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
+        const fExpenses = filtered.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+        return (
+          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+            <span className="text-muted-foreground">{filtered.length} {filtered.length === 1 ? "voce" : "voci"}</span>
+            {fIncome > 0 && (
+              <span className="flex items-center gap-1">
+                <span className="text-green-600 dark:text-green-400 font-semibold">↑ {formatEuro(fIncome)}</span>
+                <span>entrate</span>
+              </span>
+            )}
+            {fExpenses > 0 && (
+              <span className="flex items-center gap-1">
+                <span className="text-red-500 font-semibold">↓ {formatEuro(fExpenses)}</span>
+                <span>uscite</span>
+              </span>
+            )}
+            {fIncome > 0 && fExpenses > 0 && (
+              <span className="flex items-center gap-1 border-l pl-3">
+                Netto: <span className={`font-semibold ml-1 ${fIncome - fExpenses >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{formatEuro(fIncome - fExpenses)}</span>
+              </span>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Lista transazioni */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed p-10 flex flex-col items-center gap-3 text-center">
@@ -906,10 +939,20 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                         ))}
                       </select>
                     ) : (
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(t.date).toLocaleDateString("it-IT")}
-                        {t.categories && <span> · {t.categories.name}</span>}
-                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(t.date).toLocaleDateString("it-IT")}
+                          {t.categories && <span> · {t.categories.name}</span>}
+                        </p>
+                        {t.family_members && (
+                          <span
+                            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ backgroundColor: t.family_members.color + "33", color: t.family_members.color }}
+                          >
+                            {t.family_members.name}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -943,7 +986,19 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                       {new Date(t.date).toLocaleDateString("it-IT")}
                     </td>
-                    <td className="px-4 py-3 max-w-[200px] truncate">{applyDisplayRules(t.description, displayRules) || "—"}</td>
+                    <td className="px-4 py-3 max-w-[200px]">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="truncate">{applyDisplayRules(t.description, displayRules) || "—"}</span>
+                        {t.family_members && (
+                          <span
+                            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0"
+                            style={{ backgroundColor: t.family_members.color + "33", color: t.family_members.color }}
+                          >
+                            {t.family_members.name}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       {editMode ? (
                         <select

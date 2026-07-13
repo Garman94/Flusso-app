@@ -24,11 +24,11 @@ async function TransazioniContent({
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
 
-  const [profileRes, transactionsRes, categoriesRes, uncategorizedRes, displayRulesRes, categoryRulesRes, excelUploadsRes] = await Promise.all([
+  const [profileRes, transactionsRes, categoriesRes, uncategorizedRes, displayRulesRes, categoryRulesRes, excelUploadsRes, familyMembersRes] = await Promise.all([
     supabase.from("profiles").select("plan, pay_day").eq("id", userId).single(),
     supabase
       .from("transactions")
-      .select("*, categories(id, name, color, icon)")
+      .select("*, categories(id, name, color, icon), family_members(id, name, color)")
       .eq("user_id", userId)
       .order("date", { ascending: false }),
     supabase
@@ -56,6 +56,11 @@ async function TransazioniContent({
       .select("id", { count: "exact" })
       .eq("user_id", userId)
       .gte("uploaded_at", monthStart.toISOString()),
+    supabase
+      .from("family_members")
+      .select("id, name, color")
+      .eq("user_id", userId)
+      .order("created_at"),
   ]);
 
   const payDay: number = profileRes.data?.pay_day ?? 0;
@@ -75,6 +80,7 @@ async function TransazioniContent({
       payDay={payDay}
       periodYear={periodYear}
       periodMonth={periodMonth}
+      familyMembers={(familyMembersRes.data ?? []) as { id: string; name: string; color: string }[]}
     />
   );
 }
