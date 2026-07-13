@@ -2,12 +2,10 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { getPlanLabel, getPlanBadgeColor } from "@/lib/plans";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import { AdminPlanSelect } from "./admin-plan-select";
+import Link from "next/link";
 import { AdminCouponManager } from "./admin-coupon-manager";
 import { AdminPreviewMode } from "./admin-preview-mode";
+import { AdminUserRow } from "./admin-user-row";
 import { getPreviewPlan } from "@/lib/preview-plan";
 
 function getAdminEmails(): string[] {
@@ -53,11 +51,19 @@ async function AdminContent() {
 
   return (
     <div className="flex flex-col gap-10">
-      <div>
-        <h1 className="text-2xl font-bold">Admin Panel</h1>
-        <p className="text-muted-foreground mt-1">
-          {profiles?.length ?? 0} utenti registrati
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Admin Panel</h1>
+          <p className="text-muted-foreground mt-1">{profiles?.length ?? 0} utenti registrati</p>
+        </div>
+        <Link
+          href="/onboarding?preview=1"
+          target="_blank"
+          className="flex items-center gap-2 text-sm border rounded-lg px-3 py-2 hover:bg-muted/50 transition-colors"
+        >
+          <span>👀</span>
+          Test primo utilizzo
+        </Link>
       </div>
 
       {/* Users table */}
@@ -65,33 +71,14 @@ async function AdminContent() {
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
             <tr>
-              <th className="text-left px-4 py-3 font-medium">Utente</th>
-              <th className="text-left px-4 py-3 font-medium">Piano</th>
-              <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Registrato</th>
-              <th className="text-left px-4 py-3 font-medium">Azione</th>
+              <th className="text-left px-4 py-2.5 font-medium">Utente</th>
+              <th className="text-left px-4 py-2.5 font-medium">Piano</th>
+              <th className="text-left px-4 py-2.5 font-medium">Modifica</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody>
             {profiles?.map((profile) => (
-              <tr key={profile.id} className="hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3">
-                  <div className="flex flex-col">
-                    <span className="font-medium">{profile.full_name || "—"}</span>
-                    <span className="text-xs text-muted-foreground font-mono">{profile.id.slice(0, 8)}…</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge className={cn("text-xs", getPlanBadgeColor(profile.plan))}>
-                    {getPlanLabel(profile.plan)}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
-                  {new Date(profile.created_at).toLocaleDateString("it-IT")}
-                </td>
-                <td className="px-4 py-3">
-                  <AdminPlanSelect userId={profile.id} currentPlan={profile.plan} />
-                </td>
-              </tr>
+              <AdminUserRow key={profile.id} profile={profile} />
             ))}
           </tbody>
         </table>
