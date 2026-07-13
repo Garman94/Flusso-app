@@ -151,6 +151,17 @@ export function hasUnseenTour(path: string): boolean {
   }
 }
 
+/** true = la chiave non esiste mai (primo accesso assoluto a questa pagina) */
+export function isFirstVisit(path: string): boolean {
+  const def = PAGE_TOURS[path];
+  if (!def) return false;
+  try {
+    return localStorage.getItem(getTourStorageKey(path)) === null;
+  } catch {
+    return false;
+  }
+}
+
 export function markTourSeen(path: string) {
   const def = PAGE_TOURS[path];
   if (!def) return;

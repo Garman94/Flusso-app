@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useTour } from "./tour-context";
-import { PAGE_TOURS, hasUnseenTour, markTourSeen } from "@/lib/tour-steps";
+import { PAGE_TOURS, hasUnseenTour, isFirstVisit, markTourSeen } from "@/lib/tour-steps";
 
 type Props = { path: string };
 
@@ -32,7 +32,17 @@ export function PageTour({ path }: Props) {
       return () => clearTimeout(t);
     }
 
+    if (isFirstVisit(path)) {
+      // primo accesso: parte subito senza chiedere
+      const t = setTimeout(() => {
+        start(def.steps);
+        markTourSeen(path);
+      }, 800);
+      return () => clearTimeout(t);
+    }
+
     if (hasUnseenTour(path)) {
+      // aggiornamento: chiede prima
       const t = setTimeout(() => setShowPrompt(true), 800);
       return () => clearTimeout(t);
     }
