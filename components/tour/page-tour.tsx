@@ -5,9 +5,9 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useTour } from "./tour-context";
 import { PAGE_TOURS, hasUnseenTour, isFirstVisit, markTourSeen } from "@/lib/tour-steps";
 
-type Props = { path: string };
+type Props = { path: string; plan?: string };
 
-export function PageTour({ path }: Props) {
+export function PageTour({ path, plan }: Props) {
   const { start } = useTour();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -34,8 +34,10 @@ export function PageTour({ path }: Props) {
 
     if (isFirstVisit(path)) {
       // primo accesso: parte subito senza chiedere
+      // se utente free e la pagina ha freePreview, usa quello
+      const steps = (plan === "free" && def.freePreview) ? def.freePreview : def.steps;
       const t = setTimeout(() => {
-        start(def.steps);
+        start(steps);
         markTourSeen(path);
       }, 800);
       return () => clearTimeout(t);

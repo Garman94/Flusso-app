@@ -4,6 +4,8 @@ export type PageTourDef = {
   version: string;
   whatIsNew: string;
   steps: TourStep[];
+  /** Passi mostrati agli utenti free al posto dei normali — spiega la feature e invita all'upgrade */
+  freePreview?: TourStep[];
 };
 
 export const PAGE_TOURS: Record<string, PageTourDef> = {
@@ -86,6 +88,28 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   "/dashboard/smart": {
     version: "1.0",
     whatIsNew: "spese ricorrenti, obiettivi, previsioni e accantonamenti",
+    freePreview: [
+      {
+        title: "Benvenuto in Smart ⚡",
+        message: "Smart è il centro di analisi avanzata di Flusso. Qui puoi tenere sotto controllo le spese ricorrenti, pianificare il budget e tracciare i tuoi obiettivi di risparmio.",
+      },
+      {
+        title: "Spese ricorrenti 🔁",
+        message: "Inserisci bollette, abbonamenti e spese regolari. Flusso le confronta ogni mese con le transazioni reali e ti mostra se sei in linea o hai sforato.",
+      },
+      {
+        title: "Previsioni di budget 📊",
+        message: "Pianifica quanto vuoi spendere per categoria e confrontalo con la tua spesa reale media. Scopri dove si nascondono i tuoi soldi.",
+      },
+      {
+        title: "Obiettivi di risparmio 🎯",
+        message: "Crea obiettivi con importo e scadenza. Flusso stima quando li raggiungerai in base al tuo ritmo di risparmio.",
+      },
+      {
+        title: "Sblocca Smart con Premium 🚀",
+        message: "Tutte queste funzioni sono disponibili con il piano Premium. Vai su Account → Piano per scoprire le opzioni — o riscatta un coupon se ne hai uno.",
+      },
+    ],
     steps: [
       {
         title: "Benvenuto in Smart ⚡",

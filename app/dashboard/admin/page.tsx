@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AdminCouponManager } from "./admin-coupon-manager";
 import { AdminPreviewMode } from "./admin-preview-mode";
 import { AdminUserRow } from "./admin-user-row";
+import { AdminFeedback } from "./admin-feedback";
 import { getPreviewPlan } from "@/lib/preview-plan";
 
 function getAdminEmails(): string[] {
@@ -93,6 +94,17 @@ async function AdminContent() {
           </p>
         </div>
         <AdminCouponManager initialCoupons={coupons ?? []} />
+      </div>
+
+      {/* Feedback utenti */}
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Feedback utenti</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Messaggi inviati dagli utenti dall&apos;app. Rispondi direttamente qui.
+          </p>
+        </div>
+        <AdminFeedback profiles={profiles?.map((p) => ({ id: p.id, full_name: p.full_name })) ?? []} />
       </div>
 
       {/* Preview mode */}

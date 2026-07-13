@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectivePlan } from "@/lib/preview-plan";
+import { PageTour } from "@/components/tour/page-tour";
 import { SmartPageClient } from "./smart-page-client";
 import type { RecurringExpense as SmartRecurringExpense } from "./smart-page-client";
 import { getCurrentPeriodAnchor, computePeriodRange } from "@/lib/period";
@@ -24,6 +25,7 @@ async function SmartContent() {
   if (plan === "free") {
     return (
       <div className="flex flex-col items-center justify-center gap-6 py-20 text-center max-w-md mx-auto">
+        <Suspense><PageTour path="/dashboard/smart" plan="free" /></Suspense>
         <span className="text-6xl">🔒</span>
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-bold">Sezione Budget</h1>

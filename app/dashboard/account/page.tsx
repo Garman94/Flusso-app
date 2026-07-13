@@ -9,6 +9,7 @@ import { PlanSection } from "./plan-section";
 import { UpgradeSuccessModal } from "./upgrade-success-modal";
 import { FamilyMembersSection } from "./family-members-section";
 import { PowerUserToggle } from "./power-user-toggle";
+import { FeedbackChat } from "./feedback-chat";
 import { PageTour } from "@/components/tour/page-tour";
 
 async function AccountContent() {
@@ -68,6 +69,9 @@ async function AccountContent() {
       <div data-tour="account-power-user">
         <PowerUserToggle userId={data.claims.sub} enabled={profile?.power_user ?? false} />
       </div>
+
+      {/* Feedback */}
+      <FeedbackChat userId={data.claims.sub} />
 
       {/* Delete account */}
       <div className="rounded-xl border border-destructive/30 p-6 flex flex-col gap-4">
