@@ -81,6 +81,15 @@ Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 | `010_recurring_keywords.sql` | Campo `match_keywords` su `recurring_expenses` |
 | `011_recurring_strategy.sql` | Campo `matching_strategy` su `recurring_expenses` |
 | `012_coupon_codes.sql` | Tabella `coupon_codes` per upgrade via coupon |
+| `013_excel_upload_log.sql` | Tabella `excel_uploads` (rate limit import free) |
+| `013_smart_wizard_fields.sql` | `due_day` su `recurring_expenses`, tipologia `'entrata'` |
+| `014_recurring_extras.sql` | `due_month`, `secondary_name` su `recurring_expenses` |
+| `015_drop_balance.sql` | Rimozione `balance` da `profiles` |
+| `016_lock_plan_column.sql` | Trigger anti-autopromozione piano |
+| `017_recurring_sinking_fund.sql` | `next_due_date`, `saving_start_date` (accantonamenti) |
+| `018_family_members.sql` | Tabella `family_members`; `member_id` su `transactions` |
+| `019_power_user.sql` | Campo `power_user boolean` su `profiles` |
+| `020_feedback.sql` | Tabella `feedback_messages` (chat utente↔founder) |
 
 **Via CLI:**
 ```bash
@@ -167,9 +176,11 @@ await service.from("coupon_codes").insert({ code: "FLUSSO-XXXX-XXXX", plan: "fou
 Accedi a `/dashboard/admin` — visibile solo agli utenti in `ADMIN_EMAILS`.
 
 Funzionalità:
-- Lista tutti gli utenti registrati con piano attuale
-- Cambia piano a qualsiasi utente direttamente dalla tabella
+- Lista utenti registrati (righe compatte espandibili per UUID e data)
+- Cambia piano a qualsiasi utente
 - Crea e gestisci coupon di upgrade
+- **Test primo utilizzo**: apre `/onboarding?preview=1` in nuova tab per vedere il flusso onboarding
+- **Feedback utenti**: chat integrata con tutti i messaggi degli utenti e form di risposta diretta
 
 **Via codice:**
 ```ts
@@ -204,6 +215,14 @@ I post appaiono automaticamente su `/blog`.
 Tutto il branding è in un solo file: [`lib/config.ts`](lib/config.ts)
 
 Nome, tagline, prezzi, feature dei piani, link nav — tutto aggiorna l'intera app.
+
+---
+
+## Per chi sviluppa
+
+La documentazione tecnica completa si trova in [`/docs/`](docs/README.md): architettura, concetti chiave, variabili d'ambiente, sicurezza, troubleshooting e come usare Claude Code in modo produttivo sul progetto.
+
+Partenza consigliata: [01 — Cos'è Flusso](docs/01-overview.md) → [02 — Architettura](docs/02-architecture.md).
 
 ---
 

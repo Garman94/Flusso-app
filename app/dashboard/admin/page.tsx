@@ -5,7 +5,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import { AdminCouponManager } from "./admin-coupon-manager";
 import { AdminPreviewMode } from "./admin-preview-mode";
-import { AdminUserRow } from "./admin-user-row";
+import { AdminUsersSection } from "./admin-users-section";
 import { AdminFeedback } from "./admin-feedback";
 import { getPreviewPlan } from "@/lib/preview-plan";
 
@@ -68,22 +68,7 @@ async function AdminContent() {
       </div>
 
       {/* Users table */}
-      <div className="rounded-xl border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="text-left px-4 py-2.5 font-medium">Utente</th>
-              <th className="text-left px-4 py-2.5 font-medium">Piano</th>
-              <th className="text-left px-4 py-2.5 font-medium">Modifica</th>
-            </tr>
-          </thead>
-          <tbody>
-            {profiles?.map((profile) => (
-              <AdminUserRow key={profile.id} profile={profile} />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <AdminUsersSection profiles={profiles ?? []} />
 
       {/* Coupon manager */}
       <div className="flex flex-col gap-4">
