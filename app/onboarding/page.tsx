@@ -27,7 +27,7 @@ function OnboardingInner() {
 
   async function handleComplete() {
     if (isPreview) {
-      router.push("/dashboard/admin");
+      router.push("/dashboard?tour=1");
       return;
     }
 
@@ -42,7 +42,7 @@ function OnboardingInner() {
         .update({ full_name: fullName.trim() || undefined })
         .eq("id", session.user.id);
 
-      router.push("/dashboard");
+      router.push("/dashboard?tour=1");
     } catch {
       toast.error("Qualcosa è andato storto. Riprova.");
       setLoading(false);

@@ -6,6 +6,8 @@ import "./globals.css";
 import { siteConfig } from "@/lib/config";
 import { RegisterSW } from "@/components/register-sw";
 import { CookieBanner } from "@/components/CookieBanner";
+import { TourProvider } from "@/components/tour/tour-context";
+import { TourOverlay } from "@/components/tour/tour-overlay";
 
 const defaultUrl = process.env.NEXT_PUBLIC_SITE_URL
   ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
@@ -54,7 +56,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <TourProvider>
+            {children}
+            <TourOverlay />
+          </TourProvider>
           <CookieBanner />
           <Toaster richColors closeButton position="top-right" />
         </ThemeProvider>

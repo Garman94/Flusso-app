@@ -28,6 +28,7 @@ export function DashboardNavLinks({ isAdmin }: Props) {
           <Link
             key={href}
             href={href}
+            data-tour={href === "/dashboard/transazioni" ? "nav-transazioni" : href === "/dashboard/smart" ? "nav-smart" : undefined}
             className={`transition-colors text-sm ${
               isActive(href, exact)
                 ? "text-foreground font-semibold"
@@ -62,14 +63,14 @@ export function DashboardNavLinks({ isAdmin }: Props) {
           <span className="text-[10px]">Dashboard</span>
         </Link>
 
-        <Link href="/dashboard/transazioni" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/transazioni", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+        <Link href="/dashboard/transazioni" data-tour="nav-transazioni" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/transazioni", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/transazioni", false) ? 2.2 : 1.8}>
             <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
           </svg>
           <span className="text-[10px]">Transazioni</span>
         </Link>
 
-        <Link href="/dashboard/smart" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/smart", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+        <Link href="/dashboard/smart" data-tour="nav-smart" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/smart", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/smart", false) ? 2.2 : 1.8}>
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>

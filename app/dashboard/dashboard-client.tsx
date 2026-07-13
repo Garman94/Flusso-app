@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   formatEuro,
@@ -16,6 +17,8 @@ import { MonthReportModal } from "./month-report-modal";
 import { updatePiggyBalance } from "./piggy-action";
 import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
+import { useTour } from "@/components/tour/tour-context";
+import { DASHBOARD_TOUR_STEPS } from "@/lib/tour-steps";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Profile = { full_name: string | null; plan: string; piggy_balance: number };
@@ -237,6 +240,19 @@ export function DashboardClient({
   const [showMonthReport, setShowMonthReport] = useState(false);
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
 
+  const { start } = useTour();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const forceTour = searchParams.get("tour") === "1";
+    const alreadySeen = (() => { try { return localStorage.getItem("flusso_tour_seen") === "1"; } catch { return false; } })();
+    if (forceTour || !alreadySeen) {
+      // piccolo delay per lasciare tempo al DOM di renderizzare
+      const t = setTimeout(() => start(DASHBOARD_TOUR_STEPS), 600);
+      return () => clearTimeout(t);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const now = new Date();
 
   // ── Period-aware day calculations ──────────────────────────────────────────
@@ -357,7 +373,7 @@ export function DashboardClient({
       )}
 
       {/* ── Hero: spese mese + score ── */}
-      <div className="rounded-xl border p-4 sm:p-6 flex flex-col sm:flex-row gap-4 sm:gap-6 sm:items-center justify-between">
+      <div data-tour="hero" className="rounded-xl border p-4 sm:p-6 flex flex-col sm:flex-row gap-4 sm:gap-6 sm:items-center justify-between">
         {/* Spese questo mese */}
         <div className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground uppercase tracking-wide">Spese questo mese</span>
@@ -410,7 +426,7 @@ export function DashboardClient({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
           {/* Macro breakdown + recenti */}
-          <div className="rounded-xl border p-5 flex flex-col gap-4">
+          <div data-tour="breakdown" className="rounded-xl border p-5 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Dove vanno i soldi</h2>
               <span className="text-xs text-muted-foreground">{periodLabel}</span>
