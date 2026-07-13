@@ -82,12 +82,13 @@ type Props = {
   familyMembers?: FamilyMember[];
   powerUser?: boolean;
   initialFilter?: FilterType;
+  initialEditMode?: boolean;
   payDay?: number;
   periodYear?: number;
   periodMonth?: number;
 };
 
-export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], powerUser = false, initialFilter = "all", payDay = 0, periodYear, periodMonth }: Props) {
+export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], powerUser = false, initialFilter = "all", initialEditMode = false, payDay = 0, periodYear, periodMonth }: Props) {
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -100,7 +101,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
   const [newCatIcon, setNewCatIcon] = useState("");
   const [newCatColor, setNewCatColor] = useState("#6366f1");
   const [savingCat, setSavingCat] = useState(false);
-  const [editMode, setEditMode] = useState(false);
+  const [editMode, setEditMode] = useState(initialEditMode);
   const [filter, setFilter] = useState<FilterType>(initialFilter);
   const [displayRules, setDisplayRules] = useState<DisplayRule[]>(initialDisplayRules);
   const [newFind, setNewFind] = useState("");

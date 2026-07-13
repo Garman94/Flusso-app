@@ -9,7 +9,7 @@ import { getCurrentPeriodAnchor } from "@/lib/period";
 async function TransazioniContent({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string; edit?: string }>;
 }) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
@@ -19,6 +19,7 @@ async function TransazioniContent({
   const params = await searchParams;
   const initialFilter =
     params.filter === "uncategorized" ? "senza_cat" : "all";
+  const initialEditMode = params.edit === "1";
 
   const monthStart = new Date();
   monthStart.setDate(1);
@@ -77,6 +78,7 @@ async function TransazioniContent({
       initialDisplayRules={(displayRulesRes.data ?? []) as unknown as DisplayRule[]}
       initialCategoryRules={(categoryRulesRes.data ?? []) as unknown as CategoryRule[]}
       initialFilter={initialFilter}
+      initialEditMode={initialEditMode}
       payDay={payDay}
       periodYear={periodYear}
       periodMonth={periodMonth}
