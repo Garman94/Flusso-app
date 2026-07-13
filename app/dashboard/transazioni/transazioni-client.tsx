@@ -7,6 +7,7 @@ import { ImportExcelModal } from "./import-excel-modal";
 import { ScreenshotModal } from "./screenshot-modal";
 import { createCategoryRule, deleteCategoryRule } from "./actions";
 import { computePeriodRange, getCurrentPeriodAnchor } from "@/lib/period";
+import { PageTour } from "@/components/tour/page-tour";
 
 export type Category = { id: string; name: string; color: string; icon: string };
 export type FamilyMember = { id: string; name: string; color: string };
@@ -391,6 +392,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
 
   return (
     <div className="flex flex-col gap-6">
+      <PageTour path="/dashboard/transazioni" />
       {/* Choice modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -524,7 +526,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
       )}
 
       {/* Navigazione mese / anno */}
-      <div className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
+      <div data-tour="tx-nav" className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
         <button
           onClick={goToPrev}
           className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted/50"
@@ -587,6 +589,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                   Modifica categorie
                 </button>
                 <button
+                  data-tour="tx-add"
                   onClick={() => setShowAddModal(true)}
                   className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 transition-colors"
                 >
@@ -862,7 +865,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
       )}
 
       {/* Filtri */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div data-tour="tx-filters" className="flex flex-col sm:flex-row gap-3">
         <input
           type="text"
           list="category-suggestions"
@@ -888,10 +891,11 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
 
       {/* Riepilogo voci visualizzate */}
       {filtered.length > 0 && (() => {
+        // data-tour="tx-summary" è sull'elemento wrapper sotto
         const fIncome   = filtered.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
         const fExpenses = filtered.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
         return (
-          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+          <div data-tour="tx-summary" className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
             <span className="text-muted-foreground">{filtered.length} {filtered.length === 1 ? "voce" : "voci"}</span>
             {fIncome > 0 && (
               <span className="flex items-center gap-1">

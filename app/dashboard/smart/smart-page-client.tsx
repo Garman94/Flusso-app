@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
+import { PageTour } from "@/components/tour/page-tour";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween } from "@/lib/calculations";
@@ -453,19 +454,23 @@ export function SmartPageClient({
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (view === "cover") {
+    const COVER_ITEMS = [
+      { icon: "➕", label: "Aggiungi spesa ricorrente", action: goAddRecurring,              tourAttr: undefined },
+      { icon: "📋", label: "Le mie spese ricorrenti",  action: () => setView("list-recurring"), tourAttr: "smart-ricorrenti" },
+      { icon: "🎯", label: "I miei obiettivi",         action: () => setView("list-goals"),     tourAttr: "smart-obiettivi" },
+      { icon: "🔮", label: "Previsioni",               action: () => setView("previsioni"),     tourAttr: "smart-previsioni" },
+      { icon: "🏦", label: "Accantonamenti",           action: () => setView("accantonamenti"), tourAttr: "smart-accantonamenti" },
+    ] as const;
+
     return (
       <div className="flex flex-col gap-4">
+        <Suspense><PageTour path="/dashboard/smart" /></Suspense>
         <h1 className="text-2xl font-bold">Smart</h1>
-        {([
-          { icon: "➕", label: "Aggiungi spesa ricorrente", action: goAddRecurring },
-          { icon: "📋", label: "Le mie spese ricorrenti", action: () => setView("list-recurring") },
-          { icon: "🎯", label: "I miei obiettivi", action: () => setView("list-goals") },
-          { icon: "🔮", label: "Previsioni", action: () => setView("previsioni") },
-          { icon: "🏦", label: "Accantonamenti", action: () => setView("accantonamenti") },
-        ] as const).map(({ icon, label, action }) => (
+        {COVER_ITEMS.map(({ icon, label, action, tourAttr }) => (
           <button
             key={label}
             onClick={action}
+            data-tour={tourAttr}
             className="flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 px-5 py-4 text-left transition-all active:scale-[0.98]"
           >
             <span className="text-2xl">{icon}</span>

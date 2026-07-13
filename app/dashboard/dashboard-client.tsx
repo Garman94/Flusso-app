@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
   formatEuro,
@@ -17,8 +16,7 @@ import { MonthReportModal } from "./month-report-modal";
 import { updatePiggyBalance } from "./piggy-action";
 import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
-import { useTour } from "@/components/tour/tour-context";
-import { DASHBOARD_TOUR_STEPS } from "@/lib/tour-steps";
+import { PageTour } from "@/components/tour/page-tour";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Profile = { full_name: string | null; plan: string; piggy_balance: number };
@@ -240,18 +238,6 @@ export function DashboardClient({
   const [showMonthReport, setShowMonthReport] = useState(false);
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
 
-  const { start } = useTour();
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    const forceTour = searchParams.get("tour") === "1";
-    const alreadySeen = (() => { try { return localStorage.getItem("flusso_tour_seen") === "1"; } catch { return false; } })();
-    if (forceTour || !alreadySeen) {
-      // piccolo delay per lasciare tempo al DOM di renderizzare
-      const t = setTimeout(() => start(DASHBOARD_TOUR_STEPS), 600);
-      return () => clearTimeout(t);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const now = new Date();
 
@@ -290,6 +276,8 @@ export function DashboardClient({
   return (
     <div className="flex flex-col gap-6">
 
+      <PageTour path="/dashboard" />
+
       {/* Settings modal */}
       {showSettings && (
         <SettingsModal payDay={payDay} onClose={() => setShowSettings(false)} />
@@ -323,6 +311,7 @@ export function DashboardClient({
 
         {/* Report mesi precedenti */}
         <button
+          data-tour="month-report-btn"
           onClick={() => setShowMonthReport(true)}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border rounded-lg px-3 py-2 hover:bg-muted/50 transition-colors shrink-0"
           title="Vedi report mesi precedenti"

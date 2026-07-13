@@ -36,7 +36,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       const n = i + 1;
       if (n >= steps.length) {
         setActive(false);
-        try { localStorage.setItem("flusso_tour_seen", "1"); } catch {}
+        try { window.dispatchEvent(new Event("flusso_tour_done")); } catch {}
         return 0;
       }
       return n;
@@ -45,7 +45,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   const skip = useCallback(() => {
     setActive(false);
-    try { localStorage.setItem("flusso_tour_seen", "1"); } catch {}
+    try { window.dispatchEvent(new Event("flusso_tour_done")); } catch {}
     setStepIndex(0);
   }, []);
 

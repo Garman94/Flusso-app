@@ -9,6 +9,7 @@ import { PlanSection } from "./plan-section";
 import { UpgradeSuccessModal } from "./upgrade-success-modal";
 import { FamilyMembersSection } from "./family-members-section";
 import { PowerUserToggle } from "./power-user-toggle";
+import { PageTour } from "@/components/tour/page-tour";
 
 async function AccountContent() {
   const supabase = await createClient();
@@ -29,6 +30,7 @@ async function AccountContent() {
 
   return (
     <div className="flex flex-col gap-8 max-w-2xl">
+      <Suspense><PageTour path="/dashboard/account" /></Suspense>
       <div>
         <h1 className="text-2xl font-bold">Impostazioni account</h1>
         <p className="text-muted-foreground mt-1">Gestisci il tuo profilo e l&apos;abbonamento.</p>
@@ -58,10 +60,14 @@ async function AccountContent() {
       />
 
       {/* Family members */}
-      <FamilyMembersSection userId={data.claims.sub} />
+      <div data-tour="account-family">
+        <FamilyMembersSection userId={data.claims.sub} />
+      </div>
 
       {/* Power user toggle */}
-      <PowerUserToggle userId={data.claims.sub} enabled={profile?.power_user ?? false} />
+      <div data-tour="account-power-user">
+        <PowerUserToggle userId={data.claims.sub} enabled={profile?.power_user ?? false} />
+      </div>
 
       {/* Delete account */}
       <div className="rounded-xl border border-destructive/30 p-6 flex flex-col gap-4">
