@@ -106,8 +106,11 @@ full_name text
 pay_day int        -- giorno di inizio periodo di paga (0 = mese solare)
 piggy_balance numeric  -- saldo salvadanaio
 power_user boolean     -- abilita funzioni avanzate (regole auto-categorizzazione)
+lemon_squeezy_subscription_id text NULL  -- id subscription Lemon Squeezy (migration 021), null se piano free/founder
+period_starting_balance numeric NULL      -- saldo dichiarato dall'utente a inizio periodo (migration 022)
+period_starting_balance_date date NULL    -- data a cui si riferisce period_starting_balance
 ```
-> `balance` è stato rimosso con migration 015. Il saldo si calcola dalla somma delle transazioni.
+> `balance` è stato rimosso con migration 015. Il saldo "attuale" si calcola sempre come `period_starting_balance + somma transazioni da quella data` — non è mai un campo mutabile scritto direttamente da un flusso di spesa/pagamento (vedi Saldo progressivo giornaliero).
 
 ### `categories`
 Categorie spese (sistema + custom utente).
@@ -188,7 +191,22 @@ match_keywords text[]       -- parole chiave riconoscimento automatico (default 
 matching_strategy text      -- 'keyword' | 'historical_avg'
 next_due_date date NULL     -- prossima scadenza (accantonamenti)
 saving_start_date date NULL -- data inizio accantonamento
+last_paid_date date NULL       -- ultima data di conferma pagamento (migration 022)
+payment_status text            -- 'pending' | 'paid' | 'overdue' (migration 022, aggiornato solo da "Segna come pagata")
 ```
+
+### `payment_confirmations`
+Storico conferme di pagamento manuali per `recurring_expenses`. Aggiunta con migration 022.
+```
+id                    uuid PK
+recurring_expense_id  uuid FK recurring_expenses
+user_id               uuid FK auth.users
+paid_date             date
+amount_paid           numeric
+notes                 text NULL
+created_at            timestamptz
+```
+RLS: `user_id = auth.uid()`.
 
 ### `excel_uploads`
 Log degli import Excel (rate limiting piano free: max 3/mese).
@@ -246,13 +264,15 @@ Componente: `app/onboarding/page.tsx`
 - **`?preview=1`**: modalità test (nessuna scrittura DB, banner giallo, redirect a `/dashboard?tour=1`); attivabile dal pannello admin con "Test primo utilizzo"
 
 ### Dashboard (`/dashboard`)
-- **Saldo attuale** calcolato dalla somma delle transazioni
-- **Proiezione fine mese** basata su tasso di spesa giornaliero del mese corrente
-- **Grafico trend** (linea) giornaliero del mese corrente (`calculateTrendData`)
 - **Breakdown macro-categorie** con accordion per categoria
 - **Score finanziario** (🟢 Ottimo → 🔴 Critico)
+- **Saldo progressivo giornaliero** (`SaldoProgressivoCard`) — al primo utilizzo chiede il saldo a inizio periodo (`period_starting_balance`/`_date`); poi mostra "oggi dovresti avere circa €X" (proiezione da spese/entrate ricorrenti mensili/annuali con `due_day`), lo confronta col saldo reale (`starting + somma transazioni`) con badge verde/giallo/rosso (±10% / ±25%), e una timeline SVG interattiva del periodo
+- **Banner spese scadute** (`OverdueExpensesBanner`) — spese `fissa` con `due_day` passato senza pagamento confermato né transazione auto-riconosciuta; bottone "Segna come pagata" scrive su `payment_confirmations` e aggiorna `last_paid_date`/`payment_status`
+- **Stima spese mensili + suggerimento risparmio** (`EstimateAndSavingsCard`) — spese fisse (certe) + range min/max spese variabili (media ultimi 3 mesi ± 0.5×dev.std, peso 40% sullo stesso mese anno scorso se disponibile); risparmio suggerito = 80% del potenziale (entrate attese − fisse − variabili stimate), 20% di cuscinetto
 - **Card Spese Ricorrenti** (`RecurringDashboardCard`) — accordion per categoria, previsto vs speso, delta colorato
 - **Bottone "Mesi precedenti"** → apre `MonthReportModal`
+
+> Le voci ricorrenti con cadenza bimestrale/trimestrale/semestrale/personalizzata (senza `next_due_date`) non hanno una data deducibile dallo schema: sono escluse dalla timeline giornaliera e dal rilevamento scadute, ma restano nella stima min/max mensile. Le voci con `next_due_date` valorizzato sono gestite dagli Accantonamenti e restano escluse da queste 3 feature per non interferire con quella logica.
 
 #### MonthReportModal
 `app/dashboard/month-report-modal.tsx`
@@ -285,6 +305,7 @@ Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date`
 - **Componenti famiglia** (`FamilyMembersSection`): CRUD con nome + colore (8 preset + custom); badge preview live
 - **Modalità smanettone** (`PowerUserToggle`): aggiorna `profiles.power_user`; sblocca "Regole" in Transazioni
 - **Chat feedback** (`FeedbackChat`): chat diretta con Marco; Invio per inviare; salva in `feedback_messages`
+- **Annulla abbonamento** (`CancelSubscriptionButton`): visibile solo per piano `premium` con `lemon_squeezy_subscription_id` valorizzato (il piano `founder` è pagamento unico, nulla da annullare). Conferma via modale → `POST /api/subscription/cancel` → chiama l'API Lemon Squeezy (`DELETE /v1/subscriptions/:id`) e riporta il piano a `free` immediatamente lato DB; il webhook `subscription_cancelled` è idempotente e conferma la stessa transizione
 - Eliminazione account
 
 ### Admin (`/dashboard/admin`) — solo `ADMIN_EMAILS`
@@ -353,13 +374,18 @@ Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valo
 |----------|-------------|
 | `formatEuro(n)` | Formatta numero in stringa EUR italiana |
 | `calculateFinancialScore(income, expenses)` | Score 🔴→🟢 basato su ratio |
-| `calculateProjectedBalance(...)` | Proiezione saldo fine mese |
-| `calculateTrendData(txs, balance, year, month, startDay)` | Array `{day, balance}` per grafico |
 | `calculateMacroBreakdown(transactions)` | Breakdown per macro-categorie (8 slot) |
 | `calculateCategoryBreakdown(transactions)` | Breakdown per categoria esatta |
 | `estimateGoalCompletion(goal, monthlySavings)` | Data stimata raggiungimento obiettivo |
-| `calculateAllTimeTrend(txs, balance)` | Trend mensile storico |
 | `getCategoryMacroKey(categoryName)` | Mappa nome categoria → MacroKey |
+| `monthsPerCycle`, `recurringMonthlyEquivalent`, `txMatchesKeywords` | Helper condivisi per voci ricorrenti |
+| `projectSinkingFund`, `aggregateSinkingFunds` | Calcolo Accantonamenti |
+| `calculateDailyBalanceProjection`, `evaluateBalanceHealth` | Saldo progressivo giornaliero |
+| `currentCycleDueDate`, `findOverdueRecurring` | Rilevamento spese scadute non pagate |
+| `estimateMonthlyExpenses` | Stima min/max spese mensili |
+| `suggestMonthlySavings` | Suggerimento risparmio mensile |
+
+> Nota storica: `calculateProjectedBalance` e `calculateTrendData`, citate in versioni precedenti di questa doc, non esistono più nel codice — probabilmente rimosse in un refactor senza aggiornare CLAUDE.md.
 
 ---
 
@@ -402,6 +428,8 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `018_family_members.sql` | Tabella `family_members`; `member_id` su `transactions` |
 | `019_power_user.sql` | Campo `power_user boolean` su `profiles` |
 | `020_feedback.sql` | Tabella `feedback_messages` con RLS utente↔founder |
+| `021_subscription_id.sql` | Campo `lemon_squeezy_subscription_id` su `profiles` (annullamento abbonamento) |
+| `022_saldo_progressivo.sql` | `period_starting_balance`/`_date` su `profiles`; `last_paid_date`/`payment_status` su `recurring_expenses`; tabella `payment_confirmations` |
 
 ---
 
