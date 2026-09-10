@@ -380,8 +380,11 @@ nav-transazioni, nav-smart                 nav
 tx-nav, tx-summary, tx-filters, tx-add    transazioni
 smart-ricorrenti, smart-obiettivi,         smart (cover)
 smart-previsioni, smart-accantonamenti
-account-family, account-power-user         account
+account-income, account-family,            account
+account-power-user, account-feedback
 ```
+
+> Versioni tour: `/dashboard` v1.2 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v1.0 · `/dashboard/account` v1.3.
 
 ### LocalStorage
 Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valore diverso dalla versione in `PAGE_TOURS` = aggiornamento.

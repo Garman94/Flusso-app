@@ -51,8 +51,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/transazioni": {
-    version: "1.1",
-    whatIsNew: "totali filtrati e badge componenti famiglia sulle transazioni",
+    version: "1.2",
+    whatIsNew: "import Excel guidato: scelta della persona e controllo anti-duplicati",
     steps: [
       {
         title: "Le tue transazioni 💸",
@@ -77,6 +77,10 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
         target: "[data-tour='tx-add']",
         title: "Aggiungi movimenti",
         message: "Aggiungi manualmente, importa un Excel della banca o analizza uno screenshot con l'AI.",
+      },
+      {
+        title: "Import Excel guidato 📂",
+        message: "Se hai dei Componenti, il primo passo dell'import chiede a chi appartengono i movimenti. Poi Flusso controlla i duplicati: segna in verde le righe nuove, in giallo i possibili doppioni e salta quelli identici già presenti.",
       },
       {
         title: "Categorie e regole",
@@ -139,17 +143,22 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/account": {
-    version: "1.2",
-    whatIsNew: "chat feedback diretta con Marco",
+    version: "1.3",
+    whatIsNew: "info reddito per te e per i componenti, usate nelle previsioni",
     steps: [
       {
         title: "Impostazioni account ⚙️",
         message: "Qui gestisci il profilo, il piano e le preferenze avanzate.",
       },
       {
+        target: "[data-tour='account-income']",
+        title: "Il tuo reddito 💼",
+        message: "Inserisci tipo di reddito, importo e giorno di paga. Flusso li usa per rendere più precise le previsioni di budget e i suggerimenti di risparmio in Dashboard.",
+      },
+      {
         target: "[data-tour='account-family']",
         title: "Componenti",
-        message: "Aggiungi i membri della famiglia o del gruppo. Ogni estratto conto importato può essere associato a uno di loro — le transazioni mostreranno un badge colorato.",
+        message: "Aggiungi i membri della famiglia o del gruppo, con nome, colore e — se vuoi — le info sul reddito. Ogni estratto conto importato può essere associato a uno di loro e le transazioni mostreranno un badge colorato.",
       },
       {
         target: "[data-tour='account-power-user']",

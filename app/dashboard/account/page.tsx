@@ -63,6 +63,7 @@ async function AccountContent() {
       />
 
       {/* Owner income */}
+      <div data-tour="account-income">
       <IncomeSection
         ownerName={profile?.full_name ?? ""}
         initial={{
@@ -74,6 +75,7 @@ async function AccountContent() {
           active_months: profile?.active_months ?? [],
         }}
       />
+      </div>
 
       {/* Family members */}
       <div data-tour="account-family">
