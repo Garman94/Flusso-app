@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { getPlanLabel, getPlanBadgeColor } from "@/lib/plans";
 import { CouponForm } from "./coupon-form";
 import { UpgradeButton } from "./upgrade-button";
+import { CancelSubscriptionButton } from "./cancel-subscription-button";
 
 interface Props {
   plan: string;
@@ -13,9 +14,10 @@ interface Props {
   checkoutUrl: string | null;
   planLabel: string;
   planBadgeColor: string;
+  hasSubscription: boolean;
 }
 
-export function PlanSection({ plan: initialPlan, userId, checkoutUrl, planLabel: _planLabel, planBadgeColor: _planBadgeColor }: Props) {
+export function PlanSection({ plan: initialPlan, userId, checkoutUrl, planLabel: _planLabel, planBadgeColor: _planBadgeColor, hasSubscription }: Props) {
   const [plan, setPlan] = useState(initialPlan);
 
   const label = getPlanLabel(plan);
@@ -68,6 +70,15 @@ export function PlanSection({ plan: initialPlan, userId, checkoutUrl, planLabel:
                 Hai un codice Founder?
               </p>
               <CouponForm onUpgrade={setPlan} />
+            </div>
+          )}
+          {/* Founder is a one-time lifetime payment — no recurring subscription to cancel */}
+          {plan === "premium" && hasSubscription && (
+            <div className="flex flex-col gap-2 pt-2 border-t">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Non vuoi più continuare?
+              </p>
+              <CancelSubscriptionButton onCancelled={() => setPlan("free")} />
             </div>
           )}
         </div>

@@ -58,6 +58,7 @@ async function AccountContent() {
         checkoutUrl={checkoutUrl}
         planLabel={getPlanLabel(plan)}
         planBadgeColor={getPlanBadgeColor(plan)}
+        hasSubscription={!!profile?.lemon_squeezy_subscription_id}
       />
 
       {/* Family members */}

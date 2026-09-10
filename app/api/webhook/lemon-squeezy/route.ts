@@ -17,6 +17,7 @@ interface LemonSqueezyWebhookPayload {
     };
   };
   data: {
+    id: string;
     attributes: {
       user_email?: string;
       // subscription attributes
@@ -87,9 +88,14 @@ export async function POST(request: NextRequest) {
   const supabase = createServiceClient();
 
   if (eventName === "order_created" || eventName === "subscription_created") {
+    const update: { plan: string; lemon_squeezy_subscription_id?: string } = { plan: "premium" };
+    if (eventName === "subscription_created") {
+      update.lemon_squeezy_subscription_id = payload.data.id;
+    }
+
     const { error } = await supabase
       .from("profiles")
-      .update({ plan: "premium" })
+      .update(update)
       .eq("id", userId);
 
     if (error) {
@@ -101,7 +107,7 @@ export async function POST(request: NextRequest) {
   } else if (eventName === "subscription_cancelled") {
     const { error } = await supabase
       .from("profiles")
-      .update({ plan: "free" })
+      .update({ plan: "free", lemon_squeezy_subscription_id: null })
       .eq("id", userId);
 
     if (error) {
