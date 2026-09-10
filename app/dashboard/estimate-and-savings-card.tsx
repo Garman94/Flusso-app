@@ -8,7 +8,11 @@ import {
   txMatchesKeywords,
   estimateMonthlyExpenses,
   suggestMonthlySavings,
+  aggregateExpectedIncome,
+  type IncomeInfo,
 } from "@/lib/calculations";
+
+const INCOME_COLS = "income_type, monthly_income, income_frequency, income_payday, income_variability, active_months";
 
 type RecurringRow = {
   tipologia: "fissa" | "variabile" | "entrata";
@@ -39,6 +43,8 @@ function monthBounds(year: number, month: number) {
 export function EstimateAndSavingsCard({ userId, periodFrom, periodTo }: Props) {
   const [items, setItems] = useState<RecurringRow[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
+  const [ownerIncome, setOwnerIncome] = useState<IncomeInfo | null>(null);
+  const [membersIncome, setMembersIncome] = useState<Partial<IncomeInfo>[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -50,9 +56,13 @@ export function EstimateAndSavingsCard({ userId, periodFrom, periodTo }: Props) 
       supabase.from("transactions")
         .select("amount, date, description, merchant, category_id, categories(name)")
         .eq("user_id", userId),
-    ]).then(([recRes, txRes]) => {
+      supabase.from("profiles").select(INCOME_COLS).eq("id", userId).single(),
+      supabase.from("family_members").select(INCOME_COLS).eq("user_id", userId),
+    ]).then(([recRes, txRes, profRes, memRes]) => {
       setItems((recRes.data ?? []) as RecurringRow[]);
       setTxs((txRes.data ?? []) as unknown as Tx[]);
+      setOwnerIncome((profRes.data ?? null) as IncomeInfo | null);
+      setMembersIncome((memRes.data ?? []) as Partial<IncomeInfo>[]);
       setLoading(false);
     });
   }, [userId]);
@@ -97,12 +107,13 @@ export function EstimateAndSavingsCard({ userId, periodFrom, periodTo }: Props) 
     const actualIncomeThisPeriod = txs
       .filter(t => t.date >= periodFrom && t.date <= periodTo && Number(t.amount) > 0 && !isTransfer(t))
       .reduce((s, t) => s + Number(t.amount), 0);
-    const expectedIncome = Math.max(recurringIncomeTotal, actualIncomeThisPeriod);
+    const anagraficaIncome = aggregateExpectedIncome(ownerIncome, membersIncome, calMonth + 1);
+    const expectedIncome = Math.max(recurringIncomeTotal, actualIncomeThisPeriod, anagraficaIncome);
 
     const savings = suggestMonthlySavings(expectedIncome, fixedTotal, estimate.variableAvg);
 
     return { estimate, savings, hasEnoughData: variableMonthlyTotals.length > 0 || fixedTotal > 0 };
-  }, [loading, items, txs, periodFrom, periodTo]);
+  }, [loading, items, txs, ownerIncome, membersIncome, periodFrom, periodTo]);
 
   if (loading || !result || !result.hasEnoughData) return null;
 

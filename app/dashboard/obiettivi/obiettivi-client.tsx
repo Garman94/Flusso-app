@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { useDemoGuard } from "@/components/demo-context";
 import Link from "next/link";
 
 type Goal = {
@@ -29,6 +30,7 @@ type Props = {
 };
 
 export function ObiettiviClient({ userId, plan, initialGoals }: Props) {
+  const demoGuard = useDemoGuard();
   const [goals, setGoals] = useState(initialGoals);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -49,6 +51,7 @@ export function ObiettiviClient({ userId, plan, initialGoals }: Props) {
 
   async function handleCreateGoal(e: React.FormEvent) {
     e.preventDefault();
+    if (demoGuard()) return;
     setSubmitting(true);
     const supabase = createClient();
 
@@ -79,6 +82,7 @@ export function ObiettiviClient({ userId, plan, initialGoals }: Props) {
   async function handleAddProgress(goalId: string) {
     const amount = parseFloat(progressAmount.replace(",", "."));
     if (isNaN(amount) || amount <= 0) return;
+    if (demoGuard()) return;
 
     const supabase = createClient();
     const goal = goals.find(g => g.id === goalId)!;
@@ -100,6 +104,7 @@ export function ObiettiviClient({ userId, plan, initialGoals }: Props) {
   }
 
   async function handleDelete(id: string) {
+    if (demoGuard()) return;
     const supabase = createClient();
     const { error } = await supabase.from("goals").delete().eq("id", id);
     if (error) {

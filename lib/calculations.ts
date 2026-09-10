@@ -52,8 +52,10 @@ const CATEGORY_TO_MACRO: Record<string, MacroKey> = {
   Palestra:        "salute",
   Abbigliamento:   "shopping",
   Tecnologia:      "shopping",
+  Hobby:           "cibo",
   Istruzione:      "lavoro",
   Stipendio:       "risparmio",
+  Accantonamenti:  "risparmio",
 };
 
 export function getCategoryMacroKey(categoryName?: string | null): MacroKey {
@@ -531,3 +533,55 @@ export function suggestMonthlySavings(
   if (rawPotential <= 0) return { rawPotential, suggested: 0, buffer: 0, isTight: true };
   return { rawPotential, suggested: rawPotential * 0.8, buffer: rawPotential * 0.2, isTight: false };
 }
+
+// ============================================================
+// FEATURE — Anagrafica reddito (persona / componente)
+// ============================================================
+
+export type IncomeInfo = {
+  income_type: "employee" | "freelance" | "seasonal" | "none" | null;
+  monthly_income: number | null;
+  income_frequency: "monthly" | "biweekly" | "weekly" | null;
+  income_payday: number | null;
+  income_variability: "low" | "medium" | "high" | null;
+  active_months: number[] | null;
+};
+
+/** true se l'anagrafica reddito e' stata compilata con un importo utile. */
+export function hasIncomeInfo(info?: Partial<IncomeInfo> | null): boolean {
+  return !!info && !!info.income_type && info.income_type !== "none" && Number(info.monthly_income) > 0;
+}
+
+/**
+ * Equivalente mensile del reddito di una persona per un dato mese (1-12).
+ * `monthly_income` per i dipendenti e' gia' il netto mensile: la frequenza
+ * di accredito non cambia il totale mensile, serve solo per le date.
+ * Per gli stagionali il reddito e' 0 nei mesi non attivi.
+ */
+export function normalizeMonthlyIncome(info: Partial<IncomeInfo> | null | undefined, month: number): number {
+  if (!hasIncomeInfo(info)) return 0;
+  const amount = Number(info!.monthly_income);
+  if (info!.income_type === "seasonal") {
+    const active = info!.active_months ?? [];
+    return active.includes(month) ? amount : 0;
+  }
+  return amount;
+}
+
+/** Reddito atteso totale del nucleo per il mese indicato (titolare + componenti). */
+export function aggregateExpectedIncome(
+  owner: Partial<IncomeInfo> | null | undefined,
+  members: (Partial<IncomeInfo> | null | undefined)[],
+  month: number,
+): number {
+  return (
+    normalizeMonthlyIncome(owner, month) +
+    members.reduce((s, m) => s + normalizeMonthlyIncome(m, month), 0)
+  );
+}
+
+export const INCOME_VARIABILITY_PCT: Record<"low" | "medium" | "high", number> = {
+  low: 0.1,
+  medium: 0.3,
+  high: 0.5,
+};

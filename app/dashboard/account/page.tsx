@@ -8,6 +8,7 @@ import { DeleteAccountButton } from "./delete-account-button";
 import { PlanSection } from "./plan-section";
 import { UpgradeSuccessModal } from "./upgrade-success-modal";
 import { FamilyMembersSection } from "./family-members-section";
+import { IncomeSection } from "./income-section";
 import { PowerUserToggle } from "./power-user-toggle";
 import { FeedbackChat } from "./feedback-chat";
 import { PageTour } from "@/components/tour/page-tour";
@@ -59,6 +60,19 @@ async function AccountContent() {
         planLabel={getPlanLabel(plan)}
         planBadgeColor={getPlanBadgeColor(plan)}
         hasSubscription={!!profile?.lemon_squeezy_subscription_id}
+      />
+
+      {/* Owner income */}
+      <IncomeSection
+        ownerName={profile?.full_name ?? ""}
+        initial={{
+          income_type: profile?.income_type ?? null,
+          monthly_income: profile?.monthly_income ?? null,
+          income_frequency: profile?.income_frequency ?? null,
+          income_payday: profile?.income_payday ?? null,
+          income_variability: profile?.income_variability ?? null,
+          active_months: profile?.active_months ?? [],
+        }}
       />
 
       {/* Family members */}

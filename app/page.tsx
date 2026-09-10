@@ -116,6 +116,13 @@ export default function HomePage() {
             </Link>
           </div>
 
+          <Link
+            href="/demo"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            Prova la demo → <span className="text-muted-foreground font-normal">(senza registrazione)</span>
+          </Link>
+
           <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
             <span>✓ Piano gratuito senza scadenza</span>
             <span>✓ Setup in 2 minuti</span>

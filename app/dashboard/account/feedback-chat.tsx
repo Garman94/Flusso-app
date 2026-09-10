@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { useDemoGuard } from "@/components/demo-context";
 
 type FeedbackMsg = {
   id: string;
@@ -14,6 +15,7 @@ type FeedbackMsg = {
 
 export function FeedbackChat({ userId }: { userId: string }) {
   const supabase = createClient();
+  const demoGuard = useDemoGuard();
   const [messages, setMessages] = useState<FeedbackMsg[]>([]);
   const [loading, setLoading] = useState(true);
   const [body, setBody] = useState("");
@@ -39,6 +41,7 @@ export function FeedbackChat({ userId }: { userId: string }) {
   async function send() {
     const text = body.trim();
     if (!text) return;
+    if (demoGuard()) return;
     setSending(true);
     const { error } = await supabase.from("feedback_messages").insert({
       user_id: userId,

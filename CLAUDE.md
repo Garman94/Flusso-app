@@ -1,6 +1,6 @@
 # CLAUDE.md — Flusso App
 
-Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-07-13. Ultima modifica: 2026-07-13.
+Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-10.
 
 ---
 
@@ -87,9 +87,11 @@ flussoapp/
 │   │   └── server.ts                     # Supabase server client (SSR)
 │   ├── admin.ts                          # Utility admin
 │   ├── plans.ts                          # Logica piani (free/premium/founder)
+│   ├── demo.ts                           # Costanti/helper modalità demo
+│   ├── import-dedup.ts                   # Anti-duplicati import Excel (hash file + classifyRows)
 │   └── email.ts                          # Utility email
 ├── supabase/
-│   └── migrations/                       # Migrazioni SQL ordinate (001 → 020)
+│   └── migrations/                       # Migrazioni SQL ordinate (001 → 025)
 └── public/                               # Icone PWA, manifest
 ```
 
@@ -109,11 +111,12 @@ power_user boolean     -- abilita funzioni avanzate (regole auto-categorizzazion
 lemon_squeezy_subscription_id text NULL  -- id subscription Lemon Squeezy (migration 021), null se piano free/founder
 period_starting_balance numeric NULL      -- saldo all'inizio del periodo corrente (migration 022); l'utente inserisce il saldo di OGGI e la card lo riporta a inizio periodo sottraendo le transazioni gia' registrate
 period_starting_balance_date date NULL    -- data a cui si riferisce period_starting_balance (= inizio periodo corrente)
+-- Anagrafica reddito titolare (migration 023): stessi 6 campi di family_members (income_type, monthly_income, income_frequency, income_payday, income_variability, active_months)
 ```
 > `balance` è stato rimosso con migration 015. Il saldo "attuale" si calcola sempre come `period_starting_balance + somma transazioni da quella data` — non è mai un campo mutabile scritto direttamente da un flusso di spesa/pagamento (vedi Saldo progressivo giornaliero).
 
 ### `categories`
-Categorie spese (sistema + custom utente).
+Categorie spese (sistema + custom utente). Categorie di sistema (`user_id IS NULL`): migration 002/006 + `Hobby` 🎮 e `Accantonamenti` 🏦 (migration 023). Macro-mapping in `lib/calculations.ts` (`CATEGORY_TO_MACRO`): Hobby → Cibo & Svago, Accantonamenti → Risparmio.
 ```
 id uuid PK
 user_id uuid NULL  -- NULL = categoria di sistema globale
@@ -146,6 +149,25 @@ user_id uuid
 name text
 color text     -- hex color (#6366f1 default)
 created_at timestamptz
+-- Anagrafica reddito (migration 023, tutti NULL di default; stessi campi anche su profiles):
+income_type text        -- 'employee' | 'freelance' | 'seasonal' | 'none'
+monthly_income numeric   -- equivalente mensile netto
+income_frequency text    -- 'monthly' | 'biweekly' | 'weekly' (solo employee)
+income_payday int        -- giorno del mese di accredito (solo employee)
+income_variability text  -- 'low' | 'medium' | 'high' (solo freelance)
+active_months int[]      -- mesi lavorati 1-12 (solo seasonal), default '{}'
+```
+
+### `import_logs`
+Hash dei file Excel importati, per rilevare lo stesso file caricato due volte (migration 024). Distinta da `excel_uploads` (rate-limit piano free).
+```
+id uuid PK
+user_id uuid FK auth.users
+file_hash text            -- SHA-256 dei byte del file
+filename text
+transaction_count int
+member_id uuid FK family_members NULL
+imported_at timestamptz
 ```
 
 ### `goals`
@@ -284,7 +306,10 @@ Componente: `app/onboarding/page.tsx`
 - Lista transazioni con filtri mese, categoria, tipo
 - **Summary bar** sopra la lista: count + totale entrate + totale uscite, aggiornati in tempo reale
 - **Badge membro** colorato su ogni transazione con `member_id` (mobile: sotto data; desktop: inline)
-- **Import Excel** con selezione membro (chi ha fatto le spese)
+- **Import Excel** (`import-excel-modal.tsx`), 3 step:
+  1. **Persona** — mostrato solo se esistono `family_members`; card selezionabili ("Io" = titolare → `member_id NULL`, + un card per membro), "Continua" attivo solo dopo tap esplicito. Utente solo → step saltato.
+  2. **Upload** — drag&drop; alla lettura si calcola l'hash SHA-256 e si interroga `import_logs`: se il file è già stato caricato → warning "Importa comunque".
+  3. **Anteprima** — ogni riga classificata (`lib/import-dedup.ts` → `classifyRows`): 🟢 nuova / 🟡 possibile duplicato (stessa data+importo, descrizione diversa) / 🔴 duplicato esatto (saltato). Riepilogo conteggi + "Revisiona manualmente" (checkbox per riga gialla). Bottoni: "Importa solo nuove" / "Importa tutto". A fine import → riga in `import_logs`.
 - ✏️ fuori dall'hamburger per "modifica categorie" (mobile, sempre visibile)
 - Hamburger con "Regole" visibile **solo se `power_user = true`**
 - CRUD completo (add, edit, delete)
@@ -302,7 +327,8 @@ Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date`
 ### Account (`/dashboard/account`)
 - Gestione profilo e cambio nome
 - Piano di abbonamento + riscatto coupon
-- **Componenti famiglia** (`FamilyMembersSection`): CRUD con nome + colore (8 preset + custom); badge preview live
+- **Il tuo reddito** (`IncomeSection` + `income-action.ts`): wizard reddito per il titolare, salva su `profiles`
+- **Componenti famiglia** (`FamilyMembersSection`): CRUD (nome + colore + **modifica**) e, per ogni membro, wizard reddito (`components/income-wizard.tsx`, 3 step: tipo → dettagli → riepilogo) salvato su `family_members`. Il reddito aggregato (titolare + membri) alza `expectedIncome` in `EstimateAndSavingsCard` (via `aggregateExpectedIncome` in `lib/calculations.ts`)
 - **Modalità smanettone** (`PowerUserToggle`): aggiorna `profiles.power_user`; sblocca "Regole" in Transazioni
 - **Chat feedback** (`FeedbackChat`): chat diretta con Marco; Invio per inviare; salva in `feedback_messages`
 - **Annulla abbonamento** (`CancelSubscriptionButton`): visibile solo per piano `premium` con `lemon_squeezy_subscription_id` valorizzato (il piano `founder` è pagamento unico, nulla da annullare). Conferma via modale → `POST /api/subscription/cancel` → chiama l'API Lemon Squeezy (`DELETE /v1/subscriptions/:id`) e riporta il piano a `free` immediatamente lato DB; il webhook `subscription_cancelled` è idempotente e conferma la stessa transizione
@@ -316,6 +342,18 @@ Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date`
 - **Feedback utenti** (`AdminFeedback`): sidebar con lista utenti che hanno scritto; chat per ogni utente; form di risposta (inserisce `is_admin=true` con `user_id` del destinatario)
 
 ---
+
+## Modalità demo
+
+Account condiviso `demo@flussoapp.it` (env `NEXT_PUBLIC_DEMO_EMAIL` / `NEXT_PUBLIC_DEMO_PASSWORD`), piano `premium`.
+
+- Ingresso: bottone "Prova la demo →" sulla landing (`app/page.tsx`) e link "Esplora senza registrarti" nel `LoginForm`.
+- `app/demo/page.tsx` (client): `POST /api/demo/reset` (best-effort) → `signInWithPassword` con le credenziali demo → redirect `/dashboard`.
+- `app/api/demo/reset/route.ts`: service-role → `supabase.rpc("reseed_demo")`; senza `SUPABASE_SERVICE_ROLE_KEY` risponde 204.
+- `reseed_demo()` (migration 025, SECURITY DEFINER): cancella e ricarica i dati demo (transazioni ~3 mesi ancorate a `current_date`, membro "Samira Demo", 3 obiettivi, ricorrenti, `piggy_balance`, `period_starting_balance`).
+- Trigger `block_demo_writes` su tutte le tabelle dati: una sessione loggata come demo (`auth.jwt()->>'email'`) non può scrivere (eccezione `DEMO_READONLY`). `reseed_demo` e il service-role bypassano (`auth.jwt()` NULL).
+- UI: `DemoBanner` arancione in `app/dashboard/layout.tsx`; `DemoProvider` + `useIsDemo()`/`useDemoGuard()` (`components/demo-context.tsx`) — i punti "salva/importa" (transazioni, obiettivi, componenti, feedback, import) mostrano il toast "Registrati per salvare i tuoi dati".
+- `supabase/seed_demo.sql` = wrapper che chiama `select public.reseed_demo();`.
 
 ## Sistema tour (spotlight guidato)
 
@@ -384,6 +422,7 @@ Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valo
 | `currentCycleDueDate`, `findOverdueRecurring` | Rilevamento spese scadute non pagate |
 | `estimateMonthlyExpenses` | Stima min/max spese mensili |
 | `suggestMonthlySavings` | Suggerimento risparmio mensile |
+| `normalizeMonthlyIncome`, `aggregateExpectedIncome`, `hasIncomeInfo` | Anagrafica reddito → reddito atteso mensile del nucleo |
 
 > Nota storica: `calculateProjectedBalance` e `calculateTrendData`, citate in versioni precedenti di questa doc, non esistono più nel codice — probabilmente rimosse in un refactor senza aggiornare CLAUDE.md.
 
@@ -430,6 +469,9 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `020_feedback.sql` | Tabella `feedback_messages` con RLS utente↔founder |
 | `021_subscription_id.sql` | Campo `lemon_squeezy_subscription_id` su `profiles` (annullamento abbonamento) |
 | `022_saldo_progressivo.sql` | `period_starting_balance`/`_date` su `profiles`; `last_paid_date`/`payment_status` su `recurring_expenses`; tabella `payment_confirmations` |
+| `023_member_income_and_categories.sql` | Campi anagrafica reddito su `family_members` e `profiles`; categorie di sistema `Hobby` 🎮 e `Accantonamenti` 🏦 |
+| `024_import_logs.sql` | Tabella `import_logs` (hash file Excel, anti-duplicati livello 1) |
+| `025_demo_mode.sql` | Funzione `reseed_demo()` + `demo_user_id()`; trigger `block_demo_writes` sulle tabelle dati (sessione demo in sola lettura) |
 
 ---
 

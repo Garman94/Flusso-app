@@ -4,9 +4,12 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { LogoutButton } from "@/components/logout-button";
 import { DashboardNavLinks } from "@/components/dashboard-nav-links";
 import { PreviewBanner } from "@/components/preview-banner";
+import { DemoBanner } from "@/components/demo-banner";
+import { DemoProvider } from "@/components/demo-context";
 import { siteConfig } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
 import { getPreviewPlan } from "@/lib/preview-plan";
+import { isDemoEmail } from "@/lib/demo";
 
 async function DashboardNav() {
   const supabase = await createClient();
@@ -38,13 +41,18 @@ async function DashboardNav() {
   );
 }
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const supabase = await createClient();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const isDemo = isDemoEmail(claimsData?.claims?.email as string | undefined);
+
   return (
     <main className="min-h-screen flex flex-col items-center">
+      {isDemo && <DemoBanner />}
       <div className="flex-1 w-full flex flex-col items-center">
         {/* Top nav */}
         <nav className="w-full flex justify-center border-b border-b-foreground/10 h-16 sticky top-0 bg-background/80 backdrop-blur-sm z-50">
@@ -60,7 +68,7 @@ export default function DashboardLayout({
 
         {/* Page content — extra bottom padding on mobile for the bottom nav */}
         <div className="flex-1 w-full max-w-5xl px-4 py-6 pb-24 md:px-5 md:py-10 md:pb-10">
-          {children}
+          <DemoProvider isDemo={isDemo}>{children}</DemoProvider>
         </div>
       </div>
 

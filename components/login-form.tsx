@@ -104,6 +104,11 @@ export function LoginForm({
                 Registrati
               </Link>
             </div>
+            <div className="mt-2 text-center text-sm">
+              <Link href="/demo" className="text-muted-foreground underline underline-offset-4 hover:text-foreground">
+                Esplora senza registrarti →
+              </Link>
+            </div>
           </form>
         </CardContent>
       </Card>
