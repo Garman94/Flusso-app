@@ -107,8 +107,8 @@ pay_day int        -- giorno di inizio periodo di paga (0 = mese solare)
 piggy_balance numeric  -- saldo salvadanaio
 power_user boolean     -- abilita funzioni avanzate (regole auto-categorizzazione)
 lemon_squeezy_subscription_id text NULL  -- id subscription Lemon Squeezy (migration 021), null se piano free/founder
-period_starting_balance numeric NULL      -- saldo dichiarato dall'utente a inizio periodo (migration 022)
-period_starting_balance_date date NULL    -- data a cui si riferisce period_starting_balance
+period_starting_balance numeric NULL      -- saldo all'inizio del periodo corrente (migration 022); l'utente inserisce il saldo di OGGI e la card lo riporta a inizio periodo sottraendo le transazioni gia' registrate
+period_starting_balance_date date NULL    -- data a cui si riferisce period_starting_balance (= inizio periodo corrente)
 ```
 > `balance` è stato rimosso con migration 015. Il saldo "attuale" si calcola sempre come `period_starting_balance + somma transazioni da quella data` — non è mai un campo mutabile scritto direttamente da un flusso di spesa/pagamento (vedi Saldo progressivo giornaliero).
 
@@ -266,7 +266,7 @@ Componente: `app/onboarding/page.tsx`
 ### Dashboard (`/dashboard`)
 - **Breakdown macro-categorie** con accordion per categoria
 - **Score finanziario** (🟢 Ottimo → 🔴 Critico)
-- **Saldo progressivo giornaliero** (`SaldoProgressivoCard`) — al primo utilizzo chiede il saldo a inizio periodo (`period_starting_balance`/`_date`); poi mostra "oggi dovresti avere circa €X" (proiezione da spese/entrate ricorrenti mensili/annuali con `due_day`), lo confronta col saldo reale (`starting + somma transazioni`) con badge verde/giallo/rosso (±10% / ±25%), e una timeline SVG interattiva del periodo
+- **Saldo progressivo giornaliero** (`SaldoProgressivoCard`) — al primo utilizzo (e da "Modifica") chiede il saldo che l'utente ha OGGI sul conto e lo riporta a inizio periodo sottraendo le transazioni gia' registrate (`period_starting_balance`/`_date`); poi mostra "oggi dovresti avere circa €X" (proiezione da spese/entrate ricorrenti mensili/annuali con `due_day`), lo confronta col saldo reale (`starting + somma transazioni`) con badge verde/giallo/rosso (±10% / ±25%), e una timeline SVG interattiva del periodo
 - **Banner spese scadute** (`OverdueExpensesBanner`) — spese `fissa` con `due_day` passato senza pagamento confermato né transazione auto-riconosciuta; bottone "Segna come pagata" scrive su `payment_confirmations` e aggiorna `last_paid_date`/`payment_status`
 - **Stima spese mensili + suggerimento risparmio** (`EstimateAndSavingsCard`) — spese fisse (certe) + range min/max spese variabili (media ultimi 3 mesi ± 0.5×dev.std, peso 40% sullo stesso mese anno scorso se disponibile); risparmio suggerito = 80% del potenziale (entrate attese − fisse − variabili stimate), 20% di cuscinetto
 - **Card Spese Ricorrenti** (`RecurringDashboardCard`) — accordion per categoria, previsto vs speso, delta colorato

@@ -28,28 +28,51 @@ function todayIso() {
   return new Date().toISOString().split("T")[0];
 }
 
-// ─── Setup: primo utilizzo ──────────────────────────────────────────────────
-function SetupForm({ periodFrom, onSaved }: { periodFrom: string; onSaved: () => void }) {
-  const [value, setValue] = useState("");
+// ─── Setup: primo utilizzo / modifica ───────────────────────────────────────
+// L'utente inserisce il saldo che ha OGGI sul conto. Per ancorare la proiezione
+// all'inizio del periodo sottraiamo le transazioni gia' registrate nel periodo
+// (periodFrom → oggi), cosi' `period_starting_balance` resta il saldo a periodFrom
+// e il "saldo reale attuale" non conta due volte stipendio/spese del periodo.
+function SetupForm({
+  periodFrom,
+  txSumInPeriod,
+  initialValue,
+  onSaved,
+  onCancel,
+}: {
+  periodFrom: string;
+  txSumInPeriod: number;
+  initialValue?: number;
+  onSaved: () => void;
+  onCancel?: () => void;
+}) {
+  const [value, setValue] = useState(
+    initialValue != null ? initialValue.toFixed(2).replace(".", ",") : ""
+  );
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const today = parseFloat(value.replace(",", "."));
+    if (isNaN(today)) {
+      toast.error("Importo non valido.");
+      return;
+    }
     setSaving(true);
+    // Riporta il saldo di oggi all'inizio del periodo
+    const atPeriodStart = today - txSumInPeriod;
     const fd = new FormData();
-    fd.set("starting_balance", value);
+    fd.set("starting_balance", String(atPeriodStart));
     fd.set("start_date", periodFrom);
     const res = await updateStartingBalance(fd);
     if (res?.error) {
       toast.error(res.error);
     } else {
-      toast.success("Saldo iniziale impostato!");
+      toast.success("Saldo aggiornato!");
       onSaved();
     }
     setSaving(false);
   }
-
-  const fromLabel = new Date(periodFrom + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "long" });
 
   return (
     <div className="rounded-xl border p-5 flex flex-col gap-3">
@@ -58,14 +81,14 @@ function SetupForm({ periodFrom, onSaved }: { periodFrom: string; onSaved: () =>
         <h2 className="font-semibold">Saldo progressivo giornaliero</h2>
       </div>
       <p className="text-sm text-muted-foreground">
-        Inserisci quanto avevi sul conto il <strong>{fromLabel}</strong> (inizio del periodo corrente):
-        calcoleremo quanto dovresti avere oggi in base alle spese ricorrenti previste.
+        Inserisci quanto hai <strong>oggi</strong> sul conto: calcoleremo quanto dovresti
+        avere in base alle spese ricorrenti previste e lo confronteremo col saldo reale.
       </p>
       <form onSubmit={handleSubmit} className="flex items-center gap-2">
         <input
           value={value}
           onChange={e => setValue(e.target.value)}
-          placeholder="Es. 1200,00"
+          placeholder="Es. 1913,00"
           inputMode="decimal"
           className="border rounded-md px-3 py-2 text-sm bg-background w-40 focus:outline-none focus:ring-2 focus:ring-primary"
           autoFocus
@@ -77,6 +100,11 @@ function SetupForm({ periodFrom, onSaved }: { periodFrom: string; onSaved: () =>
         >
           {saving ? "..." : "Salva"}
         </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="text-sm text-muted-foreground px-2 hover:text-foreground">
+            Annulla
+          </button>
+        )}
       </form>
     </div>
   );
@@ -166,6 +194,7 @@ export function SaldoProgressivoCard({ userId, periodFrom, periodTo }: Props) {
   const [items, setItems] = useState<RecurringRow[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -190,10 +219,15 @@ export function SaldoProgressivoCard({ userId, periodFrom, periodTo }: Props) {
     });
   }, [userId, periodFrom, periodTo, refreshKey]);
 
+  const iso = todayIso();
+  const txSumToToday = useMemo(
+    () => txs.filter(t => t.date >= periodFrom && t.date <= iso).reduce((s, t) => s + Number(t.amount), 0),
+    [txs, periodFrom, iso]
+  );
+
   const result = useMemo(() => {
     if (startingBalance == null) return null;
     const projection = calculateDailyBalanceProjection(startingBalance, items, periodFrom, periodTo);
-    const iso = todayIso();
     let todayIndex = projection.findIndex(d => d.date === iso);
     if (todayIndex === -1) todayIndex = iso < periodFrom ? 0 : projection.length - 1;
 
@@ -207,7 +241,7 @@ export function SaldoProgressivoCard({ userId, periodFrom, periodTo }: Props) {
     const overdueTotal = overdue.reduce((s, o) => s + o.amount, 0);
 
     return { projection, todayIndex, expectedToday, actualToday, health, overdueTotal };
-  }, [startingBalance, items, txs, periodFrom, periodTo]);
+  }, [startingBalance, items, txs, periodFrom, periodTo, iso]);
 
   if (loading) {
     return (
@@ -219,10 +253,28 @@ export function SaldoProgressivoCard({ userId, periodFrom, periodTo }: Props) {
   }
 
   if (startingBalance == null || !result) {
-    return <SetupForm periodFrom={periodFrom} onSaved={() => setRefreshKey(k => k + 1)} />;
+    return (
+      <SetupForm
+        periodFrom={periodFrom}
+        txSumInPeriod={txSumToToday}
+        onSaved={() => setRefreshKey(k => k + 1)}
+      />
+    );
   }
 
   const { projection, todayIndex, expectedToday, actualToday, health, overdueTotal } = result;
+
+  if (editing) {
+    return (
+      <SetupForm
+        periodFrom={periodFrom}
+        txSumInPeriod={txSumToToday}
+        initialValue={actualToday}
+        onSaved={() => { setEditing(false); setRefreshKey(k => k + 1); }}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
 
   const statusStyle = {
     ahead: { text: "text-green-600 dark:text-green-400", bg: "bg-green-500/10", label: "Sei in linea 👍" },
@@ -236,6 +288,12 @@ export function SaldoProgressivoCard({ userId, periodFrom, periodTo }: Props) {
       <div className="flex items-center gap-2">
         <span className="text-xl">📈</span>
         <h2 className="font-semibold">Saldo progressivo giornaliero</h2>
+        <button
+          onClick={() => setEditing(true)}
+          className="ml-auto text-xs text-muted-foreground hover:text-foreground underline"
+        >
+          Modifica
+        </button>
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
