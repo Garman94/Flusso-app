@@ -12,6 +12,9 @@ import {
 } from "@/lib/calculations";
 import { RecurringDashboardCard } from "./recurring-dashboard-card";
 import { SinkingFundsCard } from "./sinking-funds-card";
+import { SaldoProgressivoCard } from "./saldo-progressivo-card";
+import { OverdueExpensesBanner } from "./overdue-expenses-banner";
+import { EstimateAndSavingsCard } from "./estimate-and-savings-card";
 import { MonthReportModal } from "./month-report-modal";
 import { updatePiggyBalance } from "./piggy-action";
 import { updatePayDay } from "./pay-day-action";
@@ -326,6 +329,9 @@ export function DashboardClient({
         </button>
       </div>
 
+      {/* ── Banner: spese scadute non pagate ── */}
+      <OverdueExpensesBanner userId={userId} />
+
       {/* ── Banner: nessun movimento questo periodo ── */}
       {hasAnyTransactions && !hasTransactions && lastTxDate && (
         <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 flex items-center gap-3 text-sm">
@@ -395,6 +401,9 @@ export function DashboardClient({
           </div>
         )}
       </div>
+
+      {/* ── Saldo progressivo giornaliero ── */}
+      <SaldoProgressivoCard userId={userId} periodFrom={periodFrom} periodTo={periodTo} />
 
       {/* ── Empty state ── */}
       {!hasAnyTransactions && (
@@ -562,6 +571,9 @@ export function DashboardClient({
           </div>
         </div>
       )}
+
+      {/* ── Stima spese mensili + suggerimento risparmio ── */}
+      <EstimateAndSavingsCard userId={userId} periodFrom={periodFrom} periodTo={periodTo} />
 
       {/* ── Spese ricorrenti ── */}
       <RecurringDashboardCard userId={userId} />

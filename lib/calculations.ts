@@ -291,3 +291,243 @@ export function monthsPerCycle(frequency: string, customDays?: number | null): n
   }
   return map[frequency] ?? 1;
 }
+
+/** Equivalente mensile di una voce ricorrente fissa/variabile/entrata (usa il punto medio se range). */
+export function recurringMonthlyEquivalent(item: {
+  frequency: string; custom_days: number | null; amount: number; amount_max: number | null;
+}): number {
+  const mid = item.amount_max != null ? (item.amount + item.amount_max) / 2 : item.amount;
+  return mid / monthsPerCycle(item.frequency, item.custom_days);
+}
+
+/** Riconoscimento transazione ↔ voce ricorrente via parole chiave (nome/merchant). */
+export function txMatchesKeywords(
+  tx: { description?: string | null; merchant?: string | null },
+  keywords: string[],
+): boolean {
+  if (!keywords.length) return false;
+  const d = (tx.description ?? "").toLowerCase();
+  const m = (tx.merchant ?? "").toLowerCase();
+  return keywords.some(k => {
+    const kk = k.toLowerCase().trim();
+    return kk.length > 0 && (d.includes(kk) || m.includes(kk));
+  });
+}
+
+// ============================================================
+// FEATURE 1 — Saldo progressivo giornaliero
+// ============================================================
+
+export type RecurringScheduleItem = {
+  id: string;
+  name: string;
+  tipologia: "fissa" | "variabile" | "entrata";
+  frequency: string;
+  due_day: number | null;
+  due_month: number | null;
+  amount: number;
+  amount_max: number | null;
+  next_due_date: string | null; // presente = gestita da Accantonamenti, esclusa qui
+};
+
+export type BalanceProjectionEvent = { name: string; amount: number }; // signed
+export type BalanceProjectionDay = { day: number; date: string; balance: number; events: BalanceProjectionEvent[] };
+
+function scheduleItemSignedAmount(it: RecurringScheduleItem): number {
+  const mid = it.amount_max != null ? (it.amount + it.amount_max) / 2 : it.amount;
+  return it.tipologia === "entrata" ? Math.abs(mid) : -Math.abs(mid);
+}
+
+/**
+ * Proiezione giorno-per-giorno del saldo atteso sul periodo [periodFrom, periodTo],
+ * a partire da un saldo iniziale, applicando le voci ricorrenti fisse/entrata con
+ * cadenza mensile (ogni mese, al giorno due_day) o annuale (due_month + due_day).
+ * Voci bimestrale/trimestrale/semestrale/personalizzata e quelle gestite da
+ * Accantonamenti (next_due_date valorizzato) non hanno una data deducibile dallo
+ * schema e sono escluse dalla timeline (restano nella stima min/max, Feature 3).
+ */
+export function calculateDailyBalanceProjection(
+  startingBalance: number,
+  items: RecurringScheduleItem[],
+  periodFrom: string,
+  periodTo: string,
+): BalanceProjectionDay[] {
+  const start = new Date(periodFrom + "T00:00:00");
+  const end = new Date(periodTo + "T00:00:00");
+  const out: BalanceProjectionDay[] = [];
+  let running = startingBalance;
+
+  for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86_400_000)) {
+    const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    const dayEvents: BalanceProjectionEvent[] = [];
+
+    for (const it of items) {
+      if (it.next_due_date || it.due_day == null) continue;
+      const effectiveDueDay = Math.min(it.due_day, daysInMonth);
+      if (d.getDate() !== effectiveDueDay) continue;
+      const isMonthly = it.frequency === "mensile";
+      const isYearlyMatch = it.frequency === "annuale" && it.due_month === d.getMonth() + 1;
+      if (!isMonthly && !isYearlyMatch) continue;
+      dayEvents.push({ name: it.name, amount: scheduleItemSignedAmount(it) });
+    }
+
+    running += dayEvents.reduce((s, e) => s + e.amount, 0);
+    out.push({ day: d.getDate(), date: d.toISOString().split("T")[0], balance: running, events: dayEvents });
+  }
+
+  return out;
+}
+
+export type BalanceHealthStatus = "ahead" | "green" | "yellow" | "red";
+
+/** Confronta saldo reale vs atteso. ahead/green = in linea, yellow/red = sotto le attese. */
+export function evaluateBalanceHealth(actual: number, expected: number): {
+  status: BalanceHealthStatus; diff: number; diffPct: number;
+} {
+  const diff = actual - expected;
+  const diffPct = expected !== 0 ? diff / Math.abs(expected) : (diff === 0 ? 0 : -1);
+  let status: BalanceHealthStatus;
+  if (diff >= 0) status = "ahead";
+  else if (diffPct >= -0.10) status = "green";
+  else if (diffPct >= -0.25) status = "yellow";
+  else status = "red";
+  return { status, diff, diffPct };
+}
+
+// ============================================================
+// FEATURE 2 — Avviso scadenze non pagate
+// ============================================================
+
+export type OverdueCheckItem = {
+  id: string;
+  name: string;
+  tipologia: "fissa" | "variabile" | "entrata";
+  frequency: string;
+  due_day: number | null;
+  due_month: number | null;
+  amount: number;
+  amount_max: number | null;
+  last_paid_date: string | null;
+  next_due_date: string | null; // presente = gestita da Accantonamenti, esclusa qui
+  match_keywords: string[];
+  category_id: string | null;
+};
+
+export type OverdueResult = { item: OverdueCheckItem; dueDate: string; amount: number };
+
+/** Data di scadenza del ciclo corrente, solo per voci fisse mensili/annuali con due_day. */
+export function currentCycleDueDate(it: OverdueCheckItem, today: Date): Date | null {
+  if (it.next_due_date || it.due_day == null || it.tipologia !== "fissa") return null;
+  if (it.frequency === "mensile") {
+    const y = today.getFullYear(), m = today.getMonth();
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    return new Date(y, m, Math.min(it.due_day, daysInMonth));
+  }
+  if (it.frequency === "annuale" && it.due_month != null) {
+    const y = today.getFullYear();
+    const daysInMonth = new Date(y, it.due_month, 0).getDate();
+    return new Date(y, it.due_month - 1, Math.min(it.due_day, daysInMonth));
+  }
+  return null;
+}
+
+/**
+ * Voci fisse scadute (data passata) non ancora segnate pagate né riconosciute
+ * automaticamente in una transazione di questo ciclo.
+ */
+export function findOverdueRecurring(
+  items: OverdueCheckItem[],
+  transactions: { amount: number; date: string; description?: string | null; merchant?: string | null; category_id?: string | null }[],
+  today: Date = new Date(),
+): OverdueResult[] {
+  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const out: OverdueResult[] = [];
+
+  for (const it of items) {
+    const due = currentCycleDueDate(it, todayMid);
+    if (!due || due > todayMid) continue;
+
+    if (it.last_paid_date && new Date(it.last_paid_date + "T00:00:00") >= due) continue;
+
+    const matched = transactions.some(t => {
+      if (Number(t.amount) >= 0) return false;
+      const d = new Date(t.date + "T00:00:00");
+      if (d < due || d > todayMid) return false;
+      if (it.match_keywords.length > 0) return txMatchesKeywords(t, it.match_keywords);
+      if (it.category_id) return t.category_id === it.category_id;
+      return false;
+    });
+    if (matched) continue;
+
+    const mid = it.amount_max != null ? (it.amount + it.amount_max) / 2 : it.amount;
+    out.push({ item: it, dueDate: due.toISOString().split("T")[0], amount: Math.abs(mid) });
+  }
+
+  return out.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+}
+
+// ============================================================
+// FEATURE 3 — Stima min/max spese mensili
+// ============================================================
+
+export type MonthlyExpenseEstimate = {
+  fixedTotal: number;
+  variableAvg: number;
+  variableMin: number;
+  variableMax: number;
+  totalMin: number;
+  totalMax: number;
+  usedSeasonalWeight: boolean;
+};
+
+/**
+ * variableMonthlyTotals: totale spese variabili per ciascuno degli ultimi mesi
+ * (più recenti prima, tipicamente 3). sameMonthLastYearTotal: totale variabili
+ * nello stesso mese calendariale dell'anno precedente, se disponibile (peso 40%).
+ */
+export function estimateMonthlyExpenses(
+  fixedTotal: number,
+  variableMonthlyTotals: number[],
+  sameMonthLastYearTotal: number | null,
+): MonthlyExpenseEstimate {
+  const n = variableMonthlyTotals.length;
+  const recentAvg = n > 0 ? variableMonthlyTotals.reduce((a, b) => a + b, 0) / n : 0;
+
+  const usedSeasonalWeight = sameMonthLastYearTotal != null && n > 0;
+  const variableAvg = usedSeasonalWeight
+    ? 0.4 * sameMonthLastYearTotal! + 0.6 * recentAvg
+    : recentAvg;
+
+  const variance = n > 0
+    ? variableMonthlyTotals.reduce((s, v) => s + (v - recentAvg) ** 2, 0) / n
+    : 0;
+  const stdDev = Math.sqrt(variance);
+
+  const variableMin = Math.max(0, variableAvg - 0.5 * stdDev);
+  const variableMax = variableAvg + 0.5 * stdDev;
+
+  return {
+    fixedTotal,
+    variableAvg,
+    variableMin,
+    variableMax,
+    totalMin: fixedTotal + variableMin,
+    totalMax: fixedTotal + variableMax,
+    usedSeasonalWeight,
+  };
+}
+
+// ============================================================
+// FEATURE 4 — Quanto dovresti risparmiare?
+// ============================================================
+
+export type SavingsSuggestion = { rawPotential: number; suggested: number; buffer: number; isTight: boolean };
+
+/** Suggerisce l'80% del potenziale di risparmio, tenendo il 20% come cuscinetto per imprevisti. */
+export function suggestMonthlySavings(
+  expectedIncome: number, fixedTotal: number, variableMidpoint: number,
+): SavingsSuggestion {
+  const rawPotential = expectedIncome - fixedTotal - variableMidpoint;
+  if (rawPotential <= 0) return { rawPotential, suggested: 0, buffer: 0, isTight: true };
+  return { rawPotential, suggested: rawPotential * 0.8, buffer: rawPotential * 0.2, isTight: false };
+}
