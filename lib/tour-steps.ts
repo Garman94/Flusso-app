@@ -11,8 +11,8 @@ export type PageTourDef = {
 export const PAGE_TOURS: Record<string, PageTourDef> = {
 
   "/dashboard": {
-    version: "1.2",
-    whatIsNew: "bottone mesi precedenti e badge componenti famiglia",
+    version: "1.3",
+    whatIsNew: "campanella notifiche e salvadanai multipli",
     steps: [
       {
         title: "Benvenuto in Flusso! 👋",
@@ -32,6 +32,11 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
         target: "[data-tour='month-report-btn']",
         title: "Report mesi precedenti",
         message: "Da qui puoi navigare i mesi passati e vedere entrate, uscite e breakdown per categoria di ogni mese.",
+      },
+      {
+        target: "[data-tour='notifications-bell']",
+        title: "Novità e suggerimenti 🔔",
+        message: "La campanella raccoglie gli avvisi dello sviluppatore: consigli d'uso, aggiornamenti e richieste di feedback. Il pallino rosso indica quante non hai ancora letto.",
       },
       {
         target: "[data-tour='nav-transazioni']",
@@ -90,8 +95,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/smart": {
-    version: "1.0",
-    whatIsNew: "spese ricorrenti, obiettivi, previsioni e accantonamenti",
+    version: "1.1",
+    whatIsNew: "obiettivi: salvadanaio collegato, quota mensile e pagina dettaglio con storico contributi",
     freePreview: [
       {
         title: "Benvenuto in Smart ⚡",
@@ -127,7 +132,7 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       {
         target: "[data-tour='smart-obiettivi']",
         title: "Obiettivi di risparmio",
-        message: "Crea obiettivi con un importo target e una scadenza. Flusso stima quando li raggiungerai.",
+        message: "Crea obiettivi con importo e scadenza: Flusso suggerisce la quota mensile, li collega a un salvadanaio e tiene lo storico dei contributi in una pagina di dettaglio.",
       },
       {
         target: "[data-tour='smart-previsioni']",
@@ -138,6 +143,27 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
         target: "[data-tour='smart-accantonamenti']",
         title: "Accantonamenti",
         message: "Pianifica le spese grandi e irregolari (vacanze, assicurazione auto…) accantonando ogni mese la quota necessaria.",
+      },
+    ],
+  },
+
+  "/dashboard/salvadanai": {
+    version: "1.0",
+    whatIsNew: "salvadanai multipli con obiettivi, condivisione e storico movimenti",
+    steps: [
+      {
+        title: "Salvadanai 🐷",
+        message: "Ora puoi avere più salvadanai separati — vacanza, emergenza, casa… La somma di tutti corrisponde all'unico salvadanaio della tua banca.",
+      },
+      {
+        target: "[data-tour='pot-grid']",
+        title: "I tuoi salvadanai",
+        message: "Ogni card mostra il saldo, la barra verso l'obiettivo e — se condiviso — quanto ha messo ciascun componente. Tocca una card per vedere i movimenti.",
+      },
+      {
+        target: "[data-tour='pot-add']",
+        title: "Crea un salvadanaio",
+        message: "Nome ed emoji, obiettivo facoltativo, e scelta se tenerlo personale o condiviso con il gruppo. Poi deposita o preleva quando vuoi.",
       },
     ],
   },

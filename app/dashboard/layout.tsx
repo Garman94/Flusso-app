@@ -5,6 +5,7 @@ import { LogoutButton } from "@/components/logout-button";
 import { DashboardNavLinks } from "@/components/dashboard-nav-links";
 import { PreviewBanner } from "@/components/preview-banner";
 import { DemoBanner } from "@/components/demo-banner";
+import { NotificationsBell } from "@/components/notifications-bell";
 import { DemoProvider } from "@/components/demo-context";
 import { siteConfig } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
@@ -32,7 +33,8 @@ async function DashboardNav() {
           </Link>
           <DashboardNavLinks isAdmin={isAdmin} />
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <NotificationsBell />
           <ThemeSwitcher />
           <LogoutButton />
         </div>

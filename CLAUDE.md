@@ -53,8 +53,12 @@ flussoapp/
 │   │   │   ├── smart-page-client.tsx     # Tab controller: Previsioni / Ricorrenti / Obiettivi / Accantonamenti
 │   │   │   └── recurring-client.tsx      # Tab "Ricorrenti" — spese ricorrenti + report
 │   │   ├── obiettivi/
-│   │   │   ├── page.tsx                  # Standalone page obiettivi
-│   │   │   └── obiettivi-client.tsx      # Gestione goals
+│   │   │   ├── page.tsx                  # redirect → /dashboard/smart (obiettivi vivono nel tab Smart)
+│   │   │   └── obiettivi-client.tsx      # CODICE MORTO (non importato da nessuno)
+│   │   ├── salvadanai/
+│   │   │   ├── page.tsx                  # Salvadanai multipli (server)
+│   │   │   ├── salvadanai-client.tsx     # Griglia + wizard + dettaglio + deposito/prelievo
+│   │   │   └── savings-actions.ts        # createPot / updatePot / deletePot / addSavingsTransaction
 │   │   ├── account/
 │   │   │   ├── page.tsx                  # Impostazioni account (server component)
 │   │   │   ├── family-members-section.tsx# CRUD componenti famiglia con color picker
@@ -89,6 +93,8 @@ flussoapp/
 │   ├── plans.ts                          # Logica piani (free/premium/founder)
 │   ├── demo.ts                           # Costanti/helper modalità demo
 │   ├── import-dedup.ts                   # Anti-duplicati import Excel (hash file + classifyRows)
+│   ├── savings.ts                        # Tipi/helper salvadanai multipli
+│   ├── notifications.ts                  # Tipi/icone notifiche sviluppatore
 │   └── email.ts                          # Utility email
 ├── supabase/
 │   └── migrations/                       # Migrazioni SQL ordinate (001 → 025)
@@ -180,6 +186,41 @@ target_amount numeric
 current_amount numeric
 deadline date NULL
 icon text  -- emoji
+savings_pot_id uuid FK savings_pots NULL   -- salvadanaio collegato (migration 027)
+monthly_contribution numeric NULL          -- quota mensile pianificata (migration 027)
+```
+
+### `goal_contributions`
+Storico versamenti verso un obiettivo (migration 027). Trigger `apply_goal_contribution` incrementa `goals.current_amount`.
+```
+id uuid PK · goal_id uuid FK goals · user_id uuid · amount numeric · note text NULL · date date · created_at timestamptz
+```
+
+### `savings_pots` / `savings_pot_members` / `savings_transactions`
+Salvadanai multipli (migration 026). Sostituiscono il singolo `profiles.piggy_balance`, che ora è **derivato**: trigger `sync_piggy_balance` lo tiene = `SUM(savings_pots.current_balance)` dell'utente, così tutto il codice Accantonamenti esistente continua a funzionare.
+```
+savings_pots
+  id · user_id · name · emoji · description NULL · target_amount NULL
+  current_balance numeric · is_shared bool · color · created_at/updated_at
+savings_pot_members          -- ripartizione per componente (family_members, NON utenti)
+  id · pot_id FK · member_id uuid FK family_members NULL (NULL = titolare) · contributed_amount · joined_at
+  unique(pot_id, member_id)
+savings_transactions
+  id · pot_id FK · user_id · member_id FK family_members NULL
+  amount numeric>0 · type 'deposit'|'withdraw' · note NULL · date · created_at
+```
+Trigger `apply_savings_transaction`: applica il movimento a `current_balance` e a `savings_pot_members.contributed_amount`.
+
+### `admin_notifications` / `notification_dismissals`
+Campanella notifiche sviluppatore (migration 028). Le righe si inseriscono a mano da Supabase Studio.
+```
+admin_notifications
+  id · title · message · type 'info'|'tip'|'warning'|'feedback_request'
+  target_plan 'all'|'free'|'premium'|'founder' · is_active bool
+  created_at · expires_at NULL · cta_text NULL · cta_url NULL
+  RLS: select using(true)
+notification_dismissals
+  id · notification_id FK · user_id · dismissed_at · unique(notification_id, user_id)
 ```
 
 ### `budget_items`
@@ -292,7 +333,12 @@ Componente: `app/onboarding/page.tsx`
 - **Banner spese scadute** (`OverdueExpensesBanner`) — spese `fissa` con `due_day` passato senza pagamento confermato né transazione auto-riconosciuta; bottone "Segna come pagata" scrive su `payment_confirmations` e aggiorna `last_paid_date`/`payment_status`
 - **Stima spese mensili + suggerimento risparmio** (`EstimateAndSavingsCard`) — spese fisse (certe) + range min/max spese variabili (media ultimi 3 mesi ± 0.5×dev.std, peso 40% sullo stesso mese anno scorso se disponibile); risparmio suggerito = 80% del potenziale (entrate attese − fisse − variabili stimate), 20% di cuscinetto
 - **Card Spese Ricorrenti** (`RecurringDashboardCard`) — accordion per categoria, previsto vs speso, delta colorato
+- **Salvadanai** — nella hero: totale (= `piggy_balance`, tenuto in sync col trigger) + link a `/dashboard/salvadanai`
 - **Bottone "Mesi precedenti"** → apre `MonthReportModal`
+- **Campanella 🔔** (`NotificationsBell`) nella top-nav — vedi sezione "Modalità demo"/schema `admin_notifications`
+
+### Salvadanai (`/dashboard/salvadanai`)
+Griglia di salvadanai (`savings_pots`). Card: emoji+nome, saldo, barra verso `target_amount`, badge "condiviso" + breakdown per componente. Wizard 4 step (nome/emoji → obiettivo → condiviso+componenti → riepilogo). Dettaglio pot: storico `savings_transactions` + Deposita/Preleva (modale importo+nota, se condiviso selettore componente). Il totale è mirrorato su `profiles.piggy_balance` dal trigger `sync_piggy_balance`, quindi il tab Accantonamenti resta invariato.
 
 > Le voci ricorrenti con cadenza bimestrale/trimestrale/semestrale/personalizzata (senza `next_due_date`) non hanno una data deducibile dallo schema: sono escluse dalla timeline giornaliera e dal rilevamento scadute, ma restano nella stima min/max mensile. Le voci con `next_due_date` valorizzato sono gestite dagli Accantonamenti e restano escluse da queste 3 feature per non interferire con quella logica.
 
@@ -321,8 +367,11 @@ Componente: `app/onboarding/page.tsx`
 #### Tab: Ricorrenti
 Sistema di riconoscimento automatico transazioni con `match_keywords`, supporto `historical_avg` per variabilità stagionale (luce/gas), accordion per categoria nel report, template rapidi.
 
+#### Tab: Obiettivi
+Wizard 6 step (`smart-page-client.tsx`, `view === "add-goal"`): nome/icona → importo → scadenza (con quota mensile suggerita) → **salvadanaio collegato** (`goals.savings_pot_id`) → **contributo mensile** (`goals.monthly_contribution`) → riepilogo. `view === "goal-detail"`: progress, quota necessaria vs impostata, stima raggiungimento (`estimateGoalCompletion`), proiezione SVG, storico `goal_contributions` + "Aggiungi contributo" (`goal-actions.ts` → trigger aggiorna `current_amount`). Limite free: 1 obiettivo.
+
 #### Tab: Accantonamenti
-Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date` e `saving_start_date` su `recurring_expenses`. Banner "fase di recupero" quando la quota mensile è a regime.
+Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date` e `saving_start_date` su `recurring_expenses`. Banner "fase di recupero" quando la quota mensile è a regime. "Segna come pagata" con "scala dal salvadanaio" ora inserisce un `savings_transactions` withdraw sul primo pot dell'utente (fallback: update diretto di `piggy_balance` se non esistono pot).
 
 ### Account (`/dashboard/account`)
 - Gestione profilo e cambio nome
@@ -384,7 +433,7 @@ account-income, account-family,            account
 account-power-user, account-feedback
 ```
 
-> Versioni tour: `/dashboard` v1.2 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v1.0 · `/dashboard/account` v1.3.
+> Versioni tour: `/dashboard` v1.3 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v1.1 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.3.
 
 ### LocalStorage
 Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valore diverso dalla versione in `PAGE_TOURS` = aggiornamento.
@@ -475,6 +524,10 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `023_member_income_and_categories.sql` | Campi anagrafica reddito su `family_members` e `profiles`; categorie di sistema `Hobby` 🎮 e `Accantonamenti` 🏦 |
 | `024_import_logs.sql` | Tabella `import_logs` (hash file Excel, anti-duplicati livello 1) |
 | `025_demo_mode.sql` | Funzione `reseed_demo()` + `demo_user_id()`; trigger `block_demo_writes` sulle tabelle dati (sessione demo in sola lettura) |
+| `026_savings_pots.sql` | `savings_pots` / `savings_pot_members` / `savings_transactions`; trigger `sync_piggy_balance` + `apply_savings_transaction`; migrazione del `piggy_balance` esistente in un pot "Salvadanaio" |
+| `027_goals_wizard.sql` | `goals.savings_pot_id` / `monthly_contribution`; tabella `goal_contributions` + trigger `apply_goal_contribution` |
+| `028_admin_notifications.sql` | `admin_notifications` + `notification_dismissals` + 3 notifiche di default |
+| `029_demo_savings_seed.sql` | `reseed_demo()` aggiornata: 2 salvadanai demo + goal collegato |
 
 ---
 
