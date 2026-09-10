@@ -51,11 +51,13 @@ async function SmartContent() {
     );
   }
 
-  const [goalsRes, transactionsRes, categoriesRes, recurringRes] = await Promise.all([
+  const [goalsRes, transactionsRes, categoriesRes, recurringRes, potsRes, contribRes] = await Promise.all([
     supabase.from("goals").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
     supabase.from("transactions").select("date, amount, category_id, description, merchant").eq("user_id", userId),
     supabase.from("categories").select("id, name, color, icon").or(`user_id.eq.${userId},user_id.is.null`).order("name"),
     supabase.from("recurring_expenses").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
+    supabase.from("savings_pots").select("id, name, emoji, current_balance").eq("user_id", userId).order("created_at"),
+    supabase.from("goal_contributions").select("id, goal_id, amount, note, date").eq("user_id", userId).order("date", { ascending: false }),
   ]);
 
   const payDay: number = profile?.pay_day ?? 0;
@@ -70,6 +72,8 @@ async function SmartContent() {
       transactions={transactionsRes.data ?? []}
       categories={categoriesRes.data ?? []}
       initialRecurring={(recurringRes.data ?? []) as unknown as SmartRecurringExpense[]}
+      initialPots={potsRes.data ?? []}
+      initialContributions={contribRes.data ?? []}
       piggyBalance={Number(profile?.piggy_balance ?? 0)}
       payDay={payDay}
       periodFrom={periodFrom}

@@ -4,9 +4,10 @@ import { useEffect, useState, Suspense } from "react";
 import { PageTour } from "@/components/tour/page-tour";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween } from "@/lib/calculations";
+import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estimateGoalCompletion } from "@/lib/calculations";
 import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
 import { resetSavingStartDate, markSinkingFundPaid } from "./sinking-fund-actions";
+import { addGoalContribution } from "./goal-actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,7 +19,10 @@ type Transaction = {
 type Goal = {
   id: string; name: string; target_amount: number; current_amount: number;
   deadline: string | null; icon: string; created_at: string;
+  savings_pot_id: string | null; monthly_contribution: number | null;
 };
+type PotLite = { id: string; name: string; emoji: string; current_balance: number };
+type GoalContribution = { id: string; goal_id: string; amount: number; note: string | null; date: string };
 type Tipologia = "fissa" | "variabile" | "entrata";
 type Frequency = "mensile" | "bimestrale" | "trimestrale" | "semestrale" | "annuale" | "personalizzata";
 export type RecurringExpense = {
@@ -32,12 +36,14 @@ export type RecurringExpense = {
   saving_start_date: string | null;
 };
 type TipoCard = "uscita_fissa" | "uscita_variabile" | "entrata";
-type View = "cover" | "add-recurring" | "edit-recurring" | "list-recurring" | "add-goal" | "list-goals" | "previsioni" | "accantonamenti";
+type View = "cover" | "add-recurring" | "edit-recurring" | "list-recurring" | "add-goal" | "list-goals" | "goal-detail" | "previsioni" | "accantonamenti";
 
 type Props = {
   userId: string; plan: string; initialGoals: Goal[];
   transactions: Transaction[]; categories: Category[];
   initialRecurring?: RecurringExpense[];
+  initialPots?: PotLite[];
+  initialContributions?: GoalContribution[];
   piggyBalance?: number;
   payDay?: number; periodFrom?: string; periodTo?: string;
   periodYear?: number; periodMonth?: number;
@@ -171,6 +177,26 @@ function RecapRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Retta di proiezione current → target al ritmo `monthly` al mese. */
+function GoalProjection({ current, target, monthly }: { current: number; target: number; monthly: number }) {
+  const months = Math.min(36, Math.max(1, Math.ceil((target - current) / monthly)));
+  const W = 300, H = 90, PAD = 6;
+  const pts = Array.from({ length: months + 1 }, (_, i) => {
+    const v = Math.min(target, current + monthly * i);
+    const x = PAD + (i / months) * (W - PAD * 2);
+    const y = H - PAD - ((v - current) / Math.max(1, target - current)) * (H - PAD * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <div className="rounded-xl border p-4 flex flex-col gap-1">
+      <p className="text-xs text-muted-foreground">Proiezione ({months} {months === 1 ? "mese" : "mesi"})</p>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-20">
+        <polyline points={pts} fill="none" stroke="currentColor" className="text-primary" strokeWidth={2} strokeLinecap="round" />
+      </svg>
+    </div>
+  );
+}
+
 // ─── Default form values ──────────────────────────────────────────────────────
 
 const EMPTY_R = {
@@ -193,6 +219,8 @@ const EMPTY_G = {
   target_amount: "",
   current_amount: "0",
   deadline: "",
+  savings_pot_id: "",
+  monthly_contribution: "",
 };
 
 const GOAL_ICONS = ["🎯", "🏖️", "🛡️", "🏠", "💻", "🎓", "🚗", "✈️", "💍", "🌱", "💪", "🎁"];
@@ -202,7 +230,7 @@ const FREE_GOAL_LIMIT = 1;
 
 export function SmartPageClient({
   userId, plan, initialGoals, transactions,
-  initialRecurring, piggyBalance = 0,
+  initialRecurring, initialPots = [], initialContributions = [], piggyBalance = 0,
   payDay: _payDay = 0, periodFrom, periodTo,
 }: Props) {
   const [view, setView] = useState<View>("cover");
@@ -227,6 +255,12 @@ export function SmartPageClient({
   const [gForm, setGForm] = useState(EMPTY_G);
   const [gSaving, setGSaving] = useState(false);
   const [gEditId, setGEditId] = useState<string | null>(null);
+  const [gDetailId, setGDetailId] = useState<string | null>(null);
+  const [contributions, setContributions] = useState<GoalContribution[]>(initialContributions);
+  const [contribAmount, setContribAmount] = useState("");
+  const [contribNote, setContribNote] = useState("");
+  const [contribSaving, setContribSaving] = useState(false);
+  const pots = initialPots;
 
   // Mark-paid dialog
   const [paidDialog, setPaidDialog] = useState<{
@@ -293,8 +327,31 @@ export function SmartPageClient({
       target_amount: g.target_amount.toString().replace(".", ","),
       current_amount: g.current_amount.toString().replace(".", ","),
       deadline: g.deadline ?? "",
+      savings_pot_id: g.savings_pot_id ?? "",
+      monthly_contribution: g.monthly_contribution != null ? String(g.monthly_contribution).replace(".", ",") : "",
     });
     setGStep(1); setGEditId(g.id); setView("add-goal");
+  }
+
+  function goGoalDetail(g: Goal) {
+    setGDetailId(g.id); setContribAmount(""); setContribNote(""); setView("goal-detail");
+  }
+
+  async function handleAddContribution() {
+    if (!gDetailId) return;
+    const amt = parseFloat(contribAmount.replace(",", "."));
+    if (isNaN(amt) || amt <= 0) { toast.error("Importo non valido."); return; }
+    setContribSaving(true);
+    const res = await addGoalContribution({ goalId: gDetailId, amount: amt, note: contribNote });
+    setContribSaving(false);
+    if (res?.error) { toast.error(res.error); return; }
+    setContributions(prev => [
+      { id: res.id ?? crypto.randomUUID(), goal_id: gDetailId, amount: amt, note: contribNote || null, date: new Date().toISOString().split("T")[0] },
+      ...prev,
+    ]);
+    setGoals(prev => prev.map(g => g.id === gDetailId ? { ...g, current_amount: Number(g.current_amount) + amt } : g));
+    setContribAmount(""); setContribNote("");
+    toast.success("Contributo aggiunto!");
   }
 
   // ── Recurring CRUD ─────────────────────────────────────────────────────────
@@ -408,10 +465,13 @@ export function SmartPageClient({
     }
     setGSaving(true);
     const supabase = createClient();
+    const mc = parseFloat(gForm.monthly_contribution.replace(",", "."));
     const payload = {
       name: gForm.name.trim(), icon: gForm.icon,
       target_amount: ta, current_amount: isNaN(ca) ? 0 : ca,
       deadline: gForm.deadline || null,
+      savings_pot_id: gForm.savings_pot_id || null,
+      monthly_contribution: isNaN(mc) ? null : mc,
     };
     if (gEditId) {
       const { data, error } = await supabase
@@ -1317,9 +1377,16 @@ export function SmartPageClient({
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (view === "add-goal") {
-    const TOTAL_STEPS = 4;
+    const TOTAL_STEPS = 6;
     const isFree = plan === "free";
     const atLimit = isFree && goals.length >= FREE_GOAL_LIMIT && !gEditId;
+
+    const gTarget = parseFloat(gForm.target_amount.replace(",", ".")) || 0;
+    const gCurrent = parseFloat(gForm.current_amount.replace(",", ".") || "0") || 0;
+    const gMonthsLeft = gForm.deadline
+      ? Math.max(1, Math.ceil((new Date(gForm.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30)))
+      : 0;
+    const gSuggestedMonthly = gMonthsLeft > 0 ? Math.max(0, (gTarget - gCurrent) / gMonthsLeft) : 0;
 
     function gBack() {
       if (gStep === 1) { setView("cover"); return; }
@@ -1481,6 +1548,11 @@ export function SmartPageClient({
                 Non ho fretta — nessuna scadenza
               </button>
             </div>
+            {gForm.deadline && gSuggestedMonthly > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Dovrai mettere da parte <strong className="text-foreground">{fmt(gSuggestedMonthly)}</strong> al mese.
+              </p>
+            )}
             <button
               onClick={() => setGStep(4)}
               className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold hover:bg-primary/90 transition-colors"
@@ -1490,8 +1562,75 @@ export function SmartPageClient({
           </div>
         )}
 
-        {/* Step 4 — Riepilogo */}
+        {/* Step 4 — Salvadanaio collegato */}
         {gStep === 4 && (
+          <div className="flex flex-col gap-6">
+            <h2 className="text-xl font-bold">Collegare a un salvadanaio?</h2>
+            <div className="flex flex-col gap-2">
+              {pots.map(p => (
+                <button key={p.id} type="button"
+                  onClick={() => setGForm(f => ({ ...f, savings_pot_id: p.id }))}
+                  className={`rounded-xl border-2 px-4 py-3 text-left text-sm flex justify-between items-center transition-colors ${
+                    gForm.savings_pot_id === p.id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                  }`}>
+                  <span>{p.emoji} {p.name}</span>
+                  <span className="text-muted-foreground">{fmt(Number(p.current_balance))}</span>
+                </button>
+              ))}
+              <button type="button"
+                onClick={() => setGForm(f => ({ ...f, savings_pot_id: "" }))}
+                className={`rounded-xl border-2 px-4 py-3 text-left text-sm transition-colors ${
+                  !gForm.savings_pot_id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                }`}>
+                No, tienili separati
+              </button>
+              {pots.length === 0 && (
+                <a href="/dashboard/salvadanai" className="text-xs text-primary hover:underline">
+                  Crea un salvadanaio →
+                </a>
+              )}
+            </div>
+            <button onClick={() => setGStep(5)}
+              className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold hover:bg-primary/90 transition-colors">
+              Continua →
+            </button>
+          </div>
+        )}
+
+        {/* Step 5 — Contributo mensile */}
+        {gStep === 5 && (
+          <div className="flex flex-col gap-6">
+            <h2 className="text-xl font-bold">Quanto accantoni al mese?</h2>
+            <input
+              type="text" inputMode="decimal"
+              value={gForm.monthly_contribution}
+              onChange={e => setGForm(f => ({ ...f, monthly_contribution: e.target.value }))}
+              placeholder={gSuggestedMonthly > 0 ? gSuggestedMonthly.toFixed(0) : "es. 100"}
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+              autoFocus
+            />
+            {gSuggestedMonthly > 0 && (
+              <button type="button"
+                onClick={() => setGForm(f => ({ ...f, monthly_contribution: gSuggestedMonthly.toFixed(2).replace(".", ",") }))}
+                className="text-sm text-primary hover:underline self-start">
+                Usa il suggerito ({fmt(gSuggestedMonthly)})
+              </button>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => setGStep(6)}
+                className="flex-1 rounded-xl border-2 px-5 py-3 text-sm font-medium hover:bg-muted/50 transition-colors">
+                Salta
+              </button>
+              <button onClick={() => setGStep(6)}
+                className="flex-1 bg-primary text-primary-foreground rounded-xl px-5 py-3 text-sm font-semibold hover:bg-primary/90 transition-colors">
+                Continua →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 6 — Riepilogo */}
+        {gStep === 6 && (
           <div className="flex flex-col gap-6">
             <h2 className="text-xl font-bold">Tutto corretto?</h2>
             <div className="rounded-2xl border-2 border-border p-5 flex flex-col gap-3">
@@ -1512,6 +1651,15 @@ export function SmartPageClient({
                   ? new Date(gForm.deadline).toLocaleDateString("it-IT")
                   : "Nessuna"}
               />
+              {gForm.savings_pot_id && (
+                <RecapRow
+                  label="Salvadanaio"
+                  value={(() => { const p = pots.find(x => x.id === gForm.savings_pot_id); return p ? `${p.emoji} ${p.name}` : "—"; })()}
+                />
+              )}
+              {parseFloat(gForm.monthly_contribution.replace(",", ".") || "0") > 0 && (
+                <RecapRow label="Al mese" value={fmt(parseFloat(gForm.monthly_contribution.replace(",", ".")))} />
+              )}
             </div>
             <div className="flex gap-3">
               <button
@@ -1638,11 +1786,134 @@ export function SmartPageClient({
                     ? <p className="text-xs text-green-600 dark:text-green-400 font-medium">🎉 Obiettivo raggiunto!</p>
                     : <p className="text-xs text-muted-foreground">Mancano {fmt(remaining)}</p>
                   }
+
+                  {(g.monthly_contribution || g.savings_pot_id) && (
+                    <p className="text-xs text-muted-foreground">
+                      {g.monthly_contribution ? `${fmt(Number(g.monthly_contribution))}/mese` : ""}
+                      {g.monthly_contribution && g.savings_pot_id ? " · " : ""}
+                      {g.savings_pot_id ? (() => { const p = pots.find(x => x.id === g.savings_pot_id); return p ? `collegato a ${p.emoji} ${p.name}` : ""; })() : ""}
+                    </p>
+                  )}
+
+                  <button
+                    onClick={() => goGoalDetail(g)}
+                    className="text-xs text-primary hover:underline self-start"
+                  >
+                    Dettagli e contributi →
+                  </button>
                 </div>
               );
             })}
           </div>
         )}
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GOAL DETAIL
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (view === "goal-detail") {
+    const g = goals.find(x => x.id === gDetailId);
+    if (!g) { setView("list-goals"); return null; }
+    const cur = Number(g.current_amount), tgt = Number(g.target_amount);
+    const pct = Math.min(100, tgt > 0 ? (cur / tgt) * 100 : 0);
+    const remaining = Math.max(0, tgt - cur);
+    const monthly = Number(g.monthly_contribution) || 0;
+    const linkedPot = g.savings_pot_id ? pots.find(p => p.id === g.savings_pot_id) : null;
+    const eta = estimateGoalCompletion(
+      { id: g.id, name: g.name, target_amount: tgt, current_amount: cur, deadline: g.deadline, icon: g.icon },
+      monthly,
+    );
+    const history = contributions.filter(c => c.goal_id === g.id);
+    const monthsToDeadline = g.deadline
+      ? Math.max(1, Math.ceil((new Date(g.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30)))
+      : 0;
+    const neededMonthly = monthsToDeadline > 0 ? remaining / monthsToDeadline : 0;
+
+    return (
+      <div className="flex flex-col gap-5 max-w-lg mx-auto w-full">
+        <div className="flex items-center gap-3">
+          <BackButton onClick={() => setView("list-goals")} />
+          <h1 className="text-xl font-bold flex-1">{g.icon} {g.name}</h1>
+          <button onClick={() => goEditGoal(g)} className="text-xs border rounded-lg px-2 py-1 hover:bg-muted/50">✏️</button>
+          <button onClick={() => { handleDeleteGoal(g.id); setView("list-goals"); }} className="text-xs border rounded-lg px-2 py-1 hover:text-destructive">🗑</button>
+        </div>
+
+        <div className="rounded-2xl border-2 p-5 flex flex-col gap-3">
+          <div className="flex items-end justify-between">
+            <span className="text-3xl font-bold tabular-nums">{fmt(cur)}</span>
+            <span className="text-sm text-muted-foreground">di {fmt(tgt)}</span>
+          </div>
+          <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+            <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>{pct.toFixed(0)}%</span>
+            <span>Mancano {fmt(remaining)}</span>
+          </div>
+          <div className="flex flex-col gap-1 pt-2 border-t text-sm">
+            {g.deadline && (
+              <div className="flex justify-between"><span className="text-muted-foreground">Scadenza</span>
+                <span>{new Date(g.deadline).toLocaleDateString("it-IT")}</span></div>
+            )}
+            {monthsToDeadline > 0 && (
+              <div className="flex justify-between"><span className="text-muted-foreground">Quota necessaria</span>
+                <span>{fmt(neededMonthly)}/mese</span></div>
+            )}
+            <div className="flex justify-between"><span className="text-muted-foreground">Quota impostata</span>
+              <span>{monthly > 0 ? `${fmt(monthly)}/mese` : "—"}</span></div>
+            {eta && (
+              <div className="flex justify-between"><span className="text-muted-foreground">Stima raggiungimento</span>
+                <span>{eta}</span></div>
+            )}
+            {linkedPot && (
+              <div className="flex justify-between"><span className="text-muted-foreground">Salvadanaio</span>
+                <span>{linkedPot.emoji} {linkedPot.name} · {fmt(Number(linkedPot.current_balance))}</span></div>
+            )}
+          </div>
+        </div>
+
+        {/* Proiezione */}
+        {monthly > 0 && remaining > 0 && (
+          <GoalProjection current={cur} target={tgt} monthly={monthly} />
+        )}
+
+        {/* Aggiungi contributo */}
+        <div className="rounded-xl border p-4 flex flex-col gap-2">
+          <p className="text-sm font-semibold">Aggiungi contributo</p>
+          <div className="flex gap-2">
+            <input value={contribAmount} onChange={e => setContribAmount(e.target.value)} inputMode="decimal"
+              placeholder="Importo €" className="border rounded-md px-3 py-2 text-sm bg-background flex-1" />
+            <button onClick={handleAddContribution} disabled={contribSaving}
+              className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+              {contribSaving ? "…" : "Aggiungi"}
+            </button>
+          </div>
+          <input value={contribNote} onChange={e => setContribNote(e.target.value)}
+            placeholder="Nota (opzionale)" className="border rounded-md px-3 py-2 text-sm bg-background" />
+        </div>
+
+        {/* Storico */}
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-semibold">Storico contributi</p>
+          {history.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-3 text-center">Ancora nessun contributo.</p>
+          ) : (
+            <ul className="divide-y border rounded-xl">
+              {history.map(c => (
+                <li key={c.id} className="flex items-center justify-between px-3 py-2.5 text-sm">
+                  <div className="flex flex-col">
+                    <span>{c.note || "Contributo"}</span>
+                    <span className="text-xs text-muted-foreground">{new Date(c.date).toLocaleDateString("it-IT")}</span>
+                  </div>
+                  <span className="font-semibold tabular-nums text-green-600 dark:text-green-400">+{fmt(Number(c.amount))}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     );
   }
