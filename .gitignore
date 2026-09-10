@@ -40,3 +40,34 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# claude code
+/memory
+.claude/settings.local.json
+
+# supabase
+/supabase/.temp
+
+# capacitor - android
+/android/.gradle
+/android/.idea
+/android/build
+/android/app/build
+/android/app/release
+/android/capacitor-cordova-android-plugins
+/android/local.properties
+/android/app/src/main/assets/public
+/android/app/src/main/assets/capacitor.config.json
+/android/app/src/main/assets/capacitor.plugins.json
+/android/app/src/main/res/xml/config.xml
+
+# capacitor - ios
+/ios/App/build
+/ios/App/Pods
+/ios/App/output
+/ios/App/App/public
+/ios/App/App/capacitor.config.json
+/ios/App/App/config.xml
+/ios/DerivedData
+*.xcuserstate
+xcuserdata/
