@@ -77,11 +77,33 @@ export async function markSinkingFundPaid(
       .single();
     const current = Number(profile?.piggy_balance ?? 0);
     newPiggyBalance = Math.round((current - amountToDeduct) * 100) / 100;
-    const { error: piggyErr } = await supabase
-      .from("profiles")
-      .update({ piggy_balance: newPiggyBalance })
-      .eq("id", userId);
-    if (piggyErr) return { error: piggyErr.message };
+
+    // Preferisci scalare da un salvadanaio (il trigger sync_piggy_balance
+    // aggiorna profiles.piggy_balance). Fallback: update diretto se non ci sono pot.
+    const { data: pot } = await supabase
+      .from("savings_pots")
+      .select("id")
+      .eq("user_id", userId)
+      .order("created_at")
+      .limit(1)
+      .maybeSingle();
+
+    if (pot?.id) {
+      const { error: txErr } = await supabase.from("savings_transactions").insert({
+        pot_id: pot.id,
+        user_id: userId,
+        amount: amountToDeduct,
+        type: "withdraw",
+        note: "Pagamento accantonamento",
+      });
+      if (txErr) return { error: txErr.message };
+    } else {
+      const { error: piggyErr } = await supabase
+        .from("profiles")
+        .update({ piggy_balance: newPiggyBalance })
+        .eq("id", userId);
+      if (piggyErr) return { error: piggyErr.message };
+    }
   }
 
   revalidatePath("/dashboard/smart");
