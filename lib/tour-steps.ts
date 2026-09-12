@@ -169,8 +169,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/account": {
-    version: "1.3",
-    whatIsNew: "info reddito per te e per i componenti, usate nelle previsioni",
+    version: "1.4",
+    whatIsNew: "checkbox \"Sei tu\" nei componenti: identifica te stesso per non contare il reddito due volte",
     steps: [
       {
         title: "Impostazioni account ⚙️",
@@ -179,12 +179,12 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       {
         target: "[data-tour='account-income']",
         title: "Il tuo reddito 💼",
-        message: "Inserisci tipo di reddito, importo e giorno di paga. Flusso li usa per rendere più precise le previsioni di budget e i suggerimenti di risparmio in Dashboard.",
+        message: "Inserisci tipo di reddito, importo e giorno di paga. Flusso li usa per rendere più precise le previsioni di budget e i suggerimenti di risparmio in Dashboard. Se ti identifichi come componente qui sotto, questa sezione si nasconde per evitare doppioni.",
       },
       {
         target: "[data-tour='account-family']",
         title: "Componenti",
-        message: "Aggiungi i membri della famiglia o del gruppo, con nome, colore e — se vuoi — le info sul reddito. Ogni estratto conto importato può essere associato a uno di loro e le transazioni mostreranno un badge colorato.",
+        message: "Aggiungi i membri della famiglia o del gruppo, con nome, colore e — se vuoi — le info sul reddito. Aggiungi anche te stesso e spunta \"Sei tu\": da quel momento import Excel e salvadanai condivisi ti chiederanno sempre di scegliere una persona precisa invece del generico \"Io\", e il tuo reddito si gestisce da qui.",
       },
       {
         target: "[data-tour='account-power-user']",

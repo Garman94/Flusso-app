@@ -38,7 +38,7 @@ type Tx = {
   categories?: { name: string } | null;
 };
 
-type MemberIncome = Partial<IncomeInfo> & { name: string };
+type MemberIncome = Partial<IncomeInfo> & { name: string; is_owner: boolean };
 
 type Props = {
   userId: string;
@@ -238,7 +238,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       supabase.from("transactions")
         .select("amount, date, description, merchant, category_id, categories(name)")
         .eq("user_id", userId).gte("date", historyFrom).lte("date", periodTo),
-      supabase.from("family_members").select(`name, ${INCOME_COLS}`).eq("user_id", userId),
+      supabase.from("family_members").select(`name, is_owner, ${INCOME_COLS}`).eq("user_id", userId),
     ]).then(([profileRes, recRes, periodTxRes, historyTxRes, memRes]) => {
       const pStart = profileRes.data?.period_starting_balance_date;
       setStartingBalance(
@@ -311,7 +311,9 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 
     const estimate = estimateMonthlyExpenses(fixedTotal, variableMonthlyTotals, sameMonthLastYearTotal);
     const specePreviste = estimate.fixedTotal + estimate.variableAvg;
-    const entratePreviste = aggregateExpectedIncome(ownerIncome, membersIncome, calMonth + 1);
+    // Se il titolare si e' identificato come Componente, il suo reddito e' li' (evita di sommarlo due volte).
+    const hasOwnerMember = membersIncome.some(m => m.is_owner);
+    const entratePreviste = aggregateExpectedIncome(hasOwnerMember ? null : ownerIncome, membersIncome, calMonth + 1);
     const saldoFineMeseStimato = entratePreviste - specePreviste;
 
     return {
@@ -366,11 +368,12 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   }
 
   const periodStartLabel = new Date(periodFrom + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+  const hasOwnerMember = membersIncome.some(m => m.is_owner);
   const incomeSources = [
-    { name: "Tu", amount: hasIncomeInfo(ownerIncome) ? normalizeMonthlyIncome(ownerIncome, calMonth) : 0 },
+    ...(hasOwnerMember ? [] : [{ name: "Tu", amount: hasIncomeInfo(ownerIncome) ? normalizeMonthlyIncome(ownerIncome, calMonth) : 0 }]),
     ...membersIncome
       .filter(m => hasIncomeInfo(m))
-      .map(m => ({ name: m.name, amount: normalizeMonthlyIncome(m, calMonth) })),
+      .map(m => ({ name: m.is_owner ? `${m.name} (tu)` : m.name, amount: normalizeMonthlyIncome(m, calMonth) })),
   ].filter(s => s.amount > 0);
 
   return (

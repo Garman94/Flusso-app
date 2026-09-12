@@ -27,6 +27,13 @@ async function AccountContent() {
     .eq("id", data.claims.sub)
     .single();
 
+  const { data: ownerMember } = await supabase
+    .from("family_members")
+    .select("name")
+    .eq("user_id", data.claims.sub)
+    .eq("is_owner", true)
+    .maybeSingle();
+
   const plan = await getEffectivePlan(profile?.plan ?? "free");
   const checkoutUrl = process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL ?? null;
 
@@ -62,19 +69,29 @@ async function AccountContent() {
         hasSubscription={!!profile?.lemon_squeezy_subscription_id}
       />
 
-      {/* Owner income */}
+      {/* Owner income — nascosto se il titolare si e' identificato come Componente */}
       <div data-tour="account-income">
-      <IncomeSection
-        ownerName={profile?.full_name ?? ""}
-        initial={{
-          income_type: profile?.income_type ?? null,
-          monthly_income: profile?.monthly_income ?? null,
-          income_frequency: profile?.income_frequency ?? null,
-          income_payday: profile?.income_payday ?? null,
-          income_variability: profile?.income_variability ?? null,
-          active_months: profile?.active_months ?? [],
-        }}
-      />
+      {ownerMember ? (
+        <div className="rounded-xl border p-6 flex flex-col gap-2">
+          <h2 className="font-semibold">Il tuo reddito</h2>
+          <p className="text-sm text-muted-foreground">
+            Ti sei identificato come <strong className="text-foreground">{ownerMember.name}</strong> tra i
+            Componenti qui sotto: gestisci il tuo reddito da lì invece che qui, per evitare di contarlo due volte.
+          </p>
+        </div>
+      ) : (
+        <IncomeSection
+          ownerName={profile?.full_name ?? ""}
+          initial={{
+            income_type: profile?.income_type ?? null,
+            monthly_income: profile?.monthly_income ?? null,
+            income_frequency: profile?.income_frequency ?? null,
+            income_payday: profile?.income_payday ?? null,
+            income_variability: profile?.income_variability ?? null,
+            active_months: profile?.active_months ?? [],
+          }}
+        />
+      )}
       </div>
 
       {/* Family members */}

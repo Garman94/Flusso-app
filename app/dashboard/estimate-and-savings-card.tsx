@@ -44,7 +44,7 @@ export function EstimateAndSavingsCard({ userId, periodFrom, periodTo }: Props) 
   const [items, setItems] = useState<RecurringRow[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [ownerIncome, setOwnerIncome] = useState<IncomeInfo | null>(null);
-  const [membersIncome, setMembersIncome] = useState<Partial<IncomeInfo>[]>([]);
+  const [membersIncome, setMembersIncome] = useState<(Partial<IncomeInfo> & { is_owner?: boolean })[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -63,12 +63,12 @@ export function EstimateAndSavingsCard({ userId, periodFrom, periodTo }: Props) 
         .select("amount, date, description, merchant, category_id, categories(name)")
         .eq("user_id", userId).gte("date", historyFrom).lte("date", periodTo),
       supabase.from("profiles").select(INCOME_COLS).eq("id", userId).single(),
-      supabase.from("family_members").select(INCOME_COLS).eq("user_id", userId),
+      supabase.from("family_members").select(`is_owner, ${INCOME_COLS}`).eq("user_id", userId),
     ]).then(([recRes, txRes, profRes, memRes]) => {
       setItems((recRes.data ?? []) as RecurringRow[]);
       setTxs((txRes.data ?? []) as unknown as Tx[]);
       setOwnerIncome((profRes.data ?? null) as IncomeInfo | null);
-      setMembersIncome((memRes.data ?? []) as Partial<IncomeInfo>[]);
+      setMembersIncome((memRes.data ?? []) as (Partial<IncomeInfo> & { is_owner?: boolean })[]);
       setLoading(false);
     });
   }, [userId, periodTo]);
@@ -113,7 +113,9 @@ export function EstimateAndSavingsCard({ userId, periodFrom, periodTo }: Props) 
     const actualIncomeThisPeriod = txs
       .filter(t => t.date >= periodFrom && t.date <= periodTo && Number(t.amount) > 0 && !isTransfer(t))
       .reduce((s, t) => s + Number(t.amount), 0);
-    const anagraficaIncome = aggregateExpectedIncome(ownerIncome, membersIncome, calMonth + 1);
+    // Se il titolare si e' identificato come Componente, il suo reddito e' li' (evita di sommarlo due volte).
+    const hasOwnerMember = membersIncome.some(m => m.is_owner);
+    const anagraficaIncome = aggregateExpectedIncome(hasOwnerMember ? null : ownerIncome, membersIncome, calMonth + 1);
     const expectedIncome = Math.max(recurringIncomeTotal, actualIncomeThisPeriod, anagraficaIncome);
 
     const savings = suggestMonthlySavings(expectedIncome, fixedTotal, estimate.variableAvg);

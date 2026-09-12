@@ -154,6 +154,7 @@ id uuid PK
 user_id uuid
 name text
 color text     -- hex color (#6366f1 default)
+is_owner boolean default false  -- migration 030: questo componente rappresenta il titolare; max 1 per user_id (unique index parziale)
 created_at timestamptz
 -- Anagrafica reddito (migration 023, tutti NULL di default; stessi campi anche su profiles):
 income_type text        -- 'employee' | 'freelance' | 'seasonal' | 'none'
@@ -163,6 +164,7 @@ income_payday int        -- giorno del mese di accredito (solo employee)
 income_variability text  -- 'low' | 'medium' | 'high' (solo freelance)
 active_months int[]      -- mesi lavorati 1-12 (solo seasonal), default '{}'
 ```
+> Se un componente ha `is_owner = true`, il reddito del titolare (`profiles.income_*`) viene **ignorato** in `aggregateExpectedIncome` (vedi `EstimateAndSavingsCard`/`BalanceHeroCard`) per non sommarlo due volte — quel componente diventa l'unica fonte. In Account, la sezione "Il tuo reddito" si nasconde e rimanda al componente.
 
 ### `import_logs`
 Hash dei file Excel importati, per rilevare lo stesso file caricato due volte (migration 024). Distinta da `excel_uploads` (rate-limit piano free).
@@ -381,8 +383,8 @@ Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date`
 ### Account (`/dashboard/account`)
 - Gestione profilo e cambio nome
 - Piano di abbonamento + riscatto coupon
-- **Il tuo reddito** (`IncomeSection` + `income-action.ts`): wizard reddito per il titolare, salva su `profiles`
-- **Componenti famiglia** (`FamilyMembersSection`): CRUD (nome + colore + **modifica**) e, per ogni membro, wizard reddito (`components/income-wizard.tsx`, 3 step: tipo → dettagli → riepilogo) salvato su `family_members`. Il reddito aggregato (titolare + membri) alza `expectedIncome` in `EstimateAndSavingsCard` (via `aggregateExpectedIncome` in `lib/calculations.ts`)
+- **Il tuo reddito** (`IncomeSection` + `income-action.ts`): wizard reddito per il titolare, salva su `profiles` — **nascosto** (sostituito da una nota) se esiste un componente con `is_owner = true`
+- **Componenti famiglia** (`FamilyMembersSection`): CRUD (nome + colore + **modifica**) e, per ogni membro, wizard reddito (`components/income-wizard.tsx`, 3 step: tipo → dettagli → riepilogo) salvato su `family_members`. Checkbox "Sei tu" marca il componente come `is_owner` (uno solo per utente, badge "tu" in lista). Il reddito aggregato (titolare + membri, o solo membri se uno è `is_owner`) alza `expectedIncome` in `EstimateAndSavingsCard`/`BalanceHeroCard` (via `aggregateExpectedIncome` in `lib/calculations.ts`)
 - **Modalità smanettone** (`PowerUserToggle`): aggiorna `profiles.power_user`; sblocca "Regole" in Transazioni
 - **Chat feedback** (`FeedbackChat`): chat diretta con Marco; Invio per inviare; salva in `feedback_messages`
 - **Annulla abbonamento** (`CancelSubscriptionButton`): visibile solo per piano `premium` con `lemon_squeezy_subscription_id` valorizzato (il piano `founder` è pagamento unico, nulla da annullare). Conferma via modale → `POST /api/subscription/cancel` → chiama l'API Lemon Squeezy (`DELETE /v1/subscriptions/:id`) e riporta il piano a `free` immediatamente lato DB; il webhook `subscription_cancelled` è idempotente e conferma la stessa transizione
@@ -447,10 +449,11 @@ Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valo
 
 ## Componenti famiglia
 
-1. Crea i "Componenti" in Account (nome + colore) — **aggiungi anche te stesso** come primo componente: da quando esiste almeno un componente, i picker (import Excel, salvadanai condivisi) non offrono più una card/opzione "Io" di default
-2. All'import Excel, seleziona il membro che ha fatto le spese
-3. Transazioni mostrano badge colorato con il nome
-4. `transactions.member_id FK family_members(id) ON DELETE SET NULL` — `NULL` resta valido per le transazioni storiche/degli utenti senza componenti, ma non è più selezionabile esplicitamente una volta aggiunto almeno un componente
+1. Crea i "Componenti" in Account (nome + colore) — **aggiungi anche te stesso** come primo componente e spunta "Sei tu": da quando esiste almeno un componente, i picker (import Excel, salvadanai condivisi) non offrono più una card/opzione "Io" di default
+2. Il componente marcato "Sei tu" (`is_owner`) diventa l'unica fonte per il reddito del titolare: la sezione "Il tuo reddito" in Account si nasconde e rimanda a lui, evitando di contarlo due volte in `aggregateExpectedIncome`
+3. All'import Excel, seleziona il membro che ha fatto le spese
+4. Transazioni mostrano badge colorato con il nome
+5. `transactions.member_id FK family_members(id) ON DELETE SET NULL` — `NULL` resta valido per le transazioni storiche/degli utenti senza componenti, ma non è più selezionabile esplicitamente una volta aggiunto almeno un componente
 
 ---
 
@@ -533,6 +536,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `027_goals_wizard.sql` | `goals.savings_pot_id` / `monthly_contribution`; tabella `goal_contributions` + trigger `apply_goal_contribution` |
 | `028_admin_notifications.sql` | `admin_notifications` + `notification_dismissals` + 3 notifiche di default |
 | `029_demo_savings_seed.sql` | `reseed_demo()` aggiornata: 2 salvadanai demo + goal collegato |
+| `030_family_member_owner.sql` | `family_members.is_owner` + unique index parziale (max 1 proprietario per utente) |
 
 ---
 

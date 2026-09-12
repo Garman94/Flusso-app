@@ -11,6 +11,7 @@ type FamilyMember = {
   id: string;
   name: string;
   color: string;
+  is_owner: boolean;
 } & Partial<IncomeInfo>;
 
 const PRESET_COLORS = [
@@ -18,7 +19,7 @@ const PRESET_COLORS = [
   "#3b82f6", "#a855f7", "#eab308", "#14b8a6",
 ];
 
-const INCOME_COLS = "id, name, color, income_type, monthly_income, income_frequency, income_payday, income_variability, active_months";
+const INCOME_COLS = "id, name, color, is_owner, income_type, monthly_income, income_frequency, income_payday, income_variability, active_months";
 
 const emptyIncome: IncomeInfo = {
   income_type: null, monthly_income: null, income_frequency: null,
@@ -32,6 +33,7 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [color, setColor] = useState(PRESET_COLORS[0]);
+  const [isOwner, setIsOwner] = useState(false);
   const [income, setIncome] = useState<IncomeInfo>(emptyIncome);
   const [showIncomeWizard, setShowIncomeWizard] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -56,6 +58,7 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
     setEditingId(null);
     setName("");
     setColor(PRESET_COLORS[0]);
+    setIsOwner(false);
     setIncome(emptyIncome);
     setShowIncomeWizard(false);
   }
@@ -64,6 +67,7 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
     setEditingId(m.id);
     setName(m.name);
     setColor(m.color);
+    setIsOwner(m.is_owner);
     setIncome({
       income_type: m.income_type ?? null,
       monthly_income: m.monthly_income ?? null,
@@ -81,7 +85,14 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
     if (demoGuard()) return;
     setSaving(true);
     const supabase = createClient();
-    const payload = { name: name.trim(), color, ...income };
+    const payload = { name: name.trim(), color, is_owner: isOwner, ...income };
+
+    // Un solo componente "proprietario" per utente: se marchi questo, togli il flag agli altri prima.
+    if (isOwner) {
+      let clear = supabase.from("family_members").update({ is_owner: false }).eq("user_id", userId).eq("is_owner", true);
+      if (editingId) clear = clear.neq("id", editingId);
+      await clear;
+    }
 
     if (editingId) {
       const { data, error } = await supabase
@@ -92,7 +103,7 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
         .single();
       if (error) toast.error("Errore nel salvataggio.");
       else {
-        setMembers(prev => prev.map(m => (m.id === editingId ? (data as FamilyMember) : m)));
+        setMembers(prev => prev.map(m => (m.id === editingId ? (data as FamilyMember) : (isOwner ? { ...m, is_owner: false } : m))));
         toast.success("Componente aggiornato!");
         resetForm();
       }
@@ -104,7 +115,7 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
         .single();
       if (error) toast.error("Errore nel salvataggio.");
       else {
-        setMembers(prev => [...prev, data as FamilyMember]);
+        setMembers(prev => [...(isOwner ? prev.map(m => ({ ...m, is_owner: false })) : prev), data as FamilyMember]);
         toast.success(`"${data.name}" aggiunto!`);
         resetForm();
       }
@@ -151,9 +162,10 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
       </div>
 
       <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-        💡 Aggiungi anche <strong>te stesso</strong> come primo componente (es. il tuo nome): da quando
-        esiste almeno un componente, l&apos;import di transazioni e i salvadanai condivisi chiedono sempre
-        di scegliere una persona precisa, senza più un &quot;Io&quot; generico.
+        💡 Aggiungi anche <strong>te stesso</strong> come primo componente e spunta &quot;Sei tu&quot;: da
+        quando esiste almeno un componente, l&apos;import di transazioni e i salvadanai condivisi chiedono
+        sempre di scegliere una persona precisa, senza più un &quot;Io&quot; generico — e il tuo reddito si
+        gestisce da lì invece che nella sezione &quot;Il tuo reddito&quot; qui sopra.
       </div>
 
       {showForm && (
@@ -191,6 +203,21 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
               />
             </div>
           </div>
+
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isOwner}
+              onChange={e => setIsOwner(e.target.checked)}
+              className="mt-0.5 accent-primary"
+            />
+            <span>
+              <span className="font-medium">Sei tu</span> (il proprietario dell&apos;account)
+              <span className="block text-xs text-muted-foreground">
+                Il reddito si gestisce da qui invece che in &quot;Il tuo reddito&quot;. Solo un componente può esserlo.
+              </span>
+            </span>
+          </label>
 
           {/* Reddito */}
           <div className="flex flex-col gap-2">
@@ -256,6 +283,11 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
                 <span className="text-sm font-medium">{m.name}</span>
+                {m.is_owner && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">
+                    tu
+                  </span>
+                )}
                 {incomeChip(m) && (
                   <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                     {incomeChip(m)}
