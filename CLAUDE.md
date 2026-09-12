@@ -178,6 +178,13 @@ member_id uuid FK family_members NULL
 imported_at timestamptz
 ```
 
+### `variable_expense_categories`
+Categorie che l'utente considera "spese variabili" ai fini del range min-max in dashboard (migration 031). Se non ci sono righe per l'utente, i client (`BalanceHeroCard`, pannello Smart "Spese variabili") usano un default di sistema: Alimentari, Abbigliamento, Tecnologia, Trasporti, Intrattenimento.
+```
+id uuid PK · user_id uuid FK auth.users · category_id uuid FK categories · created_at timestamptz
+unique(user_id, category_id)
+```
+
 ### `goals`
 Obiettivi di risparmio.
 ```
@@ -332,12 +339,12 @@ Componente: `app/onboarding/page.tsx`
 - **Breakdown macro-categorie** con accordion per categoria
 - **Card saldo unificata** (`BalanceHeroCard`, `data-tour="hero"`) — al primo utilizzo (e da "Modifica") chiede il saldo che l'utente ha OGGI sul conto e lo riporta a inizio periodo sottraendo le transazioni già registrate (`period_starting_balance`/`_date`). Schema a 3 righe, ogni voce è un dropdown che mostra le transazioni (o il calcolo) sottostanti — utile per individuare errori/duplicati:
   - **Riga 1 (effettivi, in grande)**: Saldo attuale stimato (`starting + somma transazioni reali fino a oggi`, nero, dropdown = lista movimenti) · Spese affrontate (rosso, dropdown = lista spese) · Entrate effettive (verde, dropdown = lista entrate) — le ultime due sul periodo corrente, esclusi i trasferimenti (`spostamenti`/`salvadanaio`)
-  - **Riga 2 (previsti, più piccola)**: Saldo fine mese stimato (= entrate da stipendio previste − spese previste, dropdown = scomposizione formula) · Spese previste (rosso, spese fisse + media spese variabili come in `EstimateAndSavingsCard`, dropdown = fisse+variabili+totale) · Spese variabili (rosso, dropdown = totale per ciascuno degli ultimi 3 mesi + stesso mese anno scorso + range stimato) · Entrate da stipendio previste (verde, da anagrafica reddito titolare+componenti, mese corrente, dropdown = importo per persona)
-  - **Riga 3 (differenze)**: Differenza saldo/spese/entrate = previsto − effettivo per ciascuna coppia di voci di riga 1/2, colore verde/rosso in base al segno, dropdown = i due valori a confronto
+  - **Riga 2 (previsti, più piccola)**: Saldo fine mese stimato (range min-max: entrate da stipendio previste − spese previste, dropdown = scomposizione formula) · Spese previste (range min-max: spese fisse + accantonamento mensile + min-max delle categorie/bollette stagionali scelte in Smart → Spese variabili, dropdown = elenco completo con link a Smart) · Entrate da stipendio previste (verde, singolo numero, da anagrafica reddito titolare+componenti, mese corrente, dropdown = importo per persona)
+  - **Riga 3 (differenze)**: Differenza saldo/spese/entrate = previsto (punto medio del range per saldo/spese) − effettivo per ciascuna coppia di voci di riga 1/2, colore verde/rosso in base al segno, dropdown = i due valori a confronto
   - Sotto: **Salvadanai** separato in fondo (totale = `piggy_balance`, tenuto in sync col trigger, link a `/dashboard/salvadanai`)
-  - Rimossi rispetto alla versione precedente: timeline SVG giornaliera e badge "sei in linea" (ridondanti con la riga differenze)
+  - Rimossi rispetto a versioni precedenti: timeline SVG giornaliera, badge "sei in linea" e voce "Spese variabili" a sé stante (assorbita nel range di "Spese previste", gestibile in Smart)
 - **Banner spese scadute** (`OverdueExpensesBanner`) — spese `fissa` con `due_day` passato senza pagamento confermato né transazione auto-riconosciuta; bottone "Segna come pagata" scrive su `payment_confirmations` e aggiorna `last_paid_date`/`payment_status`
-- **Stima spese mensili + suggerimento risparmio** (`EstimateAndSavingsCard`) — spese fisse (certe) + range min/max spese variabili (media ultimi 3 mesi ± 0.5×dev.std, peso 40% sullo stesso mese anno scorso se disponibile); risparmio suggerito = 80% del potenziale (entrate attese − fisse − variabili stimate), 20% di cuscinetto
+- **Stima spese mensili + suggerimento risparmio** (`EstimateAndSavingsCard`) — spese fisse (certe) + range min/max spese variabili (media ultimi 3 mesi ± 0.5×dev.std, peso 40% sullo stesso mese anno scorso se disponibile); risparmio suggerito = 80% del potenziale (entrate attese − fisse − variabili stimate), 20% di cuscinetto. **Nota**: usa ancora la vecchia stima media±dev.std, non allineata al nuovo range min-max per categoria di `BalanceHeroCard` — da armonizzare in un task successivo
 - **Card Spese Ricorrenti** (`RecurringDashboardCard`) — accordion per categoria, previsto vs speso, delta colorato
 - **Bottone "Mesi precedenti"** → apre `MonthReportModal`
 - **Campanella 🔔** (`NotificationsBell`) nella top-nav — vedi sezione "Modalità demo"/schema `admin_notifications`
@@ -369,7 +376,7 @@ Griglia di salvadanai (`savings_pots`). Card: emoji+nome, saldo, barra verso `ta
 
 ### Smart (`/dashboard/smart`)
 - **Piano free**: schermata di blocco 🔒 + tour `freePreview` che spiega le feature e invita all'upgrade
-- **Piano premium/founder**: accesso completo alle 4 tab (Previsioni, Ricorrenti, Obiettivi, Accantonamenti)
+- **Piano premium/founder**: accesso completo alle 5 tab (Previsioni, Ricorrenti, Obiettivi, Accantonamenti, Spese variabili)
 
 #### Tab: Ricorrenti
 Sistema di riconoscimento automatico transazioni con `match_keywords`, supporto `historical_avg` per variabilità stagionale (luce/gas), accordion per categoria nel report, template rapidi.
@@ -379,6 +386,13 @@ Wizard 6 step (`smart-page-client.tsx`, `view === "add-goal"`): nome/icona → i
 
 #### Tab: Accantonamenti
 Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date` e `saving_start_date` su `recurring_expenses`. Banner "fase di recupero" quando la quota mensile è a regime. "Segna come pagata" con "scala dal salvadanaio" ora inserisce un `savings_transactions` withdraw sul primo pot dell'utente (fallback: update diretto di `piggy_balance` se non esistono pot).
+
+#### Tab: Spese variabili
+File a sé (`variable-expenses-panel.tsx`, non inline in `smart-page-client.tsx` come le altre tab). Due parti:
+- **Picker categorie**: checkbox su tutte le categorie utente+sistema, persistito in `variable_expense_categories`; default (nessuna riga salvata) = Alimentari, Abbigliamento, Tecnologia, Trasporti, Intrattenimento.
+- **Bollette stagionali automatiche**: le voci `recurring_expenses` con `matching_strategy = 'historical_avg'` (**esclusi** gli accantonamenti, cioè quelle con `next_due_date`/`saving_start_date` valorizzati, per non contarle due volte) compaiono qui senza bisogno di configurazione — fetch mirato per parola chiave (`description`/`merchant` `ilike`) su tutta la storia, raggruppato per anno sullo stesso mese calendariale (`seasonalBillRange` in `lib/calculations.ts`).
+- **Monitoraggio**: per ogni categoria/bolletta, spesa reale del mese in corso vs range min-max osservato (badge verde/rosso/blu = nel range / sopra / sotto).
+- Il totale mostrato (accantonamento mensile via `aggregateSinkingFunds` + range categorie via `minMaxOverMonths` sugli ultimi 6 mesi + range bollette stagionali) è lo stesso calcolo (`combineVariableExpenses`) usato per "Spese previste" in `BalanceHeroCard`.
 
 ### Account (`/dashboard/account`)
 - Gestione profilo e cambio nome
@@ -435,12 +449,13 @@ hero, breakdown, month-report-btn          dashboard
 nav-transazioni, nav-smart                 nav
 tx-nav, tx-summary, tx-filters, tx-add    transazioni
 smart-ricorrenti, smart-obiettivi,         smart (cover)
-smart-previsioni, smart-accantonamenti
+smart-previsioni, smart-accantonamenti,
+smart-variabili
 account-income, account-family,            account
 account-power-user, account-feedback
 ```
 
-> Versioni tour: `/dashboard` v1.3 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v1.1 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.3.
+> Versioni tour: `/dashboard` v1.7 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v1.2 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.4. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`.
 
 ### LocalStorage
 Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valore diverso dalla versione in `PAGE_TOURS` = aggiornamento.
@@ -537,6 +552,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `028_admin_notifications.sql` | `admin_notifications` + `notification_dismissals` + 3 notifiche di default |
 | `029_demo_savings_seed.sql` | `reseed_demo()` aggiornata: 2 salvadanai demo + goal collegato |
 | `030_family_member_owner.sql` | `family_members.is_owner` + unique index parziale (max 1 proprietario per utente) |
+| `031_variable_expense_categories.sql` | Tabella `variable_expense_categories` (categorie scelte per il range spese variabili in dashboard) |
 
 ---
 

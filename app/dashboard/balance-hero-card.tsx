@@ -6,19 +6,22 @@ import { createClient } from "@/lib/supabase/client";
 import {
   formatEuro,
   recurringMonthlyEquivalent,
-  txMatchesKeywords,
-  estimateMonthlyExpenses,
   aggregateExpectedIncome,
   hasIncomeInfo,
   normalizeMonthlyIncome,
+  minMaxOverMonths,
+  seasonalBillRange,
+  combineVariableExpenses,
+  aggregateSinkingFunds,
   type IncomeInfo,
-  type MonthlyExpenseEstimate,
+  type SinkingFundInput,
 } from "@/lib/calculations";
 import { updateStartingBalance } from "./saldo-action";
 import { toast } from "sonner";
 
 const INCOME_COLS = "income_type, monthly_income, income_frequency, income_payday, income_variability, active_months";
 const TRANSFER_CATS = new Set(["spostamenti", "salvadanaio"]);
+const DEFAULT_VARIABLE_CATEGORY_NAMES = ["Alimentari", "Abbigliamento", "Tecnologia", "Trasporti", "Intrattenimento"];
 
 type RecurringRow = {
   id: string;
@@ -30,6 +33,10 @@ type RecurringRow = {
   amount_max: number | null;
   match_keywords: string[];
   category_id: string | null;
+  matching_strategy: string;
+  secondary_name: string | null;
+  next_due_date: string | null;
+  saving_start_date: string | null;
 };
 
 type Tx = {
@@ -39,6 +46,7 @@ type Tx = {
 };
 
 type MemberIncome = Partial<IncomeInfo> & { name: string; is_owner: boolean };
+type CategoryRow = { id: string; name: string; icon: string };
 
 type Props = {
   userId: string;
@@ -49,7 +57,7 @@ type Props = {
 
 type ExpandKey =
   | "saldo" | "spese" | "entrate"
-  | "saldo-previsto" | "spese-previste" | "spese-variabili" | "entrate-previste"
+  | "saldo-previsto" | "spese-previste" | "entrate-previste"
   | "delta-saldo" | "delta-spese" | "delta-entrate";
 
 function todayIso() {
@@ -63,6 +71,14 @@ function monthBounds(year: number, month: number) {
 }
 
 const isTransfer = (t: Tx) => TRANSFER_CATS.has(t.categories?.name?.toLowerCase() ?? "");
+
+function effectiveKeywords(item: RecurringRow): string[] {
+  const kws = [...item.match_keywords];
+  if (item.secondary_name && !kws.some(k => k.toLowerCase() === item.secondary_name!.toLowerCase())) {
+    kws.push(item.secondary_name);
+  }
+  return kws;
+}
 
 // ─── Setup: primo utilizzo / modifica ───────────────────────────────────────
 // L'utente inserisce il saldo che ha OGGI sul conto. Per ancorare la proiezione
@@ -208,6 +224,9 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   const [items, setItems] = useState<RecurringRow[]>([]);
   const [periodTxs, setPeriodTxs] = useState<Tx[]>([]);
   const [historyTxs, setHistoryTxs] = useState<Tx[]>([]);
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [variableCategoryIds, setVariableCategoryIds] = useState<string[]>([]);
+  const [seasonalHistory, setSeasonalHistory] = useState<Record<string, Tx[]>>({});
   const [ownerIncome, setOwnerIncome] = useState<Partial<IncomeInfo> | null>(null);
   const [membersIncome, setMembersIncome] = useState<MemberIncome[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -221,13 +240,13 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   useEffect(() => {
     const supabase = createClient();
     const now = new Date();
-    // Storico necessario per la stima spese variabili: ultimi 3 mesi + stesso mese anno scorso.
+    // Storico necessario per il min-max delle categorie variabili: ultimi 6 mesi.
     const historyFrom = new Date(now.getFullYear() - 1, now.getMonth(), 1).toISOString().split("T")[0];
 
     Promise.all([
       supabase.from("profiles").select(`period_starting_balance, period_starting_balance_date, ${INCOME_COLS}`).eq("id", userId).single(),
       supabase.from("recurring_expenses")
-        .select("id, name, tipologia, frequency, custom_days, amount, amount_max, match_keywords, category_id")
+        .select("id, name, tipologia, frequency, custom_days, amount, amount_max, match_keywords, category_id, matching_strategy, secondary_name, next_due_date, saving_start_date")
         .eq("user_id", userId),
       // Query filtrate per data: senza bound si rischia il limite di default di 1000 righe
       // di Supabase, che senza un ordinamento esplicito puo' tagliare fuori proprio le
@@ -239,7 +258,9 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
         .select("amount, date, description, merchant, category_id, categories(name)")
         .eq("user_id", userId).gte("date", historyFrom).lte("date", periodTo),
       supabase.from("family_members").select(`name, is_owner, ${INCOME_COLS}`).eq("user_id", userId),
-    ]).then(([profileRes, recRes, periodTxRes, historyTxRes, memRes]) => {
+      supabase.from("categories").select("id, name, icon").or(`user_id.eq.${userId},user_id.is.null`),
+      supabase.from("variable_expense_categories").select("category_id").eq("user_id", userId),
+    ]).then(([profileRes, recRes, periodTxRes, historyTxRes, memRes, catRes, varCatRes]) => {
       const pStart = profileRes.data?.period_starting_balance_date;
       setStartingBalance(
         pStart === periodFrom && profileRes.data?.period_starting_balance != null
@@ -251,9 +272,41 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       setPeriodTxs((periodTxRes.data ?? []) as unknown as Tx[]);
       setHistoryTxs((historyTxRes.data ?? []) as unknown as Tx[]);
       setMembersIncome((memRes.data ?? []) as MemberIncome[]);
+      setCategories((catRes.data ?? []) as CategoryRow[]);
+      setVariableCategoryIds((varCatRes.data ?? []).map(r => r.category_id));
       setLoading(false);
     });
   }, [userId, periodFrom, periodTo, refreshKey]);
+
+  // Bollette stagionali (voci Ricorrenti con "Media storica"): fetch mirato per parola
+  // chiave, non la finestra "historyTxs" — serve storico su piu' anni per lo stesso mese,
+  // e una query per keyword resta piccola indipendentemente da quante transazioni totali
+  // ha l'utente (a differenza di un fetch ampio, che rischierebbe il limite di 1000 righe).
+  // Esclude le voci che sono anche accantonamenti (next_due_date+saving_start_date):
+  // altrimenti verrebbero contate sia qui sia nella quota mensile di aggregateSinkingFunds.
+  const seasonalItems = useMemo(
+    () => items.filter(it => it.matching_strategy === "historical_avg" && !(it.next_due_date && it.saving_start_date)),
+    [items]
+  );
+  useEffect(() => {
+    if (seasonalItems.length === 0) { setSeasonalHistory({}); return; }
+    const supabase = createClient();
+    let cancelled = false;
+    Promise.all(seasonalItems.map(async item => {
+      const kws = effectiveKeywords(item).map(k => k.trim()).filter(Boolean);
+      if (kws.length === 0) return [item.id, []] as const;
+      const orFilter = kws.flatMap(k => [`description.ilike.%${k}%`, `merchant.ilike.%${k}%`]).join(",");
+      const { data } = await supabase.from("transactions")
+        .select("date, amount")
+        .eq("user_id", userId)
+        .lt("amount", 0)
+        .or(orFilter);
+      return [item.id, (data ?? []) as Tx[]] as const;
+    })).then(entries => {
+      if (!cancelled) setSeasonalHistory(Object.fromEntries(entries));
+    });
+    return () => { cancelled = true; };
+  }, [seasonalItems, userId]);
 
   const iso = todayIso();
 
@@ -279,54 +332,83 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 
     const fixedItems = items.filter(it => it.tipologia === "fissa");
     const fixedTotal = fixedItems.reduce((s, it) => s + recurringMonthlyEquivalent(it), 0);
-    const isFixedMatch = (t: Tx) => fixedItems.some(it =>
-      it.match_keywords.length > 0 ? txMatchesKeywords(t, it.match_keywords) : (it.category_id && it.category_id === t.category_id)
-    );
 
-    function variableTotalForMonth(year: number, month: number): { total: number; hasData: boolean } {
-      const { from, to } = monthBounds(year, month);
-      const monthTxs = historyTxs.filter(t => t.date >= from && t.date <= to);
-      const variable = monthTxs.filter(t => Number(t.amount) < 0 && !isTransfer(t) && !isFixedMatch(t));
-      return {
-        total: variable.reduce((s, t) => s + Math.abs(Number(t.amount)), 0),
-        hasData: monthTxs.length > 0,
-      };
-    }
+    // ── Spese variabili come min-max: accantonamento + categorie + bollette stagionali ──
+    const defaultCategoryIds = categories.filter(c => DEFAULT_VARIABLE_CATEGORY_NAMES.includes(c.name)).map(c => c.id);
+    const selectedCategoryIds = variableCategoryIds.length > 0 ? variableCategoryIds : defaultCategoryIds;
 
-    const variableMonthlyTotals: number[] = [];
-    const variableMonthsDetail: { label: string; total: number }[] = [];
-    for (let i = 1; i <= 3; i++) {
-      const d = new Date(calYear, calMonth - i, 1);
-      const r = variableTotalForMonth(d.getFullYear(), d.getMonth());
-      if (r.hasData) {
-        variableMonthlyTotals.push(r.total);
-        variableMonthsDetail.push({ label: d.toLocaleDateString("it-IT", { month: "long", year: "numeric" }), total: r.total });
+    const categoryBreakdown = selectedCategoryIds
+      .map(id => categories.find(c => c.id === id))
+      .filter((c): c is CategoryRow => !!c)
+      .map(cat => {
+        const monthlyTotals: number[] = [];
+        for (let i = 1; i <= 6; i++) {
+          const d = new Date(calYear, calMonth - i, 1);
+          const { from, to } = monthBounds(d.getFullYear(), d.getMonth());
+          const total = historyTxs
+            .filter(t => t.category_id === cat.id && t.date >= from && t.date <= to && Number(t.amount) < 0 && !isTransfer(t))
+            .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+          monthlyTotals.push(total);
+        }
+        return { category: cat, range: minMaxOverMonths(monthlyTotals) };
+      });
+
+    const seasonalBreakdown = seasonalItems.map(item => {
+      const history = seasonalHistory[item.id] ?? [];
+      const byYear = new Map<number, number>();
+      for (const t of history) {
+        const d = new Date(t.date + "T00:00:00");
+        if (d.getFullYear() === calYear && d.getMonth() === calMonth) continue; // esclude il mese in corso
+        if (d.getMonth() !== calMonth) continue;
+        byYear.set(d.getFullYear(), (byYear.get(d.getFullYear()) ?? 0) + Math.abs(Number(t.amount)));
       }
-    }
-    const lastYear = variableTotalForMonth(calYear - 1, calMonth);
-    const sameMonthLastYearTotal = lastYear.hasData ? lastYear.total : null;
-    const sameMonthLastYearLabel = lastYear.hasData
-      ? new Date(calYear - 1, calMonth, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" })
-      : null;
+      return { item, range: seasonalBillRange(Array.from(byYear.values())) };
+    });
 
-    const estimate = estimateMonthlyExpenses(fixedTotal, variableMonthlyTotals, sameMonthLastYearTotal);
-    const specePreviste = estimate.fixedTotal + estimate.variableAvg;
+    const sinkingInputs: SinkingFundInput[] = items
+      .filter(it => it.next_due_date && it.saving_start_date)
+      .map(it => ({
+        id: it.id,
+        name: it.name,
+        amount_per_cycle: it.tipologia === "variabile" && it.amount_max != null
+          ? (it.amount + it.amount_max) / 2
+          : it.amount,
+        saving_start_date: it.saving_start_date!,
+        next_due_date: it.next_due_date!,
+      }));
+    const sinkingSummary = aggregateSinkingFunds(sinkingInputs, piggyBalance);
+
+    const variableRange = combineVariableExpenses({
+      sinkingFundMonthly: sinkingSummary.this_month_total,
+      categoryRanges: categoryBreakdown.map(c => c.range),
+      seasonalRanges: seasonalBreakdown.map(s => s.range),
+    });
+
+    const speseMin = fixedTotal + variableRange.min;
+    const speseMax = fixedTotal + variableRange.max;
+
     // Se il titolare si e' identificato come Componente, il suo reddito e' li' (evita di sommarlo due volte).
     const hasOwnerMember = membersIncome.some(m => m.is_owner);
     const entratePreviste = aggregateExpectedIncome(hasOwnerMember ? null : ownerIncome, membersIncome, calMonth + 1);
-    const saldoFineMeseStimato = entratePreviste - specePreviste;
+    const saldoMin = entratePreviste - speseMax;
+    const saldoMax = entratePreviste - speseMin;
+    const speseMid = (speseMin + speseMax) / 2;
+    const saldoMid = (saldoMin + saldoMax) / 2;
 
     return {
       income, expensesAbs, incomeTxs, expenseTxs,
-      actualToday, estimate, fixedItems,
-      variableMonthsDetail, sameMonthLastYearTotal, sameMonthLastYearLabel,
-      specePreviste, entratePreviste, saldoFineMeseStimato,
-      deltaSaldo: saldoFineMeseStimato - actualToday,
-      deltaSpese: specePreviste - expensesAbs,
+      actualToday, fixedTotal, fixedItems,
+      categoryBreakdown, seasonalBreakdown, sinkingMonthly: sinkingSummary.this_month_total,
+      speseMin, speseMax, saldoMin, saldoMax, entratePreviste,
+      deltaSaldo: saldoMid - actualToday,
+      deltaSpese: speseMid - expensesAbs,
       deltaEntrate: entratePreviste - income,
       calMonth: calMonth + 1,
     };
-  }, [startingBalance, items, periodTxs, historyTxs, ownerIncome, membersIncome, txSumToToday]);
+  }, [
+    startingBalance, items, periodTxs, historyTxs, categories, variableCategoryIds,
+    seasonalItems, seasonalHistory, ownerIncome, membersIncome, piggyBalance, txSumToToday,
+  ]);
 
   if (loading) {
     return (
@@ -349,9 +431,9 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 
   const {
     income, expensesAbs, incomeTxs, expenseTxs,
-    actualToday, estimate, fixedItems,
-    variableMonthsDetail, sameMonthLastYearTotal, sameMonthLastYearLabel,
-    specePreviste, entratePreviste, saldoFineMeseStimato,
+    actualToday, fixedTotal, fixedItems,
+    categoryBreakdown, seasonalBreakdown, sinkingMonthly,
+    speseMin, speseMax, saldoMin, saldoMax, entratePreviste,
     deltaSaldo, deltaSpese, deltaEntrate, calMonth,
   } = result;
 
@@ -433,24 +515,17 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       <div className="flex flex-wrap items-start gap-x-5 gap-y-2 pt-3 border-t">
         <StatButton
           label="Saldo fine mese stimato"
-          value={formatEuro(saldoFineMeseStimato)}
+          value={`${formatEuro(saldoMin)} – ${formatEuro(saldoMax)}`}
           valueClassName="text-lg sm:text-xl font-semibold tabular-nums"
           open={expanded === "saldo-previsto"}
           onClick={() => toggle("saldo-previsto")}
         />
         <StatButton
           label="Spese previste"
-          value={formatEuro(specePreviste)}
+          value={`${formatEuro(speseMin)} – ${formatEuro(speseMax)}`}
           valueClassName="text-sm sm:text-base font-semibold tabular-nums text-red-500"
           open={expanded === "spese-previste"}
           onClick={() => toggle("spese-previste")}
-        />
-        <StatButton
-          label="Spese variabili"
-          value={formatEuro(estimate.variableAvg)}
-          valueClassName="text-sm sm:text-base font-semibold tabular-nums text-red-500"
-          open={expanded === "spese-variabili"}
-          onClick={() => toggle("spese-variabili")}
         />
         <StatButton
           label="Entrate da stipendio previste"
@@ -469,39 +544,21 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">− Spese previste</span>
-            <span className="font-medium tabular-nums text-red-500">{formatEuro(specePreviste)}</span>
+            <span className="font-medium tabular-nums text-red-500">{formatEuro(speseMin)} – {formatEuro(speseMax)}</span>
           </div>
           <div className="flex justify-between pt-1 mt-1 border-t">
             <span className="font-medium">= Saldo fine mese stimato</span>
-            <span className="font-semibold tabular-nums">{formatEuro(saldoFineMeseStimato)}</span>
+            <span className="font-semibold tabular-nums">{formatEuro(saldoMin)} – {formatEuro(saldoMax)}</span>
           </div>
         </div>
       )}
       {expanded === "spese-previste" && (
-        <SpesePreviste estimate={estimate} fixedItems={fixedItems} />
-      )}
-      {expanded === "spese-variabili" && (
-        <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs -mt-1">
-          {variableMonthsDetail.length === 0 ? (
-            <p className="text-muted-foreground">Storico insufficiente per una stima.</p>
-          ) : variableMonthsDetail.map((m, i) => (
-            <div key={i} className="flex justify-between">
-              <span className="text-muted-foreground capitalize">{m.label}</span>
-              <span className="tabular-nums">{formatEuro(m.total)}</span>
-            </div>
-          ))}
-          {sameMonthLastYearTotal != null && (
-            <div className="flex justify-between pt-1 border-t">
-              <span className="text-muted-foreground capitalize">{sameMonthLastYearLabel} (anno scorso, peso 40%)</span>
-              <span className="tabular-nums">{formatEuro(sameMonthLastYearTotal)}</span>
-            </div>
-          )}
-          <div className="flex justify-between pt-1 border-t">
-            <span className="font-medium">Media stimata</span>
-            <span className="font-semibold tabular-nums">{formatEuro(estimate.variableAvg)}</span>
-          </div>
-          <p className="text-muted-foreground">Range {formatEuro(estimate.variableMin)} – {formatEuro(estimate.variableMax)}.</p>
-        </div>
+        <SpesePreviste
+          fixedTotal={fixedTotal} fixedItems={fixedItems}
+          sinkingMonthly={sinkingMonthly}
+          categoryBreakdown={categoryBreakdown} seasonalBreakdown={seasonalBreakdown}
+          speseMin={speseMin} speseMax={speseMax}
+        />
       )}
       {expanded === "entrate-previste" && (
         <div className="rounded-lg border bg-muted/30 overflow-hidden -mt-1">
@@ -541,13 +598,13 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       </div>
 
       {expanded === "delta-saldo" && (
-        <DeltaDetail previstoLabel="Saldo fine mese stimato" previsto={saldoFineMeseStimato} effettivoLabel="Saldo attuale stimato" effettivo={actualToday} delta={deltaSaldo} />
+        <DeltaDetail previstoLabel="Saldo fine mese stimato" previstoDisplay={`${formatEuro(saldoMin)} – ${formatEuro(saldoMax)}`} effettivoLabel="Saldo attuale stimato" effettivo={actualToday} delta={deltaSaldo} />
       )}
       {expanded === "delta-spese" && (
-        <DeltaDetail previstoLabel="Spese previste" previsto={specePreviste} effettivoLabel="Spese affrontate" effettivo={expensesAbs} delta={deltaSpese} />
+        <DeltaDetail previstoLabel="Spese previste" previstoDisplay={`${formatEuro(speseMin)} – ${formatEuro(speseMax)}`} effettivoLabel="Spese affrontate" effettivo={expensesAbs} delta={deltaSpese} />
       )}
       {expanded === "delta-entrate" && (
-        <DeltaDetail previstoLabel="Entrate da stipendio previste" previsto={entratePreviste} effettivoLabel="Entrate effettive" effettivo={income} delta={deltaEntrate} />
+        <DeltaDetail previstoLabel="Entrate da stipendio previste" previstoDisplay={formatEuro(entratePreviste)} effettivoLabel="Entrate effettive" effettivo={income} delta={deltaEntrate} />
       )}
 
       {/* Salvadanai — separato in fondo */}
@@ -564,12 +621,22 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   );
 }
 
-function SpesePreviste({ estimate, fixedItems }: { estimate: MonthlyExpenseEstimate; fixedItems: RecurringRow[] }) {
+function SpesePreviste({
+  fixedTotal, fixedItems, sinkingMonthly, categoryBreakdown, seasonalBreakdown, speseMin, speseMax,
+}: {
+  fixedTotal: number;
+  fixedItems: RecurringRow[];
+  sinkingMonthly: number;
+  categoryBreakdown: { category: CategoryRow; range: { min: number; max: number } }[];
+  seasonalBreakdown: { item: RecurringRow; range: { min: number; max: number; avg: number; yearsCount: number } }[];
+  speseMin: number;
+  speseMax: number;
+}) {
   return (
     <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs -mt-1">
       <div className="flex justify-between">
         <span className="text-muted-foreground">Spese fisse (certe)</span>
-        <span className="font-medium tabular-nums">{formatEuro(estimate.fixedTotal)}</span>
+        <span className="font-medium tabular-nums">{formatEuro(fixedTotal)}</span>
       </div>
       {fixedItems.map(it => (
         <div key={it.id} className="flex justify-between pl-3 text-muted-foreground">
@@ -577,14 +644,36 @@ function SpesePreviste({ estimate, fixedItems }: { estimate: MonthlyExpenseEstim
           <span className="tabular-nums">{formatEuro(recurringMonthlyEquivalent(it))}</span>
         </div>
       ))}
-      <div className="flex justify-between pt-1 border-t">
-        <span className="text-muted-foreground">+ Spese variabili (stimate)</span>
-        <span className="font-medium tabular-nums">{formatEuro(estimate.variableAvg)}</span>
-      </div>
+      {sinkingMonthly > 0 && (
+        <div className="flex justify-between pt-1 border-t">
+          <span className="text-muted-foreground">Accantonamenti (quota mensile)</span>
+          <span className="font-medium tabular-nums">{formatEuro(sinkingMonthly)}</span>
+        </div>
+      )}
+      {(categoryBreakdown.length > 0 || seasonalBreakdown.length > 0) && (
+        <div className="flex justify-between pt-1 border-t">
+          <span className="text-muted-foreground">Spese variabili (min–max)</span>
+        </div>
+      )}
+      {categoryBreakdown.map(({ category, range }) => (
+        <div key={category.id} className="flex justify-between pl-3 text-muted-foreground">
+          <span className="truncate">{category.icon} {category.name}</span>
+          <span className="tabular-nums">{formatEuro(range.min)} – {formatEuro(range.max)}</span>
+        </div>
+      ))}
+      {seasonalBreakdown.map(({ item, range }) => (
+        <div key={item.id} className="flex justify-between pl-3 text-muted-foreground">
+          <span className="truncate">⚡ {item.name}</span>
+          <span className="tabular-nums">{formatEuro(range.min)} – {formatEuro(range.max)}</span>
+        </div>
+      ))}
       <div className="flex justify-between pt-1 border-t">
         <span className="font-medium">= Spese previste</span>
-        <span className="font-semibold tabular-nums">{formatEuro(estimate.fixedTotal + estimate.variableAvg)}</span>
+        <span className="font-semibold tabular-nums">{formatEuro(speseMin)} – {formatEuro(speseMax)}</span>
       </div>
+      <Link href="/dashboard/smart" className="text-primary hover:underline pt-1">
+        Gestisci le categorie variabili in Smart →
+      </Link>
     </div>
   );
 }
@@ -604,13 +693,13 @@ function DeltaStatButton({
 }
 
 function DeltaDetail({
-  previstoLabel, previsto, effettivoLabel, effettivo, delta,
-}: { previstoLabel: string; previsto: number; effettivoLabel: string; effettivo: number; delta: number }) {
+  previstoLabel, previstoDisplay, effettivoLabel, effettivo, delta,
+}: { previstoLabel: string; previstoDisplay: string; effettivoLabel: string; effettivo: number; delta: number }) {
   return (
     <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs -mt-1">
       <div className="flex justify-between">
         <span className="text-muted-foreground">{previstoLabel} (previsto)</span>
-        <span className="font-medium tabular-nums">{formatEuro(previsto)}</span>
+        <span className="font-medium tabular-nums">{previstoDisplay}</span>
       </div>
       <div className="flex justify-between">
         <span className="text-muted-foreground">{effettivoLabel} (effettivo)</span>

@@ -8,6 +8,7 @@ import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estima
 import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
 import { resetSavingStartDate, markSinkingFundPaid } from "./sinking-fund-actions";
 import { addGoalContribution } from "./goal-actions";
+import { VariableExpensesPanel } from "./variable-expenses-panel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ export type RecurringExpense = {
   saving_start_date: string | null;
 };
 type TipoCard = "uscita_fissa" | "uscita_variabile" | "entrata";
-type View = "cover" | "add-recurring" | "edit-recurring" | "list-recurring" | "add-goal" | "list-goals" | "goal-detail" | "previsioni" | "accantonamenti";
+type View = "cover" | "add-recurring" | "edit-recurring" | "list-recurring" | "add-goal" | "list-goals" | "goal-detail" | "previsioni" | "accantonamenti" | "spese-variabili";
 
 type Props = {
   userId: string; plan: string; initialGoals: Goal[];
@@ -47,6 +48,7 @@ type Props = {
   piggyBalance?: number;
   payDay?: number; periodFrom?: string; periodTo?: string;
   periodYear?: number; periodMonth?: number;
+  initialVariableCategoryIds?: string[];
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -229,9 +231,10 @@ const FREE_GOAL_LIMIT = 1;
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function SmartPageClient({
-  userId, plan, initialGoals, transactions,
+  userId, plan, initialGoals, transactions, categories,
   initialRecurring, initialPots = [], initialContributions = [], piggyBalance = 0,
   payDay: _payDay = 0, periodFrom, periodTo,
+  initialVariableCategoryIds = [],
 }: Props) {
   const [view, setView] = useState<View>("cover");
   const [recurringItems, setRecurringItems] = useState<RecurringExpense[]>(initialRecurring ?? []);
@@ -520,6 +523,7 @@ export function SmartPageClient({
       { icon: "🎯", label: "I miei obiettivi",         action: () => setView("list-goals"),     tourAttr: "smart-obiettivi" },
       { icon: "🔮", label: "Previsioni",               action: () => setView("previsioni"),     tourAttr: "smart-previsioni" },
       { icon: "🏦", label: "Accantonamenti",           action: () => setView("accantonamenti"), tourAttr: "smart-accantonamenti" },
+      { icon: "📉", label: "Spese variabili",           action: () => setView("spese-variabili"), tourAttr: "smart-variabili" },
     ] as const;
 
     return (
@@ -539,6 +543,24 @@ export function SmartPageClient({
           </button>
         ))}
       </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SPESE VARIABILI
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (view === "spese-variabili") {
+    return (
+      <VariableExpensesPanel
+        userId={userId}
+        categories={categories}
+        transactions={transactions}
+        recurringItems={recurringItems}
+        initialSelectedCategoryIds={initialVariableCategoryIds}
+        piggyBalance={piggyBalance}
+        onBack={() => setView("cover")}
+      />
     );
   }
 

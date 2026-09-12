@@ -520,6 +520,42 @@ export function estimateMonthlyExpenses(
 }
 
 // ============================================================
+// FEATURE 5 — Spese variabili come min-max (accantonamento +
+// categorie + bollette stagionali)
+// ============================================================
+
+/** Min-max di una serie di totali mensili (es. spesa di una categoria negli ultimi N mesi). */
+export function minMaxOverMonths(monthlyTotals: number[]): { min: number; max: number; hasData: boolean } {
+  if (monthlyTotals.length === 0) return { min: 0, max: 0, hasData: false };
+  return { min: Math.min(...monthlyTotals), max: Math.max(...monthlyTotals), hasData: true };
+}
+
+/** Min-max/media di una bolletta stagionale: un totale per anno, per lo stesso mese calendariale. */
+export function seasonalBillRange(yearlyTotals: number[]): { min: number; max: number; avg: number; yearsCount: number } {
+  if (yearlyTotals.length === 0) return { min: 0, max: 0, avg: 0, yearsCount: 0 };
+  const avg = yearlyTotals.reduce((a, b) => a + b, 0) / yearlyTotals.length;
+  return { min: Math.min(...yearlyTotals), max: Math.max(...yearlyTotals), avg, yearsCount: yearlyTotals.length };
+}
+
+export type VariableExpensesInput = {
+  sinkingFundMonthly: number;                      // aggregateSinkingFunds(...).this_month_total
+  categoryRanges: { min: number; max: number }[];  // una entry per categoria selezionata
+  seasonalRanges: { min: number; max: number }[];  // una entry per voce ricorrente "storica" (es. luce/gas)
+};
+export type VariableExpensesEstimate = { min: number; max: number };
+
+/** Combina accantonamento (quota fissa) + range categorie + range bollette stagionali in un unico min-max. */
+export function combineVariableExpenses(input: VariableExpensesInput): VariableExpensesEstimate {
+  const min = input.sinkingFundMonthly
+    + input.categoryRanges.reduce((s, r) => s + r.min, 0)
+    + input.seasonalRanges.reduce((s, r) => s + r.min, 0);
+  const max = input.sinkingFundMonthly
+    + input.categoryRanges.reduce((s, r) => s + r.max, 0)
+    + input.seasonalRanges.reduce((s, r) => s + r.max, 0);
+  return { min, max };
+}
+
+// ============================================================
 // FEATURE 4 — Quanto dovresti risparmiare?
 // ============================================================
 

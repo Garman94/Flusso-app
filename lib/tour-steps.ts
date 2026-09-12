@@ -11,8 +11,8 @@ export type PageTourDef = {
 export const PAGE_TOURS: Record<string, PageTourDef> = {
 
   "/dashboard": {
-    version: "1.6",
-    whatIsNew: "saldo attuale e previsioni di fine mese unificati in un'unica card, con dettaglio delle transazioni per ogni voce",
+    version: "1.7",
+    whatIsNew: "spese previste come range min-max (accantonamento + categorie + bollette stagionali), gestibili in Smart",
     steps: [
       {
         title: "Benvenuto in Flusso! 👋",
@@ -21,7 +21,7 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       {
         target: "[data-tour='hero']",
         title: "Il tuo saldo, oggi e a fine mese",
-        message: "In alto il saldo reale di oggi con spese ed entrate effettive. Sotto, più piccole, le stesse voci ma previste per fine mese, con le spese variabili scorporate. In fondo la differenza tra previsto ed effettivo. Tocca una voce per aprirla e vedere le transazioni (o il calcolo) che la compongono. Sotto tutto trovi i salvadanai.",
+        message: "In alto il saldo reale di oggi con spese ed entrate effettive. Sotto, le stesse voci previste per fine mese: le spese previste sono un range min-max (accantonamenti + categorie variabili + bollette stagionali, personalizzabili in Smart). In fondo la differenza tra previsto ed effettivo. Tocca una voce per aprirla e vedere le transazioni o il calcolo che la compongono. In fondo trovi i salvadanai.",
       },
       {
         target: "[data-tour='breakdown']",
@@ -95,8 +95,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/smart": {
-    version: "1.1",
-    whatIsNew: "obiettivi: salvadanaio collegato, quota mensile e pagina dettaglio con storico contributi",
+    version: "1.2",
+    whatIsNew: "nuovo tab Spese variabili: scegli le categorie e monitora il range min-max mese per mese",
     freePreview: [
       {
         title: "Benvenuto in Smart ⚡",
@@ -143,6 +143,11 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
         target: "[data-tour='smart-accantonamenti']",
         title: "Accantonamenti",
         message: "Pianifica le spese grandi e irregolari (vacanze, assicurazione auto…) accantonando ogni mese la quota necessaria.",
+      },
+      {
+        target: "[data-tour='smart-variabili']",
+        title: "Spese variabili",
+        message: "Scegli quali categorie contano come spese variabili (alimentari, shopping, trasporti…) e monitora quanto hai speso questo mese rispetto al range min-max osservato. Le bollette luce/gas con \"Media storica\" nelle spese ricorrenti compaiono qui automaticamente.",
       },
     ],
   },
