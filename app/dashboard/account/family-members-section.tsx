@@ -150,6 +150,12 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
         )}
       </div>
 
+      <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+        💡 Aggiungi anche <strong>te stesso</strong> come primo componente (es. il tuo nome): da quando
+        esiste almeno un componente, l&apos;import di transazioni e i salvadanai condivisi chiedono sempre
+        di scegliere una persona precisa, senza più un &quot;Io&quot; generico.
+      </div>
+
       {showForm && (
         <form onSubmit={handleSave} className="flex flex-col gap-4 rounded-lg border p-4 bg-muted/20">
           <div className="flex flex-col gap-1.5">

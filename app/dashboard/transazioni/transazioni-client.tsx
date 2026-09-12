@@ -81,7 +81,6 @@ type Props = {
   initialCategoryRules: CategoryRule[];
   categories: Category[];
   familyMembers?: FamilyMember[];
-  ownerName?: string;
   powerUser?: boolean;
   initialFilter?: FilterType;
   initialEditMode?: boolean;
@@ -90,7 +89,7 @@ type Props = {
   periodMonth?: number;
 };
 
-export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], ownerName, powerUser = false, initialFilter = "all", initialEditMode = false, payDay = 0, periodYear, periodMonth }: Props) {
+export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], powerUser = false, initialFilter = "all", initialEditMode = false, payDay = 0, periodYear, periodMonth }: Props) {
   const demoGuard = useDemoGuard();
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
@@ -465,7 +464,6 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           userId={userId}
           categories={categories}
           familyMembers={familyMembers}
-          ownerName={ownerName}
           onClose={() => setShowImport(false)}
           onImported={handleExcelImported}
         />

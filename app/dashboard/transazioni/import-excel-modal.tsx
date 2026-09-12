@@ -26,7 +26,6 @@ type Props = {
   userId: string;
   categories: Category[];
   familyMembers?: FamilyMember[];
-  ownerName?: string;
   onClose: () => void;
   onImported: (count: number) => void;
 };
@@ -154,7 +153,7 @@ function formatEuro(n: number) {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export function ImportExcelModal({ userId, categories, familyMembers = [], ownerName, onClose, onImported }: Props) {
+export function ImportExcelModal({ userId, categories, familyMembers = [], onClose, onImported }: Props) {
   const hasMembers = familyMembers.length > 0;
   const demoGuard = useDemoGuard();
 
@@ -180,9 +179,7 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], owner
   const pendingRef = useRef<{ rows: ParsedRow[]; hash: string; filename: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const personLabel = personId
-    ? familyMembers.find(m => m.id === personId)?.name ?? "—"
-    : (ownerName?.trim() || "Io");
+  const personLabel = familyMembers.find(m => m.id === personId)?.name ?? "—";
 
   // ── Parsing ────────────────────────────────────────────────────────────────
   async function processFile(file: File) {
@@ -418,20 +415,6 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], owner
                 transazioni importate verranno associate a lei.
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {/* Titolare */}
-                <button
-                  type="button"
-                  onClick={() => { setPersonId(null); setPersonConfirmed(true); }}
-                  className={`flex flex-col items-center gap-2 rounded-xl border-2 p-4 transition-all ${
-                    personConfirmed && personId === null ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
-                  }`}
-                >
-                  <span className="w-10 h-10 rounded-full bg-primary/15 text-primary font-semibold flex items-center justify-center">
-                    {(ownerName?.trim()?.[0] ?? "I").toUpperCase()}
-                  </span>
-                  <span className="text-sm font-medium truncate max-w-full">{ownerName?.trim() || "Io"}</span>
-                </button>
-
                 {familyMembers.map(m => {
                   const active = personConfirmed && personId === m.id;
                   return (

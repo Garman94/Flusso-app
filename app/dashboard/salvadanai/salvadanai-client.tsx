@@ -221,10 +221,10 @@ export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initi
               ) : (
                 <div className="flex flex-col gap-2">
                   <p className="text-sm font-medium">Chi può contribuire?</p>
-                  {[{ id: null as string | null, name: "Io" }, ...familyMembers].map(m => {
+                  {familyMembers.map(m => {
                     const on = wMembers.includes(m.id);
                     return (
-                      <label key={m.id ?? "owner"} className="flex items-center gap-2 text-sm">
+                      <label key={m.id} className="flex items-center gap-2 text-sm">
                         <input type="checkbox" checked={on}
                           onChange={e => setWMembers(prev => e.target.checked ? [...prev, m.id] : prev.filter(x => x !== m.id))} />
                         {m.name}
@@ -367,7 +367,7 @@ export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initi
           {pot?.is_shared && (
             <select value={txMember ?? ""} onChange={e => setTxMember(e.target.value || null)}
               className="border rounded-md px-3 py-2 text-sm bg-background">
-              <option value="">Io</option>
+              {familyMembers.length === 0 && <option value="">Io</option>}
               {familyMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           )}

@@ -342,7 +342,7 @@ Componente: `app/onboarding/page.tsx`
 > Lo score finanziario (🟢 Ottimo → 🔴 Critico) mostrato in precedenza nella hero è stato rimosso: ridondante con le righe effettivi/previsti di `BalanceHeroCard`.
 
 ### Salvadanai (`/dashboard/salvadanai`)
-Griglia di salvadanai (`savings_pots`). Card: emoji+nome, saldo, barra verso `target_amount`, badge "condiviso" + breakdown per componente. Wizard 4 step (nome/emoji → obiettivo → condiviso+componenti → riepilogo). Dettaglio pot: storico `savings_transactions` + Deposita/Preleva (modale importo+nota, se condiviso selettore componente). Il totale è mirrorato su `profiles.piggy_balance` dal trigger `sync_piggy_balance`, quindi il tab Accantonamenti resta invariato.
+Griglia di salvadanai (`savings_pots`). Card: emoji+nome, saldo, barra verso `target_amount`, badge "condiviso" + breakdown per componente. Wizard 4 step (nome/emoji → obiettivo → condiviso+componenti → riepilogo). Dettaglio pot: storico `savings_transactions` + Deposita/Preleva (modale importo+nota, se condiviso selettore componente — mostra "Io" solo se non esistono componenti, altrimenti richiede di scegliere un componente). Il totale è mirrorato su `profiles.piggy_balance` dal trigger `sync_piggy_balance`, quindi il tab Accantonamenti resta invariato.
 
 > Le voci ricorrenti con cadenza bimestrale/trimestrale/semestrale/personalizzata (senza `next_due_date`) non hanno una data deducibile dallo schema: sono escluse dalla timeline giornaliera e dal rilevamento scadute, ma restano nella stima min/max mensile. Le voci con `next_due_date` valorizzato sono gestite dagli Accantonamenti e restano escluse da queste 3 feature per non interferire con quella logica.
 
@@ -357,7 +357,7 @@ Griglia di salvadanai (`savings_pots`). Card: emoji+nome, saldo, barra verso `ta
 - **Summary bar** sopra la lista: count + totale entrate + totale uscite, aggiornati in tempo reale
 - **Badge membro** colorato su ogni transazione con `member_id` (mobile: sotto data; desktop: inline)
 - **Import Excel** (`import-excel-modal.tsx`), 3 step:
-  1. **Persona** — mostrato solo se esistono `family_members`; card selezionabili ("Io" = titolare → `member_id NULL`, + un card per membro), "Continua" attivo solo dopo tap esplicito. Utente solo → step saltato.
+  1. **Persona** — mostrato solo se esistono `family_members`; una card per membro (niente più card "Io" di default: chi ha componenti deve aver aggiunto anche se stesso come componente), "Continua" attivo solo dopo tap esplicito. Utente solo (nessun componente) → step saltato, transazioni con `member_id NULL`.
   2. **Upload** — drag&drop; alla lettura si calcola l'hash SHA-256 e si interroga `import_logs`: se il file è già stato caricato → warning "Importa comunque".
   3. **Anteprima** — ogni riga classificata (`lib/import-dedup.ts` → `classifyRows`): 🟢 nuova / 🟡 possibile duplicato (stessa data+importo, descrizione diversa) / 🔴 duplicato esatto (saltato). Riepilogo conteggi + "Revisiona manualmente" (checkbox per riga gialla). Bottoni: "Importa solo nuove" / "Importa tutto". A fine import → riga in `import_logs`.
 - ✏️ fuori dall'hamburger per "modifica categorie" (mobile, sempre visibile)
@@ -446,10 +446,10 @@ Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valo
 
 ## Componenti famiglia
 
-1. Crea i "Componenti" in Account (nome + colore)
+1. Crea i "Componenti" in Account (nome + colore) — **aggiungi anche te stesso** come primo componente: da quando esiste almeno un componente, i picker (import Excel, salvadanai condivisi) non offrono più una card/opzione "Io" di default
 2. All'import Excel, seleziona il membro che ha fatto le spese
 3. Transazioni mostrano badge colorato con il nome
-4. `transactions.member_id FK family_members(id) ON DELETE SET NULL`
+4. `transactions.member_id FK family_members(id) ON DELETE SET NULL` — `NULL` resta valido per le transazioni storiche/degli utenti senza componenti, ma non è più selezionabile esplicitamente una volta aggiunto almeno un componente
 
 ---
 
