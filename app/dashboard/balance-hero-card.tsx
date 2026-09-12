@@ -214,7 +214,8 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   const [loading, setLoading] = useState(true);
   const [startingBalance, setStartingBalance] = useState<number | null>(null);
   const [items, setItems] = useState<RecurringRow[]>([]);
-  const [txs, setTxs] = useState<Tx[]>([]);
+  const [periodTxs, setPeriodTxs] = useState<Tx[]>([]);
+  const [historyTxs, setHistoryTxs] = useState<Tx[]>([]);
   const [ownerIncome, setOwnerIncome] = useState<Partial<IncomeInfo> | null>(null);
   const [membersIncome, setMembersIncome] = useState<Partial<IncomeInfo>[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -222,17 +223,26 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 
   useEffect(() => {
     const supabase = createClient();
+    const now = new Date();
+    // Storico necessario per la stima spese variabili: ultimi 3 mesi + stesso mese anno scorso.
+    const historyFrom = new Date(now.getFullYear() - 1, now.getMonth(), 1).toISOString().split("T")[0];
+
     Promise.all([
       supabase.from("profiles").select(`period_starting_balance, period_starting_balance_date, ${INCOME_COLS}`).eq("id", userId).single(),
       supabase.from("recurring_expenses")
         .select("id, name, tipologia, frequency, custom_days, due_day, due_month, amount, amount_max, next_due_date, last_paid_date, match_keywords, category_id")
         .eq("user_id", userId),
-      // Nessun filtro data: serve sia il periodo corrente sia lo storico per la stima spese variabili
+      // Query filtrate per data: senza bound si rischia il limite di default di 1000 righe
+      // di Supabase, che senza un ordinamento esplicito puo' tagliare fuori proprio le
+      // transazioni del periodo corrente.
       supabase.from("transactions")
         .select("amount, date, description, merchant, category_id, categories(name)")
-        .eq("user_id", userId),
+        .eq("user_id", userId).gte("date", periodFrom).lte("date", periodTo),
+      supabase.from("transactions")
+        .select("amount, date, description, merchant, category_id, categories(name)")
+        .eq("user_id", userId).gte("date", historyFrom).lte("date", periodTo),
       supabase.from("family_members").select(INCOME_COLS).eq("user_id", userId),
-    ]).then(([profileRes, recRes, txRes, memRes]) => {
+    ]).then(([profileRes, recRes, periodTxRes, historyTxRes, memRes]) => {
       const pStart = profileRes.data?.period_starting_balance_date;
       setStartingBalance(
         pStart === periodFrom && profileRes.data?.period_starting_balance != null
@@ -241,7 +251,8 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       );
       setOwnerIncome((profileRes.data ?? null) as Partial<IncomeInfo> | null);
       setItems((recRes.data ?? []) as RecurringRow[]);
-      setTxs((txRes.data ?? []) as unknown as Tx[]);
+      setPeriodTxs((periodTxRes.data ?? []) as unknown as Tx[]);
+      setHistoryTxs((historyTxRes.data ?? []) as unknown as Tx[]);
       setMembersIncome((memRes.data ?? []) as Partial<IncomeInfo>[]);
       setLoading(false);
     });
@@ -249,10 +260,6 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 
   const iso = todayIso();
 
-  const periodTxs = useMemo(
-    () => txs.filter(t => t.date >= periodFrom && t.date <= periodTo),
-    [txs, periodFrom, periodTo]
-  );
   const txSumToToday = useMemo(
     () => periodTxs.filter(t => t.date <= iso).reduce((s, t) => s + Number(t.amount), 0),
     [periodTxs, iso]
@@ -290,7 +297,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 
     function variableTotalForMonth(year: number, month: number): { total: number; hasData: boolean } {
       const { from, to } = monthBounds(year, month);
-      const monthTxs = txs.filter(t => t.date >= from && t.date <= to);
+      const monthTxs = historyTxs.filter(t => t.date >= from && t.date <= to);
       const variable = monthTxs.filter(t => Number(t.amount) < 0 && !isTransfer(t) && !isFixedMatch(t));
       return {
         total: variable.reduce((s, t) => s + Math.abs(Number(t.amount)), 0),
@@ -317,7 +324,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       projection, todayIndex, expectedToday, actualToday, health, overdueTotal,
       specePreviste, entratePreviste, saldoFineMeseStimato,
     };
-  }, [startingBalance, items, txs, periodTxs, ownerIncome, membersIncome, periodFrom, periodTo, iso, txSumToToday]);
+  }, [startingBalance, items, periodTxs, historyTxs, ownerIncome, membersIncome, periodFrom, periodTo, iso, txSumToToday]);
 
   if (loading) {
     return (

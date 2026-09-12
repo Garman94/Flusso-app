@@ -49,13 +49,19 @@ export function EstimateAndSavingsCard({ userId, periodFrom, periodTo }: Props) 
 
   useEffect(() => {
     const supabase = createClient();
+    const now = new Date();
+    // Storico necessario: ultimi 3 mesi + stesso mese anno scorso. Query filtrata per
+    // data: senza bound si rischia il limite di default di 1000 righe di Supabase, che
+    // senza un ordinamento esplicito puo' tagliare fuori le transazioni piu' recenti.
+    const historyFrom = new Date(now.getFullYear() - 1, now.getMonth(), 1).toISOString().split("T")[0];
+
     Promise.all([
       supabase.from("recurring_expenses")
         .select("tipologia, frequency, custom_days, amount, amount_max, match_keywords, category_id")
         .eq("user_id", userId),
       supabase.from("transactions")
         .select("amount, date, description, merchant, category_id, categories(name)")
-        .eq("user_id", userId),
+        .eq("user_id", userId).gte("date", historyFrom).lte("date", periodTo),
       supabase.from("profiles").select(INCOME_COLS).eq("id", userId).single(),
       supabase.from("family_members").select(INCOME_COLS).eq("user_id", userId),
     ]).then(([recRes, txRes, profRes, memRes]) => {
@@ -65,7 +71,7 @@ export function EstimateAndSavingsCard({ userId, periodFrom, periodTo }: Props) 
       setMembersIncome((memRes.data ?? []) as Partial<IncomeInfo>[]);
       setLoading(false);
     });
-  }, [userId]);
+  }, [userId, periodTo]);
 
   const result = useMemo(() => {
     if (loading) return null;
