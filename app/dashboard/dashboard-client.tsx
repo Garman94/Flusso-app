@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   formatEuro,
-  calculateFinancialScore,
   calculateCategoryBreakdown,
   estimateGoalCompletion,
   type Transaction,
@@ -12,7 +11,7 @@ import {
 } from "@/lib/calculations";
 import { RecurringDashboardCard } from "./recurring-dashboard-card";
 import { SinkingFundsCard } from "./sinking-funds-card";
-import { SaldoProgressivoCard } from "./saldo-progressivo-card";
+import { BalanceHeroCard } from "./balance-hero-card";
 import { OverdueExpensesBanner } from "./overdue-expenses-banner";
 import { EstimateAndSavingsCard } from "./estimate-and-savings-card";
 import { MonthReportModal } from "./month-report-modal";
@@ -204,7 +203,6 @@ export function DashboardClient({
   const income      = spendableTxs.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
   const expensesAbs = spendableTxs.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   // ── Calculations ─────────────────────────────────────────────────────────
-  const score     = calculateFinancialScore(income, expensesAbs);
   const macro     = calculateCategoryBreakdown(spendableTxs);
   const monthlySavings = income - expensesAbs;
 
@@ -303,45 +301,13 @@ export function DashboardClient({
         </Link>
       )}
 
-      {/* ── Hero: spese mese + score ── */}
-      <div data-tour="hero" className="rounded-xl border p-4 sm:p-6 flex flex-col sm:flex-row gap-4 sm:gap-6 sm:items-center justify-between">
-        {/* Spese questo mese */}
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Spese questo mese</span>
-          <span className="text-4xl font-bold tabular-nums text-red-500">
-            {formatEuro(expensesAbs)}
-          </span>
-
-          {/* Salvadanai */}
-          <Link href="/dashboard/salvadanai" className="mt-3 pt-3 border-t flex flex-col gap-0.5 group">
-            <span className="text-xs text-muted-foreground uppercase tracking-wide">Salvadanai 🐷</span>
-            <span className="text-xl font-semibold tabular-nums">
-              {formatEuro(profile.piggy_balance)}
-            </span>
-            <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors mt-1">
-              Gestisci i salvadanai →
-            </span>
-          </Link>
-        </div>
-
-        {/* Score */}
-        {hasTransactions && (
-          <div className={`rounded-xl px-4 py-3 sm:px-5 sm:py-4 flex flex-col gap-1 ${score.bgClass} w-full sm:min-w-[200px] sm:w-auto`}>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">{score.dot}</span>
-              <span className={`font-semibold text-sm ${score.colorClass}`}>{score.label}</span>
-            </div>
-            <p className="text-sm text-muted-foreground leading-snug">{score.message}</p>
-            <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
-              <span>Entrate: <strong className="text-green-600 dark:text-green-400">{formatEuro(income)}</strong></span>
-              <span>Uscite: <strong className="text-red-500">{formatEuro(expensesAbs)}</strong></span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Saldo progressivo giornaliero ── */}
-      <SaldoProgressivoCard userId={userId} periodFrom={periodFrom} periodTo={periodTo} />
+      {/* ── Saldo attuale + spese/entrate effettive e previste + salvadanai ── */}
+      <BalanceHeroCard
+        userId={userId}
+        periodFrom={periodFrom}
+        periodTo={periodTo}
+        piggyBalance={profile.piggy_balance}
+      />
 
       {/* ── Empty state ── */}
       {!hasAnyTransactions && (

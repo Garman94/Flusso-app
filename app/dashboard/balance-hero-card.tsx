@@ -1,32 +1,54 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatEuro,
   calculateDailyBalanceProjection,
   evaluateBalanceHealth,
   findOverdueRecurring,
+  recurringMonthlyEquivalent,
+  txMatchesKeywords,
+  estimateMonthlyExpenses,
+  aggregateExpectedIncome,
   type RecurringScheduleItem,
   type OverdueCheckItem,
   type BalanceProjectionDay,
+  type IncomeInfo,
 } from "@/lib/calculations";
 import { updateStartingBalance } from "./saldo-action";
 import { toast } from "sonner";
 
-type RecurringRow = RecurringScheduleItem & OverdueCheckItem;
+const INCOME_COLS = "income_type, monthly_income, income_frequency, income_payday, income_variability, active_months";
+const TRANSFER_CATS = new Set(["spostamenti", "salvadanaio"]);
 
-type Tx = { amount: number; date: string; description?: string | null; merchant?: string | null; category_id?: string | null };
+type RecurringRow = RecurringScheduleItem & OverdueCheckItem & { custom_days: number | null };
+
+type Tx = {
+  amount: number; date: string;
+  description?: string | null; merchant?: string | null; category_id?: string | null;
+  categories?: { name: string } | null;
+};
 
 type Props = {
   userId: string;
   periodFrom: string;
   periodTo: string;
+  piggyBalance: number;
 };
 
 function todayIso() {
   return new Date().toISOString().split("T")[0];
 }
+
+function monthBounds(year: number, month: number) {
+  const from = new Date(year, month, 1).toISOString().split("T")[0];
+  const to = new Date(year, month + 1, 0).toISOString().split("T")[0];
+  return { from, to };
+}
+
+const isTransfer = (t: Tx) => TRANSFER_CATS.has(t.categories?.name?.toLowerCase() ?? "");
 
 // ─── Setup: primo utilizzo / modifica ───────────────────────────────────────
 // L'utente inserisce il saldo che ha OGGI sul conto. Per ancorare la proiezione
@@ -75,10 +97,10 @@ function SetupForm({
   }
 
   return (
-    <div className="rounded-xl border p-5 flex flex-col gap-3">
+    <div data-tour="hero" className="rounded-xl border p-5 flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <span className="text-xl">📈</span>
-        <h2 className="font-semibold">Saldo progressivo giornaliero</h2>
+        <h2 className="font-semibold">Saldo attuale stimato</h2>
       </div>
       <p className="text-sm text-muted-foreground">
         Inserisci quanto hai <strong>oggi</strong> sul conto: calcoleremo quanto dovresti
@@ -188,64 +210,118 @@ function Timeline({ projection, todayIndex }: { projection: BalanceProjectionDay
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
-export function SaldoProgressivoCard({ userId, periodFrom, periodTo }: Props) {
+export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: Props) {
   const [loading, setLoading] = useState(true);
   const [startingBalance, setStartingBalance] = useState<number | null>(null);
   const [items, setItems] = useState<RecurringRow[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
+  const [ownerIncome, setOwnerIncome] = useState<Partial<IncomeInfo> | null>(null);
+  const [membersIncome, setMembersIncome] = useState<Partial<IncomeInfo>[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
     Promise.all([
-      supabase.from("profiles").select("period_starting_balance, period_starting_balance_date").eq("id", userId).single(),
+      supabase.from("profiles").select(`period_starting_balance, period_starting_balance_date, ${INCOME_COLS}`).eq("id", userId).single(),
       supabase.from("recurring_expenses")
         .select("id, name, tipologia, frequency, custom_days, due_day, due_month, amount, amount_max, next_due_date, last_paid_date, match_keywords, category_id")
         .eq("user_id", userId),
+      // Nessun filtro data: serve sia il periodo corrente sia lo storico per la stima spese variabili
       supabase.from("transactions")
-        .select("amount, date, description, merchant, category_id")
-        .eq("user_id", userId).gte("date", periodFrom).lte("date", periodTo),
-    ]).then(([profileRes, recRes, txRes]) => {
+        .select("amount, date, description, merchant, category_id, categories(name)")
+        .eq("user_id", userId),
+      supabase.from("family_members").select(INCOME_COLS).eq("user_id", userId),
+    ]).then(([profileRes, recRes, txRes, memRes]) => {
       const pStart = profileRes.data?.period_starting_balance_date;
       setStartingBalance(
         pStart === periodFrom && profileRes.data?.period_starting_balance != null
           ? Number(profileRes.data.period_starting_balance)
           : null
       );
+      setOwnerIncome((profileRes.data ?? null) as Partial<IncomeInfo> | null);
       setItems((recRes.data ?? []) as RecurringRow[]);
-      setTxs((txRes.data ?? []) as Tx[]);
+      setTxs((txRes.data ?? []) as unknown as Tx[]);
+      setMembersIncome((memRes.data ?? []) as Partial<IncomeInfo>[]);
       setLoading(false);
     });
   }, [userId, periodFrom, periodTo, refreshKey]);
 
   const iso = todayIso();
+
+  const periodTxs = useMemo(
+    () => txs.filter(t => t.date >= periodFrom && t.date <= periodTo),
+    [txs, periodFrom, periodTo]
+  );
   const txSumToToday = useMemo(
-    () => txs.filter(t => t.date >= periodFrom && t.date <= iso).reduce((s, t) => s + Number(t.amount), 0),
-    [txs, periodFrom, iso]
+    () => periodTxs.filter(t => t.date <= iso).reduce((s, t) => s + Number(t.amount), 0),
+    [periodTxs, iso]
   );
 
   const result = useMemo(() => {
     if (startingBalance == null) return null;
+
+    // ── Effettivi (periodo corrente) ──
+    const spendableTxs = periodTxs.filter(t => !isTransfer(t));
+    const income      = spendableTxs.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
+    const expensesAbs = spendableTxs.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+
+    // ── Proiezione giornaliera + saldo reale ──
     const projection = calculateDailyBalanceProjection(startingBalance, items, periodFrom, periodTo);
     let todayIndex = projection.findIndex(d => d.date === iso);
     if (todayIndex === -1) todayIndex = iso < periodFrom ? 0 : projection.length - 1;
 
     const expectedToday = projection[todayIndex]?.balance ?? startingBalance;
-    const actualToday = startingBalance + txs
-      .filter(t => t.date <= iso)
-      .reduce((s, t) => s + Number(t.amount), 0);
+    const actualToday = startingBalance + txSumToToday;
 
     const health = evaluateBalanceHealth(actualToday, expectedToday);
-    const overdue = findOverdueRecurring(items, txs);
+    const overdue = findOverdueRecurring(items, periodTxs);
     const overdueTotal = overdue.reduce((s, o) => s + o.amount, 0);
 
-    return { projection, todayIndex, expectedToday, actualToday, health, overdueTotal };
-  }, [startingBalance, items, txs, periodFrom, periodTo, iso]);
+    // ── Previsti (mese corrente, reddito da anagrafica) ──
+    const now = new Date();
+    const calYear = now.getFullYear(), calMonth = now.getMonth();
+
+    const fixedItems = items.filter(it => it.tipologia === "fissa");
+    const fixedTotal = fixedItems.reduce((s, it) => s + recurringMonthlyEquivalent(it), 0);
+    const isFixedMatch = (t: Tx) => fixedItems.some(it =>
+      it.match_keywords.length > 0 ? txMatchesKeywords(t, it.match_keywords) : (it.category_id && it.category_id === t.category_id)
+    );
+
+    function variableTotalForMonth(year: number, month: number): { total: number; hasData: boolean } {
+      const { from, to } = monthBounds(year, month);
+      const monthTxs = txs.filter(t => t.date >= from && t.date <= to);
+      const variable = monthTxs.filter(t => Number(t.amount) < 0 && !isTransfer(t) && !isFixedMatch(t));
+      return {
+        total: variable.reduce((s, t) => s + Math.abs(Number(t.amount)), 0),
+        hasData: monthTxs.length > 0,
+      };
+    }
+
+    const variableMonthlyTotals: number[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const d = new Date(calYear, calMonth - i, 1);
+      const r = variableTotalForMonth(d.getFullYear(), d.getMonth());
+      if (r.hasData) variableMonthlyTotals.push(r.total);
+    }
+    const lastYear = variableTotalForMonth(calYear - 1, calMonth);
+    const sameMonthLastYearTotal = lastYear.hasData ? lastYear.total : null;
+
+    const estimate = estimateMonthlyExpenses(fixedTotal, variableMonthlyTotals, sameMonthLastYearTotal);
+    const specePreviste = estimate.fixedTotal + estimate.variableAvg;
+    const entratePreviste = aggregateExpectedIncome(ownerIncome, membersIncome, calMonth + 1);
+    const saldoFineMeseStimato = entratePreviste - specePreviste;
+
+    return {
+      income, expensesAbs,
+      projection, todayIndex, expectedToday, actualToday, health, overdueTotal,
+      specePreviste, entratePreviste, saldoFineMeseStimato,
+    };
+  }, [startingBalance, items, txs, periodTxs, ownerIncome, membersIncome, periodFrom, periodTo, iso, txSumToToday]);
 
   if (loading) {
     return (
-      <div className="rounded-xl border p-5 animate-pulse">
+      <div data-tour="hero" className="rounded-xl border p-5 animate-pulse">
         <div className="h-4 w-56 bg-muted rounded mb-4" />
         <div className="h-24 w-full bg-muted/60 rounded" />
       </div>
@@ -262,7 +338,11 @@ export function SaldoProgressivoCard({ userId, periodFrom, periodTo }: Props) {
     );
   }
 
-  const { projection, todayIndex, expectedToday, actualToday, health, overdueTotal } = result;
+  const {
+    income, expensesAbs,
+    projection, todayIndex, expectedToday, actualToday, health, overdueTotal,
+    specePreviste, entratePreviste, saldoFineMeseStimato,
+  } = result;
 
   if (editing) {
     return (
@@ -284,10 +364,22 @@ export function SaldoProgressivoCard({ userId, periodFrom, periodTo }: Props) {
   }[health.status];
 
   return (
-    <div className="rounded-xl border p-5 flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <span className="text-xl">📈</span>
-        <h2 className="font-semibold">Saldo progressivo giornaliero</h2>
+    <div data-tour="hero" className="rounded-xl border p-4 sm:p-6 flex flex-col gap-5">
+
+      {/* Row 1 — effettivi */}
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">Saldo attuale stimato</span>
+          <span className="text-3xl sm:text-4xl font-bold tabular-nums">{formatEuro(actualToday)}</span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[11px] text-muted-foreground uppercase tracking-wide">Spese affrontate</span>
+          <span className="text-lg sm:text-xl font-bold tabular-nums text-red-500">{formatEuro(expensesAbs)}</span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[11px] text-muted-foreground uppercase tracking-wide">Entrate effettive</span>
+          <span className="text-lg sm:text-xl font-bold tabular-nums text-green-600 dark:text-green-400">{formatEuro(income)}</span>
+        </div>
         <button
           onClick={() => setEditing(true)}
           className="ml-auto text-xs text-muted-foreground hover:text-foreground underline"
@@ -296,24 +388,31 @@ export function SaldoProgressivoCard({ userId, periodFrom, periodTo }: Props) {
         </button>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+      {/* Row 2 — previsti (mese corrente) */}
+      <div className="flex flex-wrap items-start gap-x-5 gap-y-2 pt-3 border-t">
         <div className="flex flex-col gap-0.5">
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Oggi dovresti avere circa</span>
-          <span className="text-2xl font-bold tabular-nums" title={overdueTotal > 0 ? `Include ${formatEuro(overdueTotal)} di spese non ancora pagate` : undefined}>
-            {formatEuro(expectedToday)}
-          </span>
-          {overdueTotal > 0 && (
-            <span className="text-xs text-muted-foreground">Include {formatEuro(overdueTotal)} di spese non ancora pagate</span>
-          )}
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Saldo fine mese stimato</span>
+          <span className="text-lg sm:text-xl font-semibold tabular-nums">{formatEuro(saldoFineMeseStimato)}</span>
         </div>
-
-        <div className={`rounded-lg px-3 py-2 text-sm font-medium ${statusStyle.bg} ${statusStyle.text}`}>
-          {statusStyle.label}
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Spese previste</span>
+          <span className="text-sm sm:text-base font-semibold tabular-nums text-red-500">{formatEuro(specePreviste)}</span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Entrate da stipendio previste</span>
+          <span className="text-sm sm:text-base font-semibold tabular-nums text-green-600 dark:text-green-400">{formatEuro(entratePreviste)}</span>
         </div>
       </div>
 
-      <div className="text-xs text-muted-foreground">
-        Saldo reale attuale (calcolato): <strong className="text-foreground tabular-nums">{formatEuro(actualToday)}</strong>
+      {/* Row 3 — delta previsto/effettivo (oggi) */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className={`rounded-lg px-3 py-2 text-sm font-medium ${statusStyle.bg} ${statusStyle.text}`}>
+          {statusStyle.label}
+        </div>
+        <span className="text-xs text-muted-foreground">
+          Previsto per oggi: <strong className="tabular-nums">{formatEuro(expectedToday)}</strong>
+          {overdueTotal > 0 && <> · include {formatEuro(overdueTotal)} di spese non ancora pagate</>}
+        </span>
       </div>
 
       <Timeline projection={projection} todayIndex={todayIndex} />
@@ -323,6 +422,17 @@ export function SaldoProgressivoCard({ userId, periodFrom, periodTo }: Props) {
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> entrata prevista</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary inline-block" /> oggi</span>
       </div>
+
+      {/* Salvadanai — separato in fondo */}
+      <Link href="/dashboard/salvadanai" className="pt-4 mt-1 border-t flex items-center justify-between group">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">Salvadanai 🐷</span>
+          <span className="text-xl font-semibold tabular-nums">{formatEuro(piggyBalance)}</span>
+        </div>
+        <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">
+          Gestisci i salvadanai →
+        </span>
+      </Link>
     </div>
   );
 }

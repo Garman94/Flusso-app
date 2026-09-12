@@ -1,6 +1,6 @@
 # CLAUDE.md — Flusso App
 
-Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-10.
+Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-12.
 
 ---
 
@@ -328,14 +328,18 @@ Componente: `app/onboarding/page.tsx`
 
 ### Dashboard (`/dashboard`)
 - **Breakdown macro-categorie** con accordion per categoria
-- **Score finanziario** (🟢 Ottimo → 🔴 Critico)
-- **Saldo progressivo giornaliero** (`SaldoProgressivoCard`) — al primo utilizzo (e da "Modifica") chiede il saldo che l'utente ha OGGI sul conto e lo riporta a inizio periodo sottraendo le transazioni gia' registrate (`period_starting_balance`/`_date`); poi mostra "oggi dovresti avere circa €X" (proiezione da spese/entrate ricorrenti mensili/annuali con `due_day`), lo confronta col saldo reale (`starting + somma transazioni`) con badge verde/giallo/rosso (±10% / ±25%), e una timeline SVG interattiva del periodo
+- **Card saldo unificata** (`BalanceHeroCard`, `data-tour="hero"`) — al primo utilizzo (e da "Modifica") chiede il saldo che l'utente ha OGGI sul conto e lo riporta a inizio periodo sottraendo le transazioni già registrate (`period_starting_balance`/`_date`). Schema a 3 righe:
+  - **Riga 1 (effettivi, in grande)**: Saldo attuale stimato (`starting + somma transazioni reali fino a oggi`, nero) · Spese affrontate (rosso) · Entrate effettive (verde) — le ultime due sul periodo corrente, esclusi i trasferimenti (`spostamenti`/`salvadanaio`)
+  - **Riga 2 (previsti, più piccola)**: Saldo fine mese stimato (= entrate da stipendio previste − spese previste) · Spese previste (rosso, spese fisse + media spese variabili come in `EstimateAndSavingsCard`) · Entrate da stipendio previste (verde, da anagrafica reddito titolare+componenti, mese corrente)
+  - **Riga 3**: delta previsto/effettivo di oggi — badge verde/giallo/rosso (±10% / ±25%) tra "saldo atteso oggi" (proiezione da spese/entrate ricorrenti con `due_day`) e saldo reale, con "saldo atteso oggi" mostrato piccolo come voce secondaria
+  - Sotto: timeline SVG interattiva del periodo, poi **Salvadanai** separato in fondo (totale = `piggy_balance`, tenuto in sync col trigger, link a `/dashboard/salvadanai`)
 - **Banner spese scadute** (`OverdueExpensesBanner`) — spese `fissa` con `due_day` passato senza pagamento confermato né transazione auto-riconosciuta; bottone "Segna come pagata" scrive su `payment_confirmations` e aggiorna `last_paid_date`/`payment_status`
 - **Stima spese mensili + suggerimento risparmio** (`EstimateAndSavingsCard`) — spese fisse (certe) + range min/max spese variabili (media ultimi 3 mesi ± 0.5×dev.std, peso 40% sullo stesso mese anno scorso se disponibile); risparmio suggerito = 80% del potenziale (entrate attese − fisse − variabili stimate), 20% di cuscinetto
 - **Card Spese Ricorrenti** (`RecurringDashboardCard`) — accordion per categoria, previsto vs speso, delta colorato
-- **Salvadanai** — nella hero: totale (= `piggy_balance`, tenuto in sync col trigger) + link a `/dashboard/salvadanai`
 - **Bottone "Mesi precedenti"** → apre `MonthReportModal`
 - **Campanella 🔔** (`NotificationsBell`) nella top-nav — vedi sezione "Modalità demo"/schema `admin_notifications`
+
+> Lo score finanziario (🟢 Ottimo → 🔴 Critico) mostrato in precedenza nella hero è stato rimosso: ridondante con le righe effettivi/previsti di `BalanceHeroCard`.
 
 ### Salvadanai (`/dashboard/salvadanai`)
 Griglia di salvadanai (`savings_pots`). Card: emoji+nome, saldo, barra verso `target_amount`, badge "condiviso" + breakdown per componente. Wizard 4 step (nome/emoji → obiettivo → condiviso+componenti → riepilogo). Dettaglio pot: storico `savings_transactions` + Deposita/Preleva (modale importo+nota, se condiviso selettore componente). Il totale è mirrorato su `profiles.piggy_balance` dal trigger `sync_piggy_balance`, quindi il tab Accantonamenti resta invariato.

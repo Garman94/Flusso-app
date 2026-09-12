@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { LogoutButton } from "@/components/logout-button";
-import { DashboardNavLinks } from "@/components/dashboard-nav-links";
+import { DashboardNavLinks, MobileBottomNav } from "@/components/dashboard-nav-links";
 import { PreviewBanner } from "@/components/preview-banner";
 import { DemoBanner } from "@/components/demo-banner";
 import { NotificationsBell } from "@/components/notifications-bell";
@@ -51,6 +51,10 @@ export default async function DashboardLayout({
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const isDemo = isDemoEmail(claimsData?.claims?.email as string | undefined);
+  const adminEmails = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim());
+  const isAdmin = claimsData?.claims?.email
+    ? adminEmails.includes(claimsData.claims.email as string)
+    : false;
 
   return (
     <main className="min-h-screen flex flex-col items-center">
@@ -74,6 +78,9 @@ export default async function DashboardLayout({
         </div>
       </div>
 
+      {/* Nav mobile fuori dalla top bar: quella ha backdrop-blur, che crea un
+          containing block per i figli fixed e romperebbe l'aggancio al fondo schermo. */}
+      <MobileBottomNav isAdmin={isAdmin} />
     </main>
   );
 }
