@@ -5,17 +5,14 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatEuro,
-  calculateDailyBalanceProjection,
-  evaluateBalanceHealth,
-  findOverdueRecurring,
   recurringMonthlyEquivalent,
   txMatchesKeywords,
   estimateMonthlyExpenses,
   aggregateExpectedIncome,
-  type RecurringScheduleItem,
-  type OverdueCheckItem,
-  type BalanceProjectionDay,
+  hasIncomeInfo,
+  normalizeMonthlyIncome,
   type IncomeInfo,
+  type MonthlyExpenseEstimate,
 } from "@/lib/calculations";
 import { updateStartingBalance } from "./saldo-action";
 import { toast } from "sonner";
@@ -23,7 +20,17 @@ import { toast } from "sonner";
 const INCOME_COLS = "income_type, monthly_income, income_frequency, income_payday, income_variability, active_months";
 const TRANSFER_CATS = new Set(["spostamenti", "salvadanaio"]);
 
-type RecurringRow = RecurringScheduleItem & OverdueCheckItem & { custom_days: number | null };
+type RecurringRow = {
+  id: string;
+  name: string;
+  tipologia: "fissa" | "variabile" | "entrata";
+  frequency: string;
+  custom_days: number | null;
+  amount: number;
+  amount_max: number | null;
+  match_keywords: string[];
+  category_id: string | null;
+};
 
 type Tx = {
   amount: number; date: string;
@@ -31,12 +38,16 @@ type Tx = {
   categories?: { name: string } | null;
 };
 
+type MemberIncome = Partial<IncomeInfo> & { name: string };
+
 type Props = {
   userId: string;
   periodFrom: string;
   periodTo: string;
   piggyBalance: number;
 };
+
+type ExpandKey = "saldo" | "spese" | "entrate" | "saldo-previsto" | "spese-previste" | "entrate-previste";
 
 function todayIso() {
   return new Date().toISOString().split("T")[0];
@@ -132,79 +143,57 @@ function SetupForm({
   );
 }
 
-// ─── Timeline SVG ────────────────────────────────────────────────────────────
-function Timeline({ projection, todayIndex }: { projection: BalanceProjectionDay[]; todayIndex: number }) {
-  const [hover, setHover] = useState<number | null>(null);
-
-  const W = 600, H = 140, PAD = 8;
-  const values = projection.map(d => d.balance);
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 0);
-  const range = max - min || 1;
-
-  const x = (i: number) => PAD + (i / Math.max(1, projection.length - 1)) * (W - PAD * 2);
-  const y = (v: number) => H - PAD - ((v - min) / range) * (H - PAD * 2);
-
-  const path = projection.map((d, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(d.balance).toFixed(1)}`).join(" ");
-
-  const activeIdx = hover ?? todayIndex;
-  const active = projection[activeIdx];
-
+// ─── UI helpers ──────────────────────────────────────────────────────────────
+function Chevron({ open }: { open: boolean }) {
   return (
-    <div className="flex flex-col gap-1">
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-32 touch-none"
-        onMouseLeave={() => setHover(null)}
-        onMouseMove={e => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const relX = ((e.clientX - rect.left) / rect.width) * W;
-          const idx = Math.round(((relX - PAD) / (W - PAD * 2)) * (projection.length - 1));
-          setHover(Math.max(0, Math.min(projection.length - 1, idx)));
-        }}
-      >
-        {/* Zero line se il range attraversa lo zero */}
-        {min < 0 && max > 0 && (
-          <line x1={PAD} x2={W - PAD} y1={y(0)} y2={y(0)} stroke="currentColor" className="text-muted-foreground/30" strokeDasharray="3 3" />
-        )}
+    <svg
+      width="12" height="12" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth={2.5}
+      className={`text-muted-foreground transition-transform duration-200 shrink-0 ${open ? "rotate-180" : ""}`}
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
 
-        {/* Linea saldo previsto */}
-        <path d={path} fill="none" stroke="currentColor" className="text-muted-foreground" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+function StatButton({
+  label, value, valueClassName, open, onClick,
+}: {
+  label: string; value: string; valueClassName: string; open: boolean; onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} className="flex flex-col gap-0.5 text-left hover:opacity-80 transition-opacity">
+      <span className="text-[11px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+        {label} <Chevron open={open} />
+      </span>
+      <span className={valueClassName}>{value}</span>
+    </button>
+  );
+}
 
-        {/* Marker eventi (spese/entrate) */}
-        {projection.map((d, i) =>
-          d.events.map((ev, j) => (
-            <circle
-              key={`${i}-${j}`}
-              cx={x(i)} cy={y(d.balance)} r={3.5}
-              className={ev.amount < 0 ? "fill-red-500" : "fill-green-500"}
-            />
-          ))
-        )}
+function TxRow({ t }: { t: Tx }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2 border-b last:border-b-0 hover:bg-muted/50 transition-colors">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {new Date(t.date + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" })}
+        </span>
+        <span className="text-xs truncate">{t.description || t.merchant || "Transazione"}</span>
+      </div>
+      <span className={`text-xs font-semibold tabular-nums whitespace-nowrap ml-3 ${Number(t.amount) < 0 ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+        {Number(t.amount) >= 0 ? "+" : ""}{formatEuro(Number(t.amount))}
+      </span>
+    </div>
+  );
+}
 
-        {/* Oggi */}
-        <circle cx={x(todayIndex)} cy={y(projection[todayIndex]?.balance ?? 0)} r={5} className="fill-primary stroke-background" strokeWidth={2} />
-
-        {/* Hover crosshair */}
-        {hover != null && (
-          <line x1={x(hover)} x2={x(hover)} y1={PAD} y2={H - PAD} stroke="currentColor" className="text-muted-foreground/40" />
-        )}
-      </svg>
-
-      {active && (
-        <div className="flex items-center justify-between text-xs px-1">
-          <span className="text-muted-foreground">
-            {new Date(active.date + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" })}
-            {activeIdx === todayIndex && <span className="text-primary font-medium"> · oggi</span>}
-          </span>
-          <span className="font-semibold tabular-nums">{formatEuro(active.balance)}</span>
-          {active.events.length > 0 && (
-            <span className="text-muted-foreground truncate max-w-[50%]">
-              {active.events.map(e => e.name).join(", ")}
-            </span>
-          )}
-        </div>
-      )}
+function TxListPanel({ txs, emptyLabel }: { txs: Tx[]; emptyLabel: string }) {
+  const sorted = [...txs].sort((a, b) => b.date.localeCompare(a.date));
+  return (
+    <div className="rounded-lg border bg-muted/30 overflow-hidden max-h-64 overflow-y-auto">
+      {sorted.length === 0 ? (
+        <p className="text-xs text-muted-foreground px-3 py-2">{emptyLabel}</p>
+      ) : sorted.map((t, i) => <TxRow key={i} t={t} />)}
     </div>
   );
 }
@@ -217,9 +206,14 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   const [periodTxs, setPeriodTxs] = useState<Tx[]>([]);
   const [historyTxs, setHistoryTxs] = useState<Tx[]>([]);
   const [ownerIncome, setOwnerIncome] = useState<Partial<IncomeInfo> | null>(null);
-  const [membersIncome, setMembersIncome] = useState<Partial<IncomeInfo>[]>([]);
+  const [membersIncome, setMembersIncome] = useState<MemberIncome[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState<ExpandKey | null>(null);
+
+  function toggle(key: ExpandKey) {
+    setExpanded(k => k === key ? null : key);
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -230,7 +224,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     Promise.all([
       supabase.from("profiles").select(`period_starting_balance, period_starting_balance_date, ${INCOME_COLS}`).eq("id", userId).single(),
       supabase.from("recurring_expenses")
-        .select("id, name, tipologia, frequency, custom_days, due_day, due_month, amount, amount_max, next_due_date, last_paid_date, match_keywords, category_id")
+        .select("id, name, tipologia, frequency, custom_days, amount, amount_max, match_keywords, category_id")
         .eq("user_id", userId),
       // Query filtrate per data: senza bound si rischia il limite di default di 1000 righe
       // di Supabase, che senza un ordinamento esplicito puo' tagliare fuori proprio le
@@ -241,7 +235,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       supabase.from("transactions")
         .select("amount, date, description, merchant, category_id, categories(name)")
         .eq("user_id", userId).gte("date", historyFrom).lte("date", periodTo),
-      supabase.from("family_members").select(INCOME_COLS).eq("user_id", userId),
+      supabase.from("family_members").select(`name, ${INCOME_COLS}`).eq("user_id", userId),
     ]).then(([profileRes, recRes, periodTxRes, historyTxRes, memRes]) => {
       const pStart = profileRes.data?.period_starting_balance_date;
       setStartingBalance(
@@ -253,7 +247,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       setItems((recRes.data ?? []) as RecurringRow[]);
       setPeriodTxs((periodTxRes.data ?? []) as unknown as Tx[]);
       setHistoryTxs((historyTxRes.data ?? []) as unknown as Tx[]);
-      setMembersIncome((memRes.data ?? []) as Partial<IncomeInfo>[]);
+      setMembersIncome((memRes.data ?? []) as MemberIncome[]);
       setLoading(false);
     });
   }, [userId, periodFrom, periodTo, refreshKey]);
@@ -270,20 +264,11 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 
     // ── Effettivi (periodo corrente) ──
     const spendableTxs = periodTxs.filter(t => !isTransfer(t));
-    const income      = spendableTxs.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
-    const expensesAbs = spendableTxs.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-
-    // ── Proiezione giornaliera + saldo reale ──
-    const projection = calculateDailyBalanceProjection(startingBalance, items, periodFrom, periodTo);
-    let todayIndex = projection.findIndex(d => d.date === iso);
-    if (todayIndex === -1) todayIndex = iso < periodFrom ? 0 : projection.length - 1;
-
-    const expectedToday = projection[todayIndex]?.balance ?? startingBalance;
+    const expenseTxs = spendableTxs.filter(t => Number(t.amount) < 0);
+    const incomeTxs  = spendableTxs.filter(t => Number(t.amount) > 0);
+    const income      = incomeTxs.reduce((s, t) => s + Number(t.amount), 0);
+    const expensesAbs = expenseTxs.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
     const actualToday = startingBalance + txSumToToday;
-
-    const health = evaluateBalanceHealth(actualToday, expectedToday);
-    const overdue = findOverdueRecurring(items, periodTxs);
-    const overdueTotal = overdue.reduce((s, o) => s + o.amount, 0);
 
     // ── Previsti (mese corrente, reddito da anagrafica) ──
     const now = new Date();
@@ -320,11 +305,12 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     const saldoFineMeseStimato = entratePreviste - specePreviste;
 
     return {
-      income, expensesAbs,
-      projection, todayIndex, expectedToday, actualToday, health, overdueTotal,
+      income, expensesAbs, incomeTxs, expenseTxs,
+      actualToday, estimate, fixedItems,
       specePreviste, entratePreviste, saldoFineMeseStimato,
+      calMonth: calMonth + 1,
     };
-  }, [startingBalance, items, periodTxs, historyTxs, ownerIncome, membersIncome, periodFrom, periodTo, iso, txSumToToday]);
+  }, [startingBalance, items, periodTxs, historyTxs, ownerIncome, membersIncome, txSumToToday]);
 
   if (loading) {
     return (
@@ -346,9 +332,9 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   }
 
   const {
-    income, expensesAbs,
-    projection, todayIndex, expectedToday, actualToday, health, overdueTotal,
-    specePreviste, entratePreviste, saldoFineMeseStimato,
+    income, expensesAbs, incomeTxs, expenseTxs,
+    actualToday, estimate, fixedItems,
+    specePreviste, entratePreviste, saldoFineMeseStimato, calMonth,
   } = result;
 
   if (editing) {
@@ -363,30 +349,40 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     );
   }
 
-  const statusStyle = {
-    ahead: { text: "text-green-600 dark:text-green-400", bg: "bg-green-500/10", label: "Sei in linea 👍" },
-    green: { text: "text-green-600 dark:text-green-400", bg: "bg-green-500/10", label: "Sei in linea 👍" },
-    yellow: { text: "text-yellow-600 dark:text-yellow-400", bg: "bg-yellow-500/10", label: `Attenzione: hai ${formatEuro(Math.abs(health.diff))} in meno del previsto` },
-    red: { text: "text-red-500", bg: "bg-red-500/10", label: `Hai ${formatEuro(Math.abs(health.diff))} in meno del previsto — controlla le spese` },
-  }[health.status];
+  const periodStartLabel = new Date(periodFrom + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+  const incomeSources = [
+    { name: "Tu", amount: hasIncomeInfo(ownerIncome) ? normalizeMonthlyIncome(ownerIncome, calMonth) : 0 },
+    ...membersIncome
+      .filter(m => hasIncomeInfo(m))
+      .map(m => ({ name: m.name, amount: normalizeMonthlyIncome(m, calMonth) })),
+  ].filter(s => s.amount > 0);
 
   return (
     <div data-tour="hero" className="rounded-xl border p-4 sm:p-6 flex flex-col gap-5">
 
       {/* Row 1 — effettivi */}
       <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Saldo attuale stimato</span>
-          <span className="text-3xl sm:text-4xl font-bold tabular-nums">{formatEuro(actualToday)}</span>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] text-muted-foreground uppercase tracking-wide">Spese affrontate</span>
-          <span className="text-lg sm:text-xl font-bold tabular-nums text-red-500">{formatEuro(expensesAbs)}</span>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] text-muted-foreground uppercase tracking-wide">Entrate effettive</span>
-          <span className="text-lg sm:text-xl font-bold tabular-nums text-green-600 dark:text-green-400">{formatEuro(income)}</span>
-        </div>
+        <StatButton
+          label="Saldo attuale stimato"
+          value={formatEuro(actualToday)}
+          valueClassName="text-3xl sm:text-4xl font-bold tabular-nums"
+          open={expanded === "saldo"}
+          onClick={() => toggle("saldo")}
+        />
+        <StatButton
+          label="Spese affrontate"
+          value={formatEuro(expensesAbs)}
+          valueClassName="text-lg sm:text-xl font-bold tabular-nums text-red-500"
+          open={expanded === "spese"}
+          onClick={() => toggle("spese")}
+        />
+        <StatButton
+          label="Entrate effettive"
+          value={formatEuro(income)}
+          valueClassName="text-lg sm:text-xl font-bold tabular-nums text-green-600 dark:text-green-400"
+          open={expanded === "entrate"}
+          onClick={() => toggle("entrate")}
+        />
         <button
           onClick={() => setEditing(true)}
           className="ml-auto text-xs text-muted-foreground hover:text-foreground underline"
@@ -395,40 +391,83 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
         </button>
       </div>
 
+      {expanded === "saldo" && (
+        <div className="flex flex-col gap-2 -mt-2">
+          <p className="text-xs text-muted-foreground">
+            Saldo a inizio periodo ({periodStartLabel}): <strong className="text-foreground tabular-nums">{formatEuro(startingBalance)}</strong> + movimenti fino a oggi
+          </p>
+          <TxListPanel txs={periodTxs.filter(t => t.date <= iso)} emptyLabel="Nessun movimento registrato fino a oggi." />
+        </div>
+      )}
+      {expanded === "spese" && (
+        <div className="-mt-2">
+          <TxListPanel txs={expenseTxs} emptyLabel="Nessuna spesa questo periodo." />
+        </div>
+      )}
+      {expanded === "entrate" && (
+        <div className="-mt-2">
+          <TxListPanel txs={incomeTxs} emptyLabel="Nessuna entrata questo periodo." />
+        </div>
+      )}
+
       {/* Row 2 — previsti (mese corrente) */}
       <div className="flex flex-wrap items-start gap-x-5 gap-y-2 pt-3 border-t">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Saldo fine mese stimato</span>
-          <span className="text-lg sm:text-xl font-semibold tabular-nums">{formatEuro(saldoFineMeseStimato)}</span>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Spese previste</span>
-          <span className="text-sm sm:text-base font-semibold tabular-nums text-red-500">{formatEuro(specePreviste)}</span>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Entrate da stipendio previste</span>
-          <span className="text-sm sm:text-base font-semibold tabular-nums text-green-600 dark:text-green-400">{formatEuro(entratePreviste)}</span>
-        </div>
+        <StatButton
+          label="Saldo fine mese stimato"
+          value={formatEuro(saldoFineMeseStimato)}
+          valueClassName="text-lg sm:text-xl font-semibold tabular-nums"
+          open={expanded === "saldo-previsto"}
+          onClick={() => toggle("saldo-previsto")}
+        />
+        <StatButton
+          label="Spese previste"
+          value={formatEuro(specePreviste)}
+          valueClassName="text-sm sm:text-base font-semibold tabular-nums text-red-500"
+          open={expanded === "spese-previste"}
+          onClick={() => toggle("spese-previste")}
+        />
+        <StatButton
+          label="Entrate da stipendio previste"
+          value={formatEuro(entratePreviste)}
+          valueClassName="text-sm sm:text-base font-semibold tabular-nums text-green-600 dark:text-green-400"
+          open={expanded === "entrate-previste"}
+          onClick={() => toggle("entrate-previste")}
+        />
       </div>
 
-      {/* Row 3 — delta previsto/effettivo (oggi) */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className={`rounded-lg px-3 py-2 text-sm font-medium ${statusStyle.bg} ${statusStyle.text}`}>
-          {statusStyle.label}
+      {expanded === "saldo-previsto" && (
+        <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs -mt-1">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Entrate da stipendio previste</span>
+            <span className="font-medium tabular-nums text-green-600 dark:text-green-400">{formatEuro(entratePreviste)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">− Spese previste</span>
+            <span className="font-medium tabular-nums text-red-500">{formatEuro(specePreviste)}</span>
+          </div>
+          <div className="flex justify-between pt-1 mt-1 border-t">
+            <span className="font-medium">= Saldo fine mese stimato</span>
+            <span className="font-semibold tabular-nums">{formatEuro(saldoFineMeseStimato)}</span>
+          </div>
         </div>
-        <span className="text-xs text-muted-foreground">
-          Previsto per oggi: <strong className="tabular-nums">{formatEuro(expectedToday)}</strong>
-          {overdueTotal > 0 && <> · include {formatEuro(overdueTotal)} di spese non ancora pagate</>}
-        </span>
-      </div>
-
-      <Timeline projection={projection} todayIndex={todayIndex} />
-
-      <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> spesa prevista</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> entrata prevista</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary inline-block" /> oggi</span>
-      </div>
+      )}
+      {expanded === "spese-previste" && (
+        <SpesePreviste estimate={estimate} fixedItems={fixedItems} />
+      )}
+      {expanded === "entrate-previste" && (
+        <div className="rounded-lg border bg-muted/30 overflow-hidden -mt-1">
+          {incomeSources.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-3 py-2">
+              Nessun reddito compilato — vai in Account → Il tuo reddito.
+            </p>
+          ) : incomeSources.map((s, i) => (
+            <div key={i} className="flex items-center justify-between px-3 py-2 border-b last:border-b-0 text-xs">
+              <span>{s.name}</span>
+              <span className="font-semibold tabular-nums text-green-600 dark:text-green-400">{formatEuro(s.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Salvadanai — separato in fondo */}
       <Link href="/dashboard/salvadanai" className="pt-4 mt-1 border-t flex items-center justify-between group">
@@ -440,6 +479,33 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
           Gestisci i salvadanai →
         </span>
       </Link>
+    </div>
+  );
+}
+
+function SpesePreviste({ estimate, fixedItems }: { estimate: MonthlyExpenseEstimate; fixedItems: RecurringRow[] }) {
+  return (
+    <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-2 text-xs -mt-1">
+      <div className="flex flex-col gap-1">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Spese fisse (certe)</span>
+          <span className="font-medium tabular-nums">{formatEuro(estimate.fixedTotal)}</span>
+        </div>
+        {fixedItems.map(it => (
+          <div key={it.id} className="flex justify-between pl-3 text-muted-foreground">
+            <span className="truncate">{it.name}</span>
+            <span className="tabular-nums">{formatEuro(recurringMonthlyEquivalent(it))}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between pt-1 border-t">
+        <span className="text-muted-foreground">Spese variabili (stimate, media)</span>
+        <span className="font-medium tabular-nums">{formatEuro(estimate.variableAvg)}</span>
+      </div>
+      <p className="text-muted-foreground">
+        Range stimato {formatEuro(estimate.variableMin)} – {formatEuro(estimate.variableMax)}
+        {estimate.usedSeasonalWeight ? ", con peso sullo stesso mese dell'anno scorso" : ""}.
+      </p>
     </div>
   );
 }
