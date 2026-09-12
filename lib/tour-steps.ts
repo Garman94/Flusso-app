@@ -11,7 +11,7 @@ export type PageTourDef = {
 export const PAGE_TOURS: Record<string, PageTourDef> = {
 
   "/dashboard": {
-    version: "1.5",
+    version: "1.6",
     whatIsNew: "saldo attuale e previsioni di fine mese unificati in un'unica card, con dettaglio delle transazioni per ogni voce",
     steps: [
       {
@@ -21,7 +21,7 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       {
         target: "[data-tour='hero']",
         title: "Il tuo saldo, oggi e a fine mese",
-        message: "In alto il saldo reale di oggi con spese ed entrate effettive. Sotto, più piccole, le stesse voci ma previste per fine mese. Tocca una voce per aprirla e vedere le transazioni (o il calcolo) che la compongono. In fondo trovi i salvadanai.",
+        message: "In alto il saldo reale di oggi con spese ed entrate effettive. Sotto, più piccole, le stesse voci ma previste per fine mese, con le spese variabili scorporate. In fondo la differenza tra previsto ed effettivo. Tocca una voce per aprirla e vedere le transazioni (o il calcolo) che la compongono. Sotto tutto trovi i salvadanai.",
       },
       {
         target: "[data-tour='breakdown']",

@@ -47,7 +47,10 @@ type Props = {
   piggyBalance: number;
 };
 
-type ExpandKey = "saldo" | "spese" | "entrate" | "saldo-previsto" | "spese-previste" | "entrate-previste";
+type ExpandKey =
+  | "saldo" | "spese" | "entrate"
+  | "saldo-previsto" | "spese-previste" | "spese-variabili" | "entrate-previste"
+  | "delta-saldo" | "delta-spese" | "delta-entrate";
 
 function todayIso() {
   return new Date().toISOString().split("T")[0];
@@ -291,13 +294,20 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     }
 
     const variableMonthlyTotals: number[] = [];
+    const variableMonthsDetail: { label: string; total: number }[] = [];
     for (let i = 1; i <= 3; i++) {
       const d = new Date(calYear, calMonth - i, 1);
       const r = variableTotalForMonth(d.getFullYear(), d.getMonth());
-      if (r.hasData) variableMonthlyTotals.push(r.total);
+      if (r.hasData) {
+        variableMonthlyTotals.push(r.total);
+        variableMonthsDetail.push({ label: d.toLocaleDateString("it-IT", { month: "long", year: "numeric" }), total: r.total });
+      }
     }
     const lastYear = variableTotalForMonth(calYear - 1, calMonth);
     const sameMonthLastYearTotal = lastYear.hasData ? lastYear.total : null;
+    const sameMonthLastYearLabel = lastYear.hasData
+      ? new Date(calYear - 1, calMonth, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" })
+      : null;
 
     const estimate = estimateMonthlyExpenses(fixedTotal, variableMonthlyTotals, sameMonthLastYearTotal);
     const specePreviste = estimate.fixedTotal + estimate.variableAvg;
@@ -307,7 +317,11 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     return {
       income, expensesAbs, incomeTxs, expenseTxs,
       actualToday, estimate, fixedItems,
+      variableMonthsDetail, sameMonthLastYearTotal, sameMonthLastYearLabel,
       specePreviste, entratePreviste, saldoFineMeseStimato,
+      deltaSaldo: saldoFineMeseStimato - actualToday,
+      deltaSpese: specePreviste - expensesAbs,
+      deltaEntrate: entratePreviste - income,
       calMonth: calMonth + 1,
     };
   }, [startingBalance, items, periodTxs, historyTxs, ownerIncome, membersIncome, txSumToToday]);
@@ -334,7 +348,9 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   const {
     income, expensesAbs, incomeTxs, expenseTxs,
     actualToday, estimate, fixedItems,
-    specePreviste, entratePreviste, saldoFineMeseStimato, calMonth,
+    variableMonthsDetail, sameMonthLastYearTotal, sameMonthLastYearLabel,
+    specePreviste, entratePreviste, saldoFineMeseStimato,
+    deltaSaldo, deltaSpese, deltaEntrate, calMonth,
   } = result;
 
   if (editing) {
@@ -427,6 +443,13 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
           onClick={() => toggle("spese-previste")}
         />
         <StatButton
+          label="Spese variabili"
+          value={formatEuro(estimate.variableAvg)}
+          valueClassName="text-sm sm:text-base font-semibold tabular-nums text-red-500"
+          open={expanded === "spese-variabili"}
+          onClick={() => toggle("spese-variabili")}
+        />
+        <StatButton
           label="Entrate da stipendio previste"
           value={formatEuro(entratePreviste)}
           valueClassName="text-sm sm:text-base font-semibold tabular-nums text-green-600 dark:text-green-400"
@@ -454,6 +477,29 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       {expanded === "spese-previste" && (
         <SpesePreviste estimate={estimate} fixedItems={fixedItems} />
       )}
+      {expanded === "spese-variabili" && (
+        <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs -mt-1">
+          {variableMonthsDetail.length === 0 ? (
+            <p className="text-muted-foreground">Storico insufficiente per una stima.</p>
+          ) : variableMonthsDetail.map((m, i) => (
+            <div key={i} className="flex justify-between">
+              <span className="text-muted-foreground capitalize">{m.label}</span>
+              <span className="tabular-nums">{formatEuro(m.total)}</span>
+            </div>
+          ))}
+          {sameMonthLastYearTotal != null && (
+            <div className="flex justify-between pt-1 border-t">
+              <span className="text-muted-foreground capitalize">{sameMonthLastYearLabel} (anno scorso, peso 40%)</span>
+              <span className="tabular-nums">{formatEuro(sameMonthLastYearTotal)}</span>
+            </div>
+          )}
+          <div className="flex justify-between pt-1 border-t">
+            <span className="font-medium">Media stimata</span>
+            <span className="font-semibold tabular-nums">{formatEuro(estimate.variableAvg)}</span>
+          </div>
+          <p className="text-muted-foreground">Range {formatEuro(estimate.variableMin)} – {formatEuro(estimate.variableMax)}.</p>
+        </div>
+      )}
       {expanded === "entrate-previste" && (
         <div className="rounded-lg border bg-muted/30 overflow-hidden -mt-1">
           {incomeSources.length === 0 ? (
@@ -467,6 +513,38 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
             </div>
           ))}
         </div>
+      )}
+
+      {/* Row 3 — differenze previsto/effettivo */}
+      <div className="flex flex-wrap items-start gap-x-5 gap-y-2 pt-3 border-t">
+        <DeltaStatButton
+          label="Differenza saldo"
+          value={deltaSaldo}
+          open={expanded === "delta-saldo"}
+          onClick={() => toggle("delta-saldo")}
+        />
+        <DeltaStatButton
+          label="Differenza spese"
+          value={deltaSpese}
+          open={expanded === "delta-spese"}
+          onClick={() => toggle("delta-spese")}
+        />
+        <DeltaStatButton
+          label="Differenza entrate"
+          value={deltaEntrate}
+          open={expanded === "delta-entrate"}
+          onClick={() => toggle("delta-entrate")}
+        />
+      </div>
+
+      {expanded === "delta-saldo" && (
+        <DeltaDetail previstoLabel="Saldo fine mese stimato" previsto={saldoFineMeseStimato} effettivoLabel="Saldo attuale stimato" effettivo={actualToday} delta={deltaSaldo} />
+      )}
+      {expanded === "delta-spese" && (
+        <DeltaDetail previstoLabel="Spese previste" previsto={specePreviste} effettivoLabel="Spese affrontate" effettivo={expensesAbs} delta={deltaSpese} />
+      )}
+      {expanded === "delta-entrate" && (
+        <DeltaDetail previstoLabel="Entrate da stipendio previste" previsto={entratePreviste} effettivoLabel="Entrate effettive" effettivo={income} delta={deltaEntrate} />
       )}
 
       {/* Salvadanai — separato in fondo */}
@@ -485,27 +563,62 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 
 function SpesePreviste({ estimate, fixedItems }: { estimate: MonthlyExpenseEstimate; fixedItems: RecurringRow[] }) {
   return (
-    <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-2 text-xs -mt-1">
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Spese fisse (certe)</span>
-          <span className="font-medium tabular-nums">{formatEuro(estimate.fixedTotal)}</span>
-        </div>
-        {fixedItems.map(it => (
-          <div key={it.id} className="flex justify-between pl-3 text-muted-foreground">
-            <span className="truncate">{it.name}</span>
-            <span className="tabular-nums">{formatEuro(recurringMonthlyEquivalent(it))}</span>
-          </div>
-        ))}
+    <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs -mt-1">
+      <div className="flex justify-between">
+        <span className="text-muted-foreground">Spese fisse (certe)</span>
+        <span className="font-medium tabular-nums">{formatEuro(estimate.fixedTotal)}</span>
       </div>
+      {fixedItems.map(it => (
+        <div key={it.id} className="flex justify-between pl-3 text-muted-foreground">
+          <span className="truncate">{it.name}</span>
+          <span className="tabular-nums">{formatEuro(recurringMonthlyEquivalent(it))}</span>
+        </div>
+      ))}
       <div className="flex justify-between pt-1 border-t">
-        <span className="text-muted-foreground">Spese variabili (stimate, media)</span>
+        <span className="text-muted-foreground">+ Spese variabili (stimate)</span>
         <span className="font-medium tabular-nums">{formatEuro(estimate.variableAvg)}</span>
       </div>
-      <p className="text-muted-foreground">
-        Range stimato {formatEuro(estimate.variableMin)} – {formatEuro(estimate.variableMax)}
-        {estimate.usedSeasonalWeight ? ", con peso sullo stesso mese dell'anno scorso" : ""}.
-      </p>
+      <div className="flex justify-between pt-1 border-t">
+        <span className="font-medium">= Spese previste</span>
+        <span className="font-semibold tabular-nums">{formatEuro(estimate.fixedTotal + estimate.variableAvg)}</span>
+      </div>
+    </div>
+  );
+}
+
+function DeltaStatButton({
+  label, value, open, onClick,
+}: { label: string; value: number; open: boolean; onClick: () => void }) {
+  return (
+    <StatButton
+      label={label}
+      value={formatEuro(value)}
+      valueClassName={`text-sm sm:text-base font-semibold tabular-nums ${value >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}
+      open={open}
+      onClick={onClick}
+    />
+  );
+}
+
+function DeltaDetail({
+  previstoLabel, previsto, effettivoLabel, effettivo, delta,
+}: { previstoLabel: string; previsto: number; effettivoLabel: string; effettivo: number; delta: number }) {
+  return (
+    <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs -mt-1">
+      <div className="flex justify-between">
+        <span className="text-muted-foreground">{previstoLabel} (previsto)</span>
+        <span className="font-medium tabular-nums">{formatEuro(previsto)}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-muted-foreground">{effettivoLabel} (effettivo)</span>
+        <span className="font-medium tabular-nums">{formatEuro(effettivo)}</span>
+      </div>
+      <div className="flex justify-between pt-1 border-t">
+        <span className="font-medium">Differenza</span>
+        <span className={`font-semibold tabular-nums ${delta >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
+          {formatEuro(delta)}
+        </span>
+      </div>
     </div>
   );
 }
