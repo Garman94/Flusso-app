@@ -246,6 +246,7 @@ const EMPTY_D = {
   debt_total_amount: "",
   debt_start_date: "",
   due_day: null as number | null,
+  secondary_name: "",
 };
 
 const DEBT_TYPE_META: Record<DebtType, { icon: string; label: string }> = {
@@ -284,6 +285,7 @@ export function SmartPageClient({
   const [dForm, setDForm] = useState(EMPTY_D);
   const [dEditId, setDEditId] = useState<string | null>(null);
   const [dSaving, setDSaving] = useState(false);
+  const [dTxSearch, setDTxSearch] = useState("");
 
   // Goal wizard
   const [gStep, setGStep] = useState(1);
@@ -353,7 +355,7 @@ export function SmartPageClient({
   }
 
   function goAddRate() {
-    setDForm(EMPTY_D); setDEditId(null); setView("rate-form");
+    setDForm(EMPTY_D); setDEditId(null); setDTxSearch(""); setView("rate-form");
   }
 
   function goEditRate(item: RecurringExpense) {
@@ -364,8 +366,9 @@ export function SmartPageClient({
       debt_total_amount: item.debt_total_amount != null ? String(item.debt_total_amount).replace(".", ",") : "",
       debt_start_date: item.debt_start_date ?? "",
       due_day: item.due_day ?? null,
+      secondary_name: item.secondary_name ?? "",
     });
-    setDEditId(item.id); setView("rate-form");
+    setDEditId(item.id); setDTxSearch(""); setView("rate-form");
   }
 
   async function handleSaveRate() {
@@ -383,7 +386,8 @@ export function SmartPageClient({
       name: dForm.name.trim(), tipologia: "fissa" as Tipologia, frequency: "mensile" as Frequency,
       custom_days: null, amount: amt, amount_max: null,
       match_keywords: [], matching_strategy: "keyword",
-      due_day: dForm.due_day, category_id: null, notes: null, secondary_name: null,
+      due_day: dForm.due_day, category_id: null, notes: null,
+      secondary_name: dForm.secondary_name.trim() || null,
       next_due_date: null, saving_start_date: null,
       end_date: progress.endDate.toISOString().split("T")[0],
       debt_type: dForm.debt_type, debt_total_amount: total, debt_start_date: dForm.debt_start_date,
@@ -746,6 +750,10 @@ export function SmartPageClient({
                 ? computeDebtProgress({ totalAmount: item.debt_total_amount, monthlyAmount: item.amount, startDate: item.debt_start_date })
                 : null;
               const pct = progress && item.debt_total_amount ? Math.min(100, (progress.paidSoFar / item.debt_total_amount) * 100) : 0;
+              const kws = effectiveKws(item);
+              const paidThisPeriod = kws.length > 0 && transactions.some(
+                t => Number(t.amount) < 0 && t.date >= pStart && (pEnd ? t.date <= pEnd : true) && txMatchesKws(t, kws)
+              );
               return (
                 <div key={item.id} className="rounded-xl border p-4 flex flex-col gap-3">
                   <div className="flex items-start gap-3">
@@ -755,6 +763,23 @@ export function SmartPageClient({
                         {meta.label} · {fmt(item.amount)}/mese
                         {item.due_day ? ` · giorno ${item.due_day}` : ""}
                       </div>
+                      {kws.length > 0 ? (
+                        <span className={`inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                          paidThisPeriod
+                            ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                            : "bg-muted text-muted-foreground"
+                        }`}>
+                          {paidThisPeriod ? "✅ Pagata questo mese" : "⏳ Non ancora pagata questo mese"}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => goEditRate(item)}
+                          className="block mt-1.5 text-[10px] text-primary underline hover:no-underline"
+                        >
+                          🔗 Collega una transazione per verificare i pagamenti
+                        </button>
+                      )}
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <button
@@ -880,6 +905,74 @@ export function SmartPageClient({
               placeholder="es. 27"
               className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
             />
+          </div>
+
+          {/* Collega a transazione */}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Collega a transazione</label>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Collega una transazione reale: Flusso riconoscerà da sola quando la rata è stata pagata questo mese.
+            </p>
+            {dForm.secondary_name ? (
+              <div className="flex items-center gap-3 rounded-xl border-2 border-primary/40 bg-primary/5 px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{dForm.secondary_name}</p>
+                  <p className="text-xs text-muted-foreground">Collegata</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDForm(f => ({ ...f, secondary_name: "" }))}
+                  className="text-xs text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                >
+                  ✕ Scollega
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  value={dTxSearch}
+                  onChange={e => setDTxSearch(e.target.value)}
+                  placeholder="Cerca nelle tue transazioni…"
+                  className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+                />
+                {dTxSearch.length >= 2 && (
+                  <div className="flex flex-col gap-1">
+                    {transactions
+                      .filter(t => {
+                        const q = dTxSearch.toLowerCase();
+                        return t.description?.toLowerCase().includes(q) || t.merchant?.toLowerCase().includes(q);
+                      })
+                      .slice(0, 5)
+                      .map((t, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            setDForm(f => ({ ...f, secondary_name: t.description ?? t.merchant ?? "" }));
+                            setDTxSearch("");
+                          }}
+                          className="text-left px-3 py-2.5 rounded-xl border hover:bg-muted/50 transition-colors flex items-center gap-3"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{t.description || t.merchant}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {fmt(Math.abs(Number(t.amount)))} · {new Date(t.date + "T00:00:00").toLocaleDateString("it-IT")}
+                            </p>
+                          </div>
+                          <span className="text-xs text-primary shrink-0">Collega →</span>
+                        </button>
+                      ))}
+                    {transactions.filter(t => {
+                      const q = dTxSearch.toLowerCase();
+                      return t.description?.toLowerCase().includes(q) || t.merchant?.toLowerCase().includes(q);
+                    }).length === 0 && (
+                      <p className="text-xs text-muted-foreground px-1">Nessuna transazione trovata.</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {(() => {
@@ -2741,6 +2834,15 @@ export function SmartPageClient({
                   const catchup = catchupData.find(c => c.proj.input.id === proj.input.id);
                   const isCatchup = catchup?.is_catchup ?? false;
 
+                  // Riconoscimento automatico: una transazione reale che sembra questo pagamento,
+                  // successiva all'inizio del ciclo corrente (saving_start_date) — evita di
+                  // ripescare un pagamento di un ciclo già confermato in precedenza.
+                  const kws = effectiveKws(item);
+                  const today = new Date().toISOString().split("T")[0];
+                  const candidateTx = kws.length > 0 ? transactions
+                    .filter(t => Number(t.amount) < 0 && t.date >= item.saving_start_date! && t.date <= today && txMatchesKws(t, kws))
+                    .sort((a, b) => b.date.localeCompare(a.date))[0] ?? null : null;
+
                   return (
                     <div
                       key={proj.input.id}
@@ -2799,6 +2901,30 @@ export function SmartPageClient({
                           <span>Totale: {fmt(proj.input.amount_per_cycle)}</span>
                         </div>
                       </div>
+
+                      {candidateTx && (
+                        <div className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 flex items-center justify-between gap-3 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-medium">
+                              💡 Trovato: {fmt(Math.abs(Number(candidateTx.amount)))} il{" "}
+                              {new Date(candidateTx.date + "T00:00:00").toLocaleDateString("it-IT")}
+                            </p>
+                            <p className="text-muted-foreground truncate">{candidateTx.description || candidateTx.merchant}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const foundAmt = Math.abs(Number(candidateTx.amount));
+                              setPaidAmount(foundAmt % 1 === 0 ? foundAmt.toString() : foundAmt.toFixed(2));
+                              setPaidDeduct(piggyBalance >= foundAmt);
+                              setPaidDialog({ proj, item });
+                            }}
+                            className="shrink-0 bg-primary text-primary-foreground rounded-lg px-3 py-1.5 font-medium hover:bg-primary/90 transition-colors"
+                          >
+                            Conferma
+                          </button>
+                        </div>
+                      )}
 
                       <div className="flex items-center gap-3">
                         {/* Pagata button */}
