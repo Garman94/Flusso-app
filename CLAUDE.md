@@ -1,6 +1,6 @@
 # CLAUDE.md — Flusso App
 
-Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-14 (blocco budget Accantonamenti).
+Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-14 (tab Rate + raggruppamento Rate/Accantonamenti/Budget).
 
 ---
 
@@ -50,7 +50,7 @@ flussoapp/
 │   │   │   └── import-excel-modal.tsx    # Import Excel + selezione membro
 │   │   ├── smart/
 │   │   │   ├── page.tsx                  # Server component Smart; lock screen per piano free
-│   │   │   ├── smart-page-client.tsx     # Tab controller: Previsioni / Ricorrenti / Obiettivi / Accantonamenti / Budget
+│   │   │   ├── smart-page-client.tsx     # Tab controller: Previsioni / Ricorrenti / Obiettivi / Impegni (Rate, Accantonamenti, Budget)
 │   │   │   ├── budget-panel.tsx          # Tab "Budget" — budget mensile per categoria + sottopagina storico/mesi speciali
 │   │   │   └── recurring-client.tsx      # Tab "Ricorrenti" — spese ricorrenti + report
 │   │   ├── obiettivi/
@@ -278,6 +278,9 @@ next_due_date date NULL     -- prossima scadenza (accantonamenti)
 saving_start_date date NULL -- data inizio accantonamento
 last_paid_date date NULL       -- ultima data di conferma pagamento (migration 022)
 payment_status text            -- 'pending' | 'paid' | 'overdue' (migration 022, aggiornato solo da "Segna come pagata")
+debt_type text NULL            -- 'mutuo' | 'rata_acquisto' | 'debito_persona' | 'altro' (migration 033); non NULL = la voce è una Rata
+debt_total_amount numeric NULL -- importo totale finanziato/dovuto (solo se debt_type valorizzato)
+debt_start_date date NULL      -- data di inizio del piano di rientro (solo se debt_type valorizzato)
 ```
 
 ### `payment_confirmations`
@@ -389,13 +392,19 @@ Griglia di salvadanai (`savings_pots`). Card: emoji+nome, saldo, barra verso `ta
 
 ### Smart (`/dashboard/smart`)
 - **Piano free**: schermata di blocco 🔒 + tour `freePreview` che spiega le feature e invita all'upgrade
-- **Piano premium/founder**: accesso completo alle 5 tab (Previsioni, Ricorrenti, Obiettivi, Accantonamenti, Spese variabili)
+- **Piano premium/founder**: accesso completo a Previsioni, Ricorrenti, Obiettivi e al sottomenu "Rate, Accantonamenti, Budget"
 
 #### Tab: Ricorrenti
 Sistema di riconoscimento automatico transazioni con `match_keywords`, supporto `historical_avg` per variabilità stagionale (luce/gas), accordion per categoria nel report, template rapidi.
 
 #### Tab: Obiettivi
 Wizard 6 step (`smart-page-client.tsx`, `view === "add-goal"`): nome/icona → importo → scadenza (con quota mensile suggerita) → **salvadanaio collegato** (`goals.savings_pot_id`) → **contributo mensile** (`goals.monthly_contribution`) → riepilogo. `view === "goal-detail"`: progress, quota necessaria vs impostata, stima raggiungimento (`estimateGoalCompletion`), proiezione SVG, storico `goal_contributions` + "Aggiungi contributo" (`goal-actions.ts` → trigger aggiorna `current_amount`). Limite free: 1 obiettivo.
+
+### Cover "Rate, Accantonamenti, Budget" (sottomenu `view === "impegni"`)
+I tre tab seguenti sono raggruppati in Smart sotto un'unica voce di copertina (`data-tour="smart-impegni"`, non più tre voci separate): il tap apre un sottomenu con le tre card, ciascuna con il proprio `onBack` che torna a `"impegni"` invece che a `"cover"`.
+
+#### Tab: Rate
+Inline in `smart-page-client.tsx` (`view === "rate"` / `"rate-form"`), stessa tabella `recurring_expenses` delle altre voci Ricorrenti — una Rata è una riga con `tipologia = 'fissa'`, `frequency = 'mensile'` e `debt_type` valorizzato ('mutuo' | 'rata_acquisto' | 'debito_persona' | 'altro'), quindi conta automaticamente nelle "Spese fisse" della dashboard senza bisogno di codice dedicato. Form dedicato (non il wizard generico di Ricorrenti, i cui step non calzano): tipo, nome, rata mensile, importo totale finanziato, data di inizio, giorno del mese opzionale. `end_date` viene calcolato e salvato in automatico (`computeDebtProgress` in `lib/calculations.ts`, stessa forma di `projectSinkingFund` ma "al contrario": scala un importo totale noto invece di accumulare verso una scadenza), così la voce sparisce da sola dalla data di fine riusando la logica `end_date` già esistente. Ogni card mostra: rata mensile, barra di progresso, pagato/totale, mesi mancanti, mese di fine. Può anche essere modificata dal form generico di Ricorrenti (stessa riga, campi condivisi) — quel form non tocca i campi `debt_*`, quindi non li corrompe, ma nemmeno li aggiorna.
 
 #### Tab: Accantonamenti
 Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date` e `saving_start_date` su `recurring_expenses`. Banner "fase di recupero" quando la quota mensile è a regime. "Segna come pagata" con "scala dal salvadanaio" ora inserisce un `savings_transactions` withdraw sul primo pot dell'utente (fallback: update diretto di `piggy_balance` se non esistono pot).
@@ -462,13 +471,12 @@ hero, breakdown, month-report-btn          dashboard
 nav-transazioni, nav-smart                 nav
 tx-nav, tx-summary, tx-filters, tx-add    transazioni
 smart-ricorrenti, smart-obiettivi,         smart (cover)
-smart-previsioni, smart-accantonamenti,
-smart-budget
+smart-previsioni, smart-impegni
 account-income, account-family,            account
 account-power-user, account-feedback
 ```
 
-> Versioni tour: `/dashboard` v1.7 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v1.3 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.4. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`.
+> Versioni tour: `/dashboard` v1.7 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v1.4 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.4. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`.
 
 ### LocalStorage
 Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valore diverso dalla versione in `PAGE_TOURS` = aggiornamento.
@@ -511,6 +519,7 @@ Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valo
 | `suggestMonthlySavings` | Suggerimento risparmio mensile |
 | `normalizeMonthlyIncome`, `aggregateExpectedIncome`, `hasIncomeInfo` | Anagrafica reddito → reddito atteso mensile del nucleo |
 | `classifyCategoryMonths` | Tab Budget: classifica i mesi di spesa di una categoria come "normali"/"speciali" (scostamento >50% dalla media) e calcola la media sui soli mesi normali |
+| `computeDebtProgress` | Tab Rate: mesi totali/rimanenti, data di fine e importo pagato/residuo di una rata, dati importo totale + rata mensile + data di inizio |
 
 > Nota storica: `calculateProjectedBalance` e `calculateTrendData`, citate in versioni precedenti di questa doc, non esistono più nel codice — probabilmente rimosse in un refactor senza aggiornare CLAUDE.md.
 
@@ -567,6 +576,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `030_family_member_owner.sql` | `family_members.is_owner` + unique index parziale (max 1 proprietario per utente) |
 | `031_variable_expense_categories.sql` | Tabella `variable_expense_categories` — **legacy**, sostituita da `category_budgets` (migration 032), non più referenziata dal codice |
 | `032_category_budgets.sql` | Tabelle `category_budgets` (budget mensile manuale per categoria) e `category_budget_notes` (annotazione mesi "speciali") — tab Smart → Budget |
+| `033_recurring_debt_fields.sql` | Campi `debt_type`, `debt_total_amount`, `debt_start_date` su `recurring_expenses` — tab Smart → Rate |
 
 ---
 

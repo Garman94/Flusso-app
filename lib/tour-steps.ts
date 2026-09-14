@@ -95,8 +95,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/smart": {
-    version: "1.3",
-    whatIsNew: "tab Budget: imposta un budget mensile per categoria e scopri i mesi \"speciali\" fuori media",
+    version: "1.4",
+    whatIsNew: "nuova voce \"Rate\": tieni traccia di mutui, rate d'acquisto e debiti con persone, raggruppata insieme ad Accantonamenti e Budget",
     freePreview: [
       {
         title: "Benvenuto in Smart ⚡",
@@ -140,14 +140,9 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
         message: "Confronta il budget che hai pianificato con la spesa reale media degli ultimi mesi.",
       },
       {
-        target: "[data-tour='smart-accantonamenti']",
-        title: "Accantonamenti",
-        message: "Pianifica le spese grandi e irregolari (vacanze, assicurazione auto…) accantonando ogni mese la quota necessaria.",
-      },
-      {
-        target: "[data-tour='smart-budget']",
-        title: "Budget",
-        message: "Imposta un budget mensile per ogni categoria. Apri una categoria per vedere lo storico degli ultimi mesi, la media e i mesi \"speciali\" che si scostano di oltre il 50%: puoi annotare perché sono diversi dal solito.",
+        target: "[data-tour='smart-impegni']",
+        title: "Rate, Accantonamenti, Budget",
+        message: "Tre modi di tenere sotto controllo i soldi già impegnati: le Rate (mutui, acquisti a rate, debiti — fisse e mensili) mostrano quanto manca e quanto hai già pagato; gli Accantonamenti calcolano la quota mensile per le spese grandi e irregolari; il Budget ti fa impostare quanto vuoi spendere per categoria.",
       },
     ],
   },

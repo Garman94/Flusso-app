@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { PageTour } from "@/components/tour/page-tour";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estimateGoalCompletion } from "@/lib/calculations";
+import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estimateGoalCompletion, computeDebtProgress } from "@/lib/calculations";
 import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
 import { resetSavingStartDate, markSinkingFundPaid } from "./sinking-fund-actions";
 import { addGoalContribution } from "./goal-actions";
@@ -35,9 +35,16 @@ export type RecurringExpense = {
   end_date: string | null;
   next_due_date: string | null;
   saving_start_date: string | null;
+  debt_type: DebtType | null;
+  debt_total_amount: number | null;
+  debt_start_date: string | null;
 };
 type TipoCard = "uscita_fissa" | "uscita_variabile" | "entrata";
-type View = "cover" | "add-recurring" | "edit-recurring" | "list-recurring" | "add-goal" | "list-goals" | "goal-detail" | "previsioni" | "accantonamenti" | "budget";
+type DebtType = "mutuo" | "rata_acquisto" | "debito_persona" | "altro";
+type View =
+  | "cover" | "add-recurring" | "edit-recurring" | "list-recurring"
+  | "add-goal" | "list-goals" | "goal-detail" | "previsioni"
+  | "impegni" | "accantonamenti" | "budget" | "rate" | "rate-form";
 
 type CategoryBudget = { category_id: string; monthly_budget: number };
 type CategoryBudgetNote = { category_id: string; year: number; month: number; note: string };
@@ -232,6 +239,22 @@ const EMPTY_G = {
 const GOAL_ICONS = ["🎯", "🏖️", "🛡️", "🏠", "💻", "🎓", "🚗", "✈️", "💍", "🌱", "💪", "🎁"];
 const FREE_GOAL_LIMIT = 1;
 
+const EMPTY_D = {
+  debt_type: "" as DebtType | "",
+  name: "",
+  amount: "",
+  debt_total_amount: "",
+  debt_start_date: "",
+  due_day: null as number | null,
+};
+
+const DEBT_TYPE_META: Record<DebtType, { icon: string; label: string }> = {
+  mutuo:          { icon: "🏠", label: "Mutuo" },
+  rata_acquisto:  { icon: "🛍️", label: "Rata acquisto" },
+  debito_persona: { icon: "🤝", label: "Debito con persona" },
+  altro:          { icon: "📌", label: "Altro" },
+};
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function SmartPageClient({
@@ -256,6 +279,11 @@ export function SmartPageClient({
   const [eEditId, setEEditId] = useState<string | null>(null);
   const [eSaving, setESaving] = useState(false);
   const [eTxSearch, setETxSearch] = useState("");
+
+  // Rata form (flat, single-page, add + modifica)
+  const [dForm, setDForm] = useState(EMPTY_D);
+  const [dEditId, setDEditId] = useState<string | null>(null);
+  const [dSaving, setDSaving] = useState(false);
 
   // Goal wizard
   const [gStep, setGStep] = useState(1);
@@ -322,6 +350,64 @@ export function SmartPageClient({
       next_due_date: item.next_due_date ?? "",
     });
     setEEditId(item.id); setETxSearch(""); setView("edit-recurring");
+  }
+
+  function goAddRate() {
+    setDForm(EMPTY_D); setDEditId(null); setView("rate-form");
+  }
+
+  function goEditRate(item: RecurringExpense) {
+    setDForm({
+      debt_type: (item.debt_type ?? "") as DebtType | "",
+      name: item.name,
+      amount: item.amount.toString().replace(".", ","),
+      debt_total_amount: item.debt_total_amount != null ? String(item.debt_total_amount).replace(".", ",") : "",
+      debt_start_date: item.debt_start_date ?? "",
+      due_day: item.due_day ?? null,
+    });
+    setDEditId(item.id); setView("rate-form");
+  }
+
+  async function handleSaveRate() {
+    const amt = parseFloat(dForm.amount.replace(",", "."));
+    const total = parseFloat(dForm.debt_total_amount.replace(",", "."));
+    if (!dForm.debt_type) { toast.error("Scegli il tipo di rata/debito."); return; }
+    if (!dForm.name.trim()) { toast.error("Inserisci un nome."); return; }
+    if (isNaN(amt) || amt <= 0) { toast.error("Inserisci una rata mensile valida."); return; }
+    if (isNaN(total) || total < amt) { toast.error("L'importo totale deve essere almeno pari alla rata mensile."); return; }
+    if (!dForm.debt_start_date) { toast.error("Inserisci la data di inizio."); return; }
+
+    setDSaving(true);
+    const progress = computeDebtProgress({ totalAmount: total, monthlyAmount: amt, startDate: dForm.debt_start_date });
+    const payload = {
+      name: dForm.name.trim(), tipologia: "fissa" as Tipologia, frequency: "mensile" as Frequency,
+      custom_days: null, amount: amt, amount_max: null,
+      match_keywords: [], matching_strategy: "keyword",
+      due_day: dForm.due_day, category_id: null, notes: null, secondary_name: null,
+      next_due_date: null, saving_start_date: null,
+      end_date: progress.endDate.toISOString().split("T")[0],
+      debt_type: dForm.debt_type, debt_total_amount: total, debt_start_date: dForm.debt_start_date,
+    };
+
+    const supabase = createClient();
+    if (dEditId) {
+      const { data, error } = await supabase
+        .from("recurring_expenses").update(payload).eq("id", dEditId).select("*").single();
+      if (error) toast.error(`Errore: ${error.message}`);
+      else {
+        setRecurringItems(prev => prev.map(it => it.id === dEditId ? data as RecurringExpense : it));
+        toast.success("Rata modificata!"); setView("rate");
+      }
+    } else {
+      const { data, error } = await supabase
+        .from("recurring_expenses").insert({ user_id: userId, ...payload }).select("*").single();
+      if (error) toast.error(`Errore: ${error.message}`);
+      else {
+        setRecurringItems(prev => [...prev, data as RecurringExpense]);
+        toast.success("Rata aggiunta!"); setView("rate");
+      }
+    }
+    setDSaving(false);
   }
 
   function goAddGoal() {
@@ -526,8 +612,7 @@ export function SmartPageClient({
       { icon: "📋", label: "Le mie spese ricorrenti",  action: () => setView("list-recurring"), tourAttr: "smart-ricorrenti" },
       { icon: "🎯", label: "I miei obiettivi",         action: () => setView("list-goals"),     tourAttr: "smart-obiettivi" },
       { icon: "🔮", label: "Previsioni",               action: () => setView("previsioni"),     tourAttr: "smart-previsioni" },
-      { icon: "🏦", label: "Accantonamenti",           action: () => setView("accantonamenti"), tourAttr: "smart-accantonamenti" },
-      { icon: "🧮", label: "Budget",                   action: () => setView("budget"),         tourAttr: "smart-budget" },
+      { icon: "💳", label: "Rate, Accantonamenti, Budget", action: () => setView("impegni"),    tourAttr: "smart-impegni" },
     ] as const;
 
     return (
@@ -551,6 +636,45 @@ export function SmartPageClient({
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // IMPEGNI (sottomenu: Rate / Accantonamenti / Budget)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (view === "impegni") {
+    const IMPEGNI_ITEMS = [
+      { icon: "📆", label: "Rate",           desc: "Mutui, rate d'acquisto e debiti — fisse, mensili",         action: () => setView("rate") },
+      { icon: "🏦", label: "Accantonamenti", desc: "Spese future grandi — quota da mettere da parte",          action: () => setView("accantonamenti") },
+      { icon: "🧮", label: "Budget",         desc: "Spese variabili — quanto puoi spendere per categoria",     action: () => setView("budget") },
+    ] as const;
+
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <BackButton onClick={() => setView("cover")} />
+          <h1 className="text-xl font-bold">Rate, Accantonamenti, Budget</h1>
+        </div>
+        <p className="text-sm text-muted-foreground -mt-2">
+          I tuoi impegni finanziari fissi mensili (Rate), quelli da accantonare per una scadenza futura
+          (Accantonamenti) e le spese variabili che pianifichi per categoria (Budget).
+        </p>
+        {IMPEGNI_ITEMS.map(({ icon, label, desc, action }) => (
+          <button
+            key={label}
+            onClick={action}
+            className="flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 px-5 py-4 text-left transition-all active:scale-[0.98]"
+          >
+            <span className="text-2xl">{icon}</span>
+            <div className="flex flex-col">
+              <span className="text-base font-medium">{label}</span>
+              <span className="text-xs text-muted-foreground">{desc}</span>
+            </div>
+            <span className="ml-auto text-muted-foreground">›</span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // BUDGET
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -564,9 +688,222 @@ export function SmartPageClient({
         piggyBalance={piggyBalance}
         initialBudgets={initialCategoryBudgets}
         initialNotes={initialBudgetNotes}
-        onBack={() => setView("cover")}
+        onBack={() => setView("impegni")}
         onOpenAccantonamenti={() => setView("accantonamenti")}
       />
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RATE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (view === "rate") {
+    const rateItems = recurringItems.filter(it => it.debt_type);
+    const totalMonthly = rateItems.reduce((s, it) => s + it.amount, 0);
+    const totalRemaining = rateItems.reduce((s, it) => {
+      if (!it.debt_total_amount || !it.debt_start_date) return s;
+      return s + computeDebtProgress({ totalAmount: it.debt_total_amount, monthlyAmount: it.amount, startDate: it.debt_start_date }).remaining;
+    }, 0);
+
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center gap-3">
+          <BackButton onClick={() => setView("impegni")} />
+          <h1 className="text-xl font-bold flex-1">Rate</h1>
+          <button
+            onClick={goAddRate}
+            className="text-sm bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 transition-colors"
+          >
+            + Aggiungi
+          </button>
+        </div>
+
+        {rateItems.length > 0 && (
+          <div className="rounded-2xl border-2 p-5 flex flex-col gap-1">
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">Totale rate al mese</span>
+            <span className="text-2xl font-bold tabular-nums">{fmt(totalMonthly)}</span>
+            <span className="text-xs text-muted-foreground">Debito residuo complessivo: {fmt(totalRemaining)}</span>
+          </div>
+        )}
+
+        {rateItems.length === 0 ? (
+          <div className="flex flex-col items-center gap-4 py-16 text-center">
+            <span className="text-5xl">📆</span>
+            <p className="text-muted-foreground">Nessuna rata o debito ancora tracciato.</p>
+            <button
+              onClick={goAddRate}
+              className="bg-primary text-primary-foreground rounded-xl px-5 py-2.5 text-sm font-medium hover:bg-primary/90 transition-colors"
+            >
+              Aggiungi la prima
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {rateItems.map(item => {
+              const meta = DEBT_TYPE_META[item.debt_type as DebtType];
+              const progress = item.debt_total_amount && item.debt_start_date
+                ? computeDebtProgress({ totalAmount: item.debt_total_amount, monthlyAmount: item.amount, startDate: item.debt_start_date })
+                : null;
+              const pct = progress && item.debt_total_amount ? Math.min(100, (progress.paidSoFar / item.debt_total_amount) * 100) : 0;
+              return (
+                <div key={item.id} className="rounded-xl border p-4 flex flex-col gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{meta.icon} {item.name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {meta.label} · {fmt(item.amount)}/mese
+                        {item.due_day ? ` · giorno ${item.due_day}` : ""}
+                      </div>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => goEditRate(item)}
+                        className="text-xs text-muted-foreground hover:text-foreground border rounded-lg px-2 py-1 transition-colors"
+                        title="Modifica"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRecurring(item.id)}
+                        className="text-xs text-muted-foreground hover:text-destructive border rounded-lg px-2 py-1 transition-colors"
+                        title="Elimina"
+                      >
+                        🗑
+                      </button>
+                    </div>
+                  </div>
+                  {progress && item.debt_total_amount && (
+                    <>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <span>Pagato: <span className="font-semibold text-foreground">{fmt(progress.paidSoFar)}</span> / {fmt(item.debt_total_amount)}</span>
+                        <span>
+                          {progress.monthsRemaining > 0
+                            ? <>Mancano <span className="font-semibold text-foreground">{progress.monthsRemaining}</span> {progress.monthsRemaining === 1 ? "mese" : "mesi"}</>
+                            : <span className="font-semibold text-green-600 dark:text-green-400">Saldata</span>}
+                        </span>
+                        <span>Termina: <span className="font-semibold text-foreground">{progress.endDate.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</span></span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RATE — form (aggiungi/modifica)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (view === "rate-form") {
+    return (
+      <div className="flex flex-col gap-6 max-w-md mx-auto w-full">
+        <div className="flex items-center gap-3">
+          <BackButton onClick={() => setView("rate")} />
+          <h1 className="text-xl font-bold">{dEditId ? "Modifica rata" : "Nuova rata"}</h1>
+        </div>
+
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Tipo</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(Object.keys(DEBT_TYPE_META) as DebtType[]).map(type => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setDForm(f => ({ ...f, debt_type: type }))}
+                  className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-sm text-left transition-all ${
+                    dForm.debt_type === type ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                  }`}
+                >
+                  <span className="text-lg">{DEBT_TYPE_META[type].icon}</span>
+                  {DEBT_TYPE_META[type].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Nome</label>
+            <input
+              type="text" value={dForm.name}
+              onChange={e => setDForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="es. Mutuo casa, Rata frigorifero, Prestito da Luca…"
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Rata mensile (€)</label>
+            <input
+              type="text" value={dForm.amount}
+              onChange={e => setDForm(f => ({ ...f, amount: e.target.value }))}
+              placeholder="es. 350"
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Importo totale finanziato (€)</label>
+            <input
+              type="text" value={dForm.debt_total_amount}
+              onChange={e => setDForm(f => ({ ...f, debt_total_amount: e.target.value }))}
+              placeholder="es. 12000"
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Data di inizio</label>
+            <input
+              type="date" value={dForm.debt_start_date}
+              onChange={e => setDForm(f => ({ ...f, debt_start_date: e.target.value }))}
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">
+              Giorno del mese{" "}
+              <span className="text-muted-foreground font-normal">— opzionale</span>
+            </label>
+            <input
+              type="number" min={1} max={31} value={dForm.due_day ?? ""}
+              onChange={e => setDForm(f => ({ ...f, due_day: e.target.value ? parseInt(e.target.value) : null }))}
+              placeholder="es. 27"
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            />
+          </div>
+
+          {(() => {
+            const amt = parseFloat(dForm.amount.replace(",", "."));
+            const total = parseFloat(dForm.debt_total_amount.replace(",", "."));
+            if (isNaN(amt) || amt <= 0 || isNaN(total) || total < amt || !dForm.debt_start_date) return null;
+            const preview = computeDebtProgress({ totalAmount: total, monthlyAmount: amt, startDate: dForm.debt_start_date });
+            return (
+              <p className="text-xs text-muted-foreground rounded-lg border bg-muted/30 px-3 py-2">
+                💡 {preview.totalMonths} rate in tutto, termina a{" "}
+                {preview.endDate.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}.
+              </p>
+            );
+          })()}
+        </div>
+
+        <button
+          onClick={handleSaveRate}
+          disabled={dSaving}
+          className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        >
+          {dSaving ? "Salvataggio…" : dEditId ? "Salva modifiche" : "Aggiungi rata"}
+        </button>
+      </div>
     );
   }
 
@@ -2296,7 +2633,7 @@ export function SmartPageClient({
 
         <div className="flex flex-col gap-6">
           <div className="flex items-center gap-3">
-            <BackButton onClick={() => setView("cover")} />
+            <BackButton onClick={() => setView("impegni")} />
             <h1 className="text-xl font-bold">Accantonamenti</h1>
           </div>
 

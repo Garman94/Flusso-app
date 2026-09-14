@@ -536,6 +536,48 @@ export const INCOME_VARIABILITY_PCT: Record<"low" | "medium" | "high", number> =
 };
 
 // ============================================================
+// FEATURE — Rate/debiti (Smart > Impegni > Rate)
+// ============================================================
+
+export type DebtInput = {
+  totalAmount: number;    // importo totale finanziato/dovuto
+  monthlyAmount: number;  // rata mensile
+  startDate: string;      // YYYY-MM-DD, inizio del piano di rientro
+};
+
+export type DebtProgress = {
+  totalMonths: number;
+  monthsElapsed: number;
+  monthsRemaining: number;
+  endDate: Date;
+  paidSoFar: number;
+  remaining: number;
+};
+
+/**
+ * Avanzamento di una rata/debito: stessa forma del calcolo degli accantonamenti
+ * (projectSinkingFund) ma "al contrario" — invece di accumulare verso una scadenza
+ * futura, scala un importo totale noto a rate mensili fisse a partire da una data
+ * di inizio. totalMonths e' derivato da totalAmount/monthlyAmount (arrotondato per
+ * eccesso), non da una data di fine inserita a mano.
+ */
+export function computeDebtProgress(input: DebtInput, today: Date = new Date()): DebtProgress {
+  const monthly = Math.max(input.monthlyAmount, 0.01);
+  const totalMonths = Math.max(1, Math.ceil(input.totalAmount / monthly));
+  const start = new Date(input.startDate + "T00:00:00");
+  const endDate = addMonths(start, totalMonths - 1);
+
+  const elapsedRaw = monthsBetween(start, today) + 1;
+  const monthsElapsed = Math.max(0, Math.min(totalMonths, elapsedRaw));
+  const monthsRemaining = totalMonths - monthsElapsed;
+
+  const paidSoFar = Math.min(input.totalAmount, input.monthlyAmount * monthsElapsed);
+  const remaining = input.totalAmount - paidSoFar;
+
+  return { totalMonths, monthsElapsed, monthsRemaining, endDate, paidSoFar, remaining };
+}
+
+// ============================================================
 // FEATURE — Budget per categoria (Smart > Budget)
 // ============================================================
 
