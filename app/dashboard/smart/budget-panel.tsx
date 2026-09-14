@@ -1,25 +1,34 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { formatEuro, classifyCategoryMonths, type MonthSpend } from "@/lib/calculations";
+import { formatEuro, classifyCategoryMonths, aggregateSinkingFunds, type MonthSpend, type SinkingFundInput } from "@/lib/calculations";
 
 type Category = { id: string; name: string; color: string; icon: string };
 type Tx = { date: string; amount: number; category_id?: string | null };
 type BudgetRow = { category_id: string; monthly_budget: number };
 type NoteRow = { category_id: string; year: number; month: number; note: string };
+type RecurringItem = {
+  id: string; name: string; tipologia: string;
+  amount: number; amount_max: number | null;
+  next_due_date: string | null; saving_start_date: string | null;
+};
 
 type Props = {
   userId: string;
   categories: Category[];
   transactions: Tx[];
+  recurringItems: RecurringItem[];
+  piggyBalance: number;
   initialBudgets: BudgetRow[];
   initialNotes: NoteRow[];
   onBack: () => void;
+  onOpenAccantonamenti?: () => void;
 };
 
 const HISTORY_MONTHS = 12;
+const ACCANTONAMENTI_NAME = "accantonamenti";
 // Categorie di trasferimento interno e reddito: non hanno senso come voce di budget.
 const EXCLUDED_CATEGORY_NAMES = new Set(["stipendio", "spostamenti", "salvadanaio"]);
 
@@ -37,18 +46,53 @@ function noteKey(categoryId: string, year: number, month: number) {
   return `${categoryId}:${year}-${month}`;
 }
 
-export function BudgetPanel({ userId, categories, transactions, initialBudgets, initialNotes, onBack }: Props) {
+export function BudgetPanel({
+  userId, categories, transactions, recurringItems, piggyBalance,
+  initialBudgets, initialNotes, onBack, onOpenAccantonamenti,
+}: Props) {
   const budgetCategories = useMemo(
     () => categories.filter(c => !EXCLUDED_CATEGORY_NAMES.has(c.name.toLowerCase())),
     [categories]
   );
+  const accantonamentiId = useMemo(
+    () => categories.find(c => c.name.toLowerCase() === ACCANTONAMENTI_NAME)?.id ?? null,
+    [categories]
+  );
+
+  // Quota mensile consigliata dalla sezione Accantonamenti: per quella categoria il
+  // budget non è impostabile a mano, è sempre questo valore (evita due numeri diversi
+  // per la stessa cosa e il doppio conteggio in dashboard).
+  const sinkingSummary = useMemo(() => {
+    const inputs: SinkingFundInput[] = recurringItems
+      .filter(it => it.next_due_date && it.saving_start_date)
+      .map(it => ({
+        id: it.id, name: it.name,
+        amount_per_cycle: it.tipologia === "variabile" && it.amount_max != null ? (it.amount + it.amount_max) / 2 : it.amount,
+        saving_start_date: it.saving_start_date!,
+        next_due_date: it.next_due_date!,
+      }));
+    return aggregateSinkingFunds(inputs, piggyBalance);
+  }, [recurringItems, piggyBalance]);
 
   const [budgets, setBudgets] = useState<Record<string, number>>(
-    () => Object.fromEntries(initialBudgets.map(b => [b.category_id, Number(b.monthly_budget)]))
+    () => Object.fromEntries(initialBudgets.filter(b => b.category_id !== accantonamentiId).map(b => [b.category_id, Number(b.monthly_budget)]))
   );
   const [notes, setNotes] = useState<Record<string, string>>(
     () => Object.fromEntries(initialNotes.map(n => [noteKey(n.category_id, n.year, n.month), n.note]))
   );
+
+  // Pulizia difensiva: se esiste già una riga manuale su Accantonamenti da prima di
+  // questa regola (es. impostata quando il blocco non c'era ancora), la rimuove.
+  useEffect(() => {
+    if (!accantonamentiId) return;
+    if (!initialBudgets.some(b => b.category_id === accantonamentiId)) return;
+    createClient().from("category_budgets").delete().eq("user_id", userId).eq("category_id", accantonamentiId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accantonamentiId]);
+
+  function effectiveBudget(catId: string): number {
+    return catId === accantonamentiId ? sinkingSummary.this_month_total : (budgets[catId] ?? 0);
+  }
 
   const [subview, setSubview] = useState<"list" | "detail">("list");
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -74,8 +118,11 @@ export function BudgetPanel({ userId, categories, transactions, initialBudgets, 
   }, [budgetCategories, transactions, curFrom, curTo]);
 
   const totalBudget = useMemo(
-    () => budgetCategories.reduce((s, c) => s + (budgets[c.id] ?? 0), 0),
-    [budgetCategories, budgets]
+    () => budgetCategories.reduce((s, c) => {
+      const b = c.id === accantonamentiId ? sinkingSummary.this_month_total : (budgets[c.id] ?? 0);
+      return s + b;
+    }, 0),
+    [budgetCategories, budgets, accantonamentiId, sinkingSummary.this_month_total]
   );
   const totalSpent = useMemo(
     () => budgetCategories.reduce((s, c) => s + (currentSpend[c.id] ?? 0), 0),
@@ -106,6 +153,7 @@ export function BudgetPanel({ userId, categories, transactions, initialBudgets, 
   }
 
   async function saveBudget(catId: string) {
+    if (catId === accantonamentiId) return; // budget automatico, non modificabile
     const amt = parseFloat(budgetInput.replace(",", "."));
     if (isNaN(amt) || amt < 0) { toast.error("Inserisci un importo valido."); return; }
     setSavingBudget(true);
@@ -153,7 +201,8 @@ export function BudgetPanel({ userId, categories, transactions, initialBudgets, 
 
   // ═══════════════════════════════ DETAIL ══════════════════════════════
   if (subview === "detail" && category && analysis) {
-    const budget = budgets[category.id] ?? 0;
+    const budget = effectiveBudget(category.id);
+    const isAccantonamenti = category.id === accantonamentiId;
     return (
       <div className="flex flex-col gap-6 max-w-lg mx-auto w-full">
         <button onClick={() => setSubview("list")} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors self-start">
@@ -165,7 +214,7 @@ export function BudgetPanel({ userId, categories, transactions, initialBudgets, 
         <div className="rounded-2xl border-2 p-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground uppercase tracking-wide">Budget mensile</span>
-            {!editingBudget && (
+            {!isAccantonamenti && !editingBudget && (
               <button
                 onClick={() => { setEditingBudget(true); setBudgetInput(budget > 0 ? String(budget).replace(".", ",") : ""); }}
                 className="text-xs text-primary underline hover:no-underline"
@@ -174,7 +223,17 @@ export function BudgetPanel({ userId, categories, transactions, initialBudgets, 
               </button>
             )}
           </div>
-          {editingBudget ? (
+          {isAccantonamenti ? (
+            <>
+              <span className="text-2xl font-bold tabular-nums">{formatEuro(budget)}</span>
+              <p className="text-xs text-muted-foreground">
+                🔒 Calcolato automaticamente dalla quota mensile consigliata in Smart → Accantonamenti — non è modificabile qui, per evitare due numeri diversi per la stessa cosa.
+                {onOpenAccantonamenti && (
+                  <>{" "}<button type="button" onClick={onOpenAccantonamenti} className="text-primary underline hover:no-underline">Vai ad Accantonamenti →</button></>
+                )}
+              </p>
+            </>
+          ) : editingBudget ? (
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
                 <input
@@ -314,7 +373,8 @@ export function BudgetPanel({ userId, categories, transactions, initialBudgets, 
 
       <div className="rounded-xl border p-2 flex flex-col divide-y">
         {budgetCategories.map(c => {
-          const budget = budgets[c.id] ?? 0;
+          const budget = effectiveBudget(c.id);
+          const isLocked = c.id === accantonamentiId;
           const spent = currentSpend[c.id] ?? 0;
           const over = budget > 0 && spent > budget;
           return (
@@ -324,13 +384,17 @@ export function BudgetPanel({ userId, categories, transactions, initialBudgets, 
               className="flex items-center justify-between gap-3 px-3 py-3 text-left hover:bg-muted/50 rounded-lg transition-colors"
             >
               <div className="flex flex-col min-w-0">
-                <span className="text-sm font-medium truncate">{c.icon} {c.name}</span>
+                <span className="text-sm font-medium truncate">{c.icon} {c.name}{isLocked && " 🔒"}</span>
                 <span className="text-xs text-muted-foreground">
                   Speso: {formatEuro(spent)}{budget > 0 && ` · Budget: ${formatEuro(budget)}`}
                 </span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {budget > 0 ? (
+                {isLocked ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap bg-muted text-muted-foreground">
+                    Automatico
+                  </span>
+                ) : budget > 0 ? (
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap ${
                     over ? "bg-red-500/10 text-red-500" : "bg-green-500/10 text-green-600 dark:text-green-400"
                   }`}>

@@ -231,7 +231,9 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
         .select("amount, date, description, merchant, categories(name)")
         .eq("user_id", userId).gte("date", periodFrom).lte("date", periodTo),
       supabase.from("family_members").select(`name, is_owner, ${INCOME_COLS}`).eq("user_id", userId),
-      supabase.from("category_budgets").select("monthly_budget").eq("user_id", userId),
+      // categories(name) per escludere "Accantonamenti": quella quota è già contata
+      // separatamente via aggregateSinkingFunds, sommarla anche qui la conterebbe due volte.
+      supabase.from("category_budgets").select("monthly_budget, categories(name)").eq("user_id", userId),
     ]).then(([profileRes, recRes, periodTxRes, memRes, budgetRes]) => {
       const pStart = profileRes.data?.period_starting_balance_date;
       setStartingBalance(
@@ -243,7 +245,9 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       setItems((recRes.data ?? []) as RecurringRow[]);
       setPeriodTxs((periodTxRes.data ?? []) as unknown as Tx[]);
       setMembersIncome((memRes.data ?? []) as MemberIncome[]);
-      setBudgetTotal((budgetRes.data ?? []).reduce((s, r) => s + Number(r.monthly_budget), 0));
+      setBudgetTotal((budgetRes.data ?? [])
+        .filter(r => (r.categories as unknown as { name: string } | null)?.name?.toLowerCase() !== "accantonamenti")
+        .reduce((s, r) => s + Number(r.monthly_budget), 0));
       setLoading(false);
     });
   }, [userId, periodFrom, periodTo, refreshKey]);

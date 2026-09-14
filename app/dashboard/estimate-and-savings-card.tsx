@@ -46,13 +46,18 @@ export function EstimateAndSavingsCard({ userId, periodFrom, periodTo }: Props) 
       supabase.from("recurring_expenses").select("tipologia, frequency, custom_days, amount, amount_max").eq("user_id", userId),
       supabase.from("transactions").select("amount, date, categories(name)")
         .eq("user_id", userId).gte("date", periodFrom).lte("date", periodTo),
-      supabase.from("category_budgets").select("monthly_budget").eq("user_id", userId),
+      // categories(name) per escludere "Accantonamenti": quella categoria ha budget
+      // bloccato sulla quota mensile calcolata in Smart > Accantonamenti, non va sommata
+      // qui come voce manuale (evita un doppio conteggio se in futuro questa card la usasse).
+      supabase.from("category_budgets").select("monthly_budget, categories(name)").eq("user_id", userId),
       supabase.from("profiles").select(INCOME_COLS).eq("id", userId).single(),
       supabase.from("family_members").select(`is_owner, ${INCOME_COLS}`).eq("user_id", userId),
     ]).then(([recRes, txRes, budgetRes, profRes, memRes]) => {
       setItems((recRes.data ?? []) as RecurringRow[]);
       setPeriodTxs((txRes.data ?? []) as unknown as Tx[]);
-      setBudgetTotal((budgetRes.data ?? []).reduce((s, r) => s + Number(r.monthly_budget), 0));
+      setBudgetTotal((budgetRes.data ?? [])
+        .filter(r => (r.categories as unknown as { name: string } | null)?.name?.toLowerCase() !== "accantonamenti")
+        .reduce((s, r) => s + Number(r.monthly_budget), 0));
       setOwnerIncome((profRes.data ?? null) as IncomeInfo | null);
       setMembersIncome((memRes.data ?? []) as (Partial<IncomeInfo> & { is_owner?: boolean })[]);
       setLoading(false);

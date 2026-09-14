@@ -560,9 +560,12 @@ export function SmartPageClient({
         userId={userId}
         categories={categories}
         transactions={transactions}
+        recurringItems={recurringItems}
+        piggyBalance={piggyBalance}
         initialBudgets={initialCategoryBudgets}
         initialNotes={initialBudgetNotes}
         onBack={() => setView("cover")}
+        onOpenAccantonamenti={() => setView("accantonamenti")}
       />
     );
   }

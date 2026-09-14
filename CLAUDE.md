@@ -1,6 +1,6 @@
 # CLAUDE.md — Flusso App
 
-Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-14.
+Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-14 (blocco budget Accantonamenti).
 
 ---
 
@@ -405,6 +405,7 @@ File a sé (`budget-panel.tsx`, non inline in `smart-page-client.tsx` come le al
 - **Schermata principale**: card "Budget del mese" col totale (somma dei budget impostati) e speso finora nel mese; sotto, l'elenco di tutte le categorie di spesa (escluse quelle di reddito/trasferimento: Stipendio, Spostamenti, Salvadanaio) con badge "Nel budget"/"Sopra budget"/"Da impostare".
 - **Sottopagina per categoria** (tap su una riga): budget mensile con bottone "Modifica", spesa del mese corrente, storico degli ultimi 12 mesi con media dei mesi "normali".
 - **Mesi speciali**: un mese che si scosta di oltre il 50% dalla media (`classifyCategoryMonths` in `lib/calculations.ts`, due passate per non far trascinare la soglia da un singolo mese estremo) è escluso dal calcolo della media ed etichettato "⭐ Speciale" nello storico; l'utente può aggiungere/modificare/rimuovere una nota libera per spiegare l'anomalia (`category_budget_notes`), persistita per quel mese specifico indipendentemente da riclassificazioni future.
+- **Categoria "Accantonamenti" bloccata** (badge 🔒 "Automatico", niente bottone "Modifica"): il suo budget non è impostabile a mano, è sempre uguale alla quota mensile consigliata dal tab Accantonamenti (`aggregateSinkingFunds(...).this_month_total`, stesso calcolo di `BalanceHeroCard`) — evita due numeri diversi per la stessa cosa e il doppio conteggio in dashboard (dove quella quota è già sommata a parte). Nessuna riga viene mai scritta su `category_budgets` per questa categoria; un `useEffect` in `budget-panel.tsx` ripulisce eventuali righe residue create prima di questa regola.
 
 ### Account (`/dashboard/account`)
 - Gestione profilo e cambio nome
