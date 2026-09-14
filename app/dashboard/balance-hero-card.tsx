@@ -34,10 +34,11 @@ type RecurringRow = {
 type Tx = {
   amount: number; date: string;
   description?: string | null; merchant?: string | null;
+  member_id?: string | null;
   categories?: { name: string } | null;
 };
 
-type MemberIncome = Partial<IncomeInfo> & { name: string; is_owner: boolean };
+type MemberIncome = Partial<IncomeInfo> & { id: string; name: string; color: string; is_owner: boolean };
 
 type Props = {
   userId: string;
@@ -228,9 +229,9 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       // di Supabase, che senza un ordinamento esplicito puo' tagliare fuori proprio le
       // transazioni del periodo corrente.
       supabase.from("transactions")
-        .select("amount, date, description, merchant, categories(name)")
+        .select("amount, date, description, merchant, member_id, categories(name)")
         .eq("user_id", userId).gte("date", periodFrom).lte("date", periodTo),
-      supabase.from("family_members").select(`name, is_owner, ${INCOME_COLS}`).eq("user_id", userId),
+      supabase.from("family_members").select(`id, name, color, is_owner, ${INCOME_COLS}`).eq("user_id", userId),
       // categories(name) per escludere "Accantonamenti": quella quota è già contata
       // separatamente via aggregateSinkingFunds, sommarla anche qui la conterebbe due volte.
       supabase.from("category_budgets").select("monthly_budget, categories(name)").eq("user_id", userId),
@@ -270,6 +271,20 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     const expensesAbs = expenseTxs.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
     const actualToday = startingBalance + txSumToToday;
 
+    // ── Contributo netto per componente (entrate reali - spese reali, periodo corrente) ──
+    const memberMap = new Map<string, { name: string; color: string; income: number; expense: number }>();
+    membersIncome.forEach(m => memberMap.set(m.id, { name: m.name, color: m.color, income: 0, expense: 0 }));
+    for (const t of spendableTxs) {
+      const key = t.member_id ?? "__none__";
+      if (!memberMap.has(key)) memberMap.set(key, { name: "Non assegnato", color: "#94a3b8", income: 0, expense: 0 });
+      const entry = memberMap.get(key)!;
+      if (Number(t.amount) > 0) entry.income += Number(t.amount);
+      else entry.expense += Math.abs(Number(t.amount));
+    }
+    const memberBreakdown = Array.from(memberMap.entries())
+      .map(([id, v]) => ({ id, ...v }))
+      .filter(m => m.income > 0 || m.expense > 0);
+
     // ── Previsti (mese corrente, reddito da anagrafica) ──
     const now = new Date();
     const calMonth = now.getMonth();
@@ -306,7 +321,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     const saldoMid = (saldoMin + saldoMax) / 2;
 
     return {
-      income, expensesAbs, incomeTxs, expenseTxs,
+      income, expensesAbs, incomeTxs, expenseTxs, memberBreakdown,
       actualToday, fixedTotal, fixedItems, sinkingMonthly: sinkingSummary.this_month_total,
       speseMin, speseMax, saldoMin, saldoMax, entratePreviste,
       deltaSaldo: saldoMid - actualToday,
@@ -336,7 +351,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   }
 
   const {
-    income, expensesAbs, incomeTxs, expenseTxs,
+    income, expensesAbs, incomeTxs, expenseTxs, memberBreakdown,
     actualToday, fixedTotal, fixedItems, sinkingMonthly,
     speseMin, speseMax, saldoMin, saldoMax, entratePreviste,
     deltaSaldo, deltaSpese, deltaEntrate, calMonth,
@@ -402,6 +417,32 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
           <p className="text-xs text-muted-foreground">
             Saldo a inizio periodo ({periodStartLabel}): <strong className="text-foreground tabular-nums">{formatEuro(startingBalance)}</strong> + movimenti fino a oggi
           </p>
+          {memberBreakdown.length > 0 && (
+            <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1.5 text-xs">
+              <span className="text-muted-foreground uppercase tracking-wide text-[10px]">
+                Contributo netto per componente (questo periodo)
+              </span>
+              {memberBreakdown.map(m => {
+                const net = m.income - m.expense;
+                return (
+                  <div key={m.id} className="flex flex-col gap-0.5 pt-1.5 border-t first:border-t-0 first:pt-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 min-w-0 font-medium text-foreground">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color }} />
+                        <span className="truncate">{m.name}</span>
+                      </span>
+                      <span className={`font-semibold tabular-nums shrink-0 ${net >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
+                        {net >= 0 ? "+" : ""}{formatEuro(net)}
+                      </span>
+                    </div>
+                    <span className="text-muted-foreground pl-3.5">
+                      +{formatEuro(m.income)} entrate · -{formatEuro(m.expense)} spese
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <TxListPanel txs={periodTxs.filter(t => t.date <= iso)} emptyLabel="Nessun movimento registrato fino a oggi." />
         </div>
       )}
