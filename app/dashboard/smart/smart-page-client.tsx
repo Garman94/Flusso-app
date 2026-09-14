@@ -97,6 +97,15 @@ function txMatchesKws(tx: Transaction, kws: string[]): boolean {
   return kws.some(k => { const kk = k.toLowerCase().trim(); return kk.length > 0 && (d.includes(kk) || m.includes(kk)); });
 }
 
+/** Per "Collega a transazione": senza query mostra le più recenti da sfogliare, altrimenti filtra per testo. */
+function pickTxCandidates(transactions: Transaction[], query: string): Transaction[] {
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return transactions.slice(0, 8);
+  return transactions
+    .filter(t => t.description?.toLowerCase().includes(q) || t.merchant?.toLowerCase().includes(q))
+    .slice(0, 8);
+}
+
 function nextOccurrence(item: RecurringExpense, allTxs: Transaction[]): Date | null {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   if (item.end_date && new Date(item.end_date + "T00:00:00") < today) return null;
@@ -933,44 +942,36 @@ export function SmartPageClient({
                   type="text"
                   value={dTxSearch}
                   onChange={e => setDTxSearch(e.target.value)}
-                  placeholder="Cerca nelle tue transazioni…"
+                  placeholder="Cerca, o sfoglia le più recenti qui sotto…"
                   className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
                 />
-                {dTxSearch.length >= 2 && (
-                  <div className="flex flex-col gap-1">
-                    {transactions
-                      .filter(t => {
-                        const q = dTxSearch.toLowerCase();
-                        return t.description?.toLowerCase().includes(q) || t.merchant?.toLowerCase().includes(q);
-                      })
-                      .slice(0, 5)
-                      .map((t, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => {
-                            setDForm(f => ({ ...f, secondary_name: t.description ?? t.merchant ?? "" }));
-                            setDTxSearch("");
-                          }}
-                          className="text-left px-3 py-2.5 rounded-xl border hover:bg-muted/50 transition-colors flex items-center gap-3"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{t.description || t.merchant}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {fmt(Math.abs(Number(t.amount)))} · {new Date(t.date + "T00:00:00").toLocaleDateString("it-IT")}
-                            </p>
-                          </div>
-                          <span className="text-xs text-primary shrink-0">Collega →</span>
-                        </button>
-                      ))}
-                    {transactions.filter(t => {
-                      const q = dTxSearch.toLowerCase();
-                      return t.description?.toLowerCase().includes(q) || t.merchant?.toLowerCase().includes(q);
-                    }).length === 0 && (
-                      <p className="text-xs text-muted-foreground px-1">Nessuna transazione trovata.</p>
-                    )}
-                  </div>
-                )}
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-muted-foreground px-1">
+                    {dTxSearch.trim().length >= 2 ? "Risultati" : "Transazioni recenti"}
+                  </p>
+                  {pickTxCandidates(transactions, dTxSearch).map((t, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setDForm(f => ({ ...f, secondary_name: t.description ?? t.merchant ?? "" }));
+                        setDTxSearch("");
+                      }}
+                      className="text-left px-3 py-2.5 rounded-xl border hover:bg-muted/50 transition-colors flex items-center gap-3"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{t.description || t.merchant}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {fmt(Math.abs(Number(t.amount)))} · {new Date(t.date + "T00:00:00").toLocaleDateString("it-IT")}
+                        </p>
+                      </div>
+                      <span className="text-xs text-primary shrink-0">Collega →</span>
+                    </button>
+                  ))}
+                  {pickTxCandidates(transactions, dTxSearch).length === 0 && (
+                    <p className="text-xs text-muted-foreground px-1">Nessuna transazione trovata.</p>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -1525,53 +1526,45 @@ export function SmartPageClient({
                   type="text"
                   value={eTxSearch}
                   onChange={e => setETxSearch(e.target.value)}
-                  placeholder="Cerca nelle tue transazioni…"
+                  placeholder="Cerca, o sfoglia le più recenti qui sotto…"
                   className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
                 />
-                {eTxSearch.length >= 2 && (
-                  <div className="flex flex-col gap-1">
-                    {transactions
-                      .filter(t => {
-                        const q = eTxSearch.toLowerCase();
-                        return t.description?.toLowerCase().includes(q) || t.merchant?.toLowerCase().includes(q);
-                      })
-                      .slice(0, 5)
-                      .map((t, i) => {
-                        const d = new Date(t.date + "T00:00:00");
-                        return (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => {
-                              setEForm(f => ({
-                                ...f,
-                                amount: Math.abs(Number(t.amount)).toString().replace(".", ","),
-                                due_day: d.getDate(),
-                                due_month: f.frequency === "annuale" ? d.getMonth() + 1 : f.due_month,
-                                secondary_name: t.description ?? t.merchant ?? "",
-                              }));
-                              setETxSearch("");
-                            }}
-                            className="text-left px-3 py-2.5 rounded-xl border hover:bg-muted/50 transition-colors flex items-center gap-3"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{t.description || t.merchant}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {fmt(Math.abs(Number(t.amount)))} · {d.toLocaleDateString("it-IT")}
-                              </p>
-                            </div>
-                            <span className="text-xs text-primary shrink-0">Collega →</span>
-                          </button>
-                        );
-                      })}
-                    {transactions.filter(t => {
-                      const q = eTxSearch.toLowerCase();
-                      return t.description?.toLowerCase().includes(q) || t.merchant?.toLowerCase().includes(q);
-                    }).length === 0 && (
-                      <p className="text-xs text-muted-foreground px-1">Nessuna transazione trovata.</p>
-                    )}
-                  </div>
-                )}
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-muted-foreground px-1">
+                    {eTxSearch.trim().length >= 2 ? "Risultati" : "Transazioni recenti"}
+                  </p>
+                  {pickTxCandidates(transactions, eTxSearch).map((t, i) => {
+                    const d = new Date(t.date + "T00:00:00");
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          setEForm(f => ({
+                            ...f,
+                            amount: Math.abs(Number(t.amount)).toString().replace(".", ","),
+                            due_day: d.getDate(),
+                            due_month: f.frequency === "annuale" ? d.getMonth() + 1 : f.due_month,
+                            secondary_name: t.description ?? t.merchant ?? "",
+                          }));
+                          setETxSearch("");
+                        }}
+                        className="text-left px-3 py-2.5 rounded-xl border hover:bg-muted/50 transition-colors flex items-center gap-3"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{t.description || t.merchant}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {fmt(Math.abs(Number(t.amount)))} · {d.toLocaleDateString("it-IT")}
+                          </p>
+                        </div>
+                        <span className="text-xs text-primary shrink-0">Collega →</span>
+                      </button>
+                    );
+                  })}
+                  {pickTxCandidates(transactions, eTxSearch).length === 0 && (
+                    <p className="text-xs text-muted-foreground px-1">Nessuna transazione trovata.</p>
+                  )}
+                </div>
               </>
             )}
           </div>
