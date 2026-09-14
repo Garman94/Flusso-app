@@ -1,6 +1,6 @@
 # CLAUDE.md — Flusso App
 
-Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-13.
+Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-14.
 
 ---
 
@@ -180,14 +180,14 @@ imported_at timestamptz
 ```
 
 ### `variable_expense_categories`
-Categorie che l'utente considera "spese variabili" ai fini del range min-max in dashboard (migration 031). Se non ci sono righe per l'utente, i client (`BalanceHeroCard`, pannello Smart "Spese variabili") usano un default di sistema: Alimentari, Abbigliamento, Tecnologia, Trasporti, Intrattenimento.
+Migration 031. **Legacy, non più referenziata da nessun codice**: guidava il vecchio range min-max automatico di "Spese variabili" in dashboard e nel pannello Smart, entrambi sostituiti dal budget manuale per categoria (`category_budgets`, tab Smart → Budget). La tabella resta nel DB (dati storici, nessuna migrazione di drop) ma non viene più letta né scritta.
 ```
 id uuid PK · user_id uuid FK auth.users · category_id uuid FK categories · created_at timestamptz
 unique(user_id, category_id)
 ```
 
 ### `category_budgets` / `category_budget_notes`
-Tab Smart → Budget: budget mensile impostato a mano per categoria, con storico e annotazione dei mesi "speciali" (migration 032). Sostituisce, solo nel tab Smart, la selezione + range automatico del vecchio pannello "Spese variabili" — `variable_expense_categories` resta invariata e in uso per il calcolo "Spese previste" in dashboard finché non viene aggiornato a sua volta.
+Tab Smart → Budget: budget mensile impostato a mano per categoria, con storico e annotazione dei mesi "speciali" (migration 032). Sostituisce sia il vecchio pannello Smart "Spese variabili" sia il suo range min-max automatico usato in dashboard: `BalanceHeroCard` ed `EstimateAndSavingsCard` sommano `monthly_budget` di tutte le righe dell'utente come "Budget spese variabili" nel calcolo di "Spese previste"/"Totale previsto".
 ```
 category_budgets
   id · user_id FK auth.users · category_id FK categories · monthly_budget numeric default 0 · updated_at
@@ -352,12 +352,12 @@ Componente: `app/onboarding/page.tsx`
 - **Breakdown macro-categorie** con accordion per categoria
 - **Card saldo unificata** (`BalanceHeroCard`, `data-tour="hero"`) — al primo utilizzo (e da "Modifica") chiede il saldo che l'utente ha OGGI sul conto e lo riporta a inizio periodo sottraendo le transazioni già registrate (`period_starting_balance`/`_date`). Schema a 3 righe, ogni voce è un dropdown che mostra le transazioni (o il calcolo) sottostanti — utile per individuare errori/duplicati:
   - **Riga 1 (effettivi, in grande)**: Saldo attuale stimato (`starting + somma transazioni reali fino a oggi`, nero, dropdown = lista movimenti) · Spese affrontate (rosso, dropdown = lista spese) · Entrate effettive (verde, dropdown = lista entrate) — le ultime due sul periodo corrente, esclusi i trasferimenti (`spostamenti`/`salvadanaio`)
-  - **Riga 2 (previsti, più piccola)**: Saldo fine mese stimato (range min-max: entrate da stipendio previste − spese previste, dropdown = scomposizione formula) · Spese previste (range min-max: spese fisse + accantonamento mensile + min-max delle categorie/bollette stagionali scelte in Smart → Spese variabili, dropdown = elenco completo con link a Smart) · Entrate da stipendio previste (verde, singolo numero, da anagrafica reddito titolare+componenti, mese corrente, dropdown = importo per persona)
-  - **Riga 3 (differenze)**: Differenza saldo/spese/entrate = previsto (punto medio del range per saldo/spese) − effettivo per ciascuna coppia di voci di riga 1/2, colore verde/rosso in base al segno, dropdown = i due valori a confronto
+  - **Riga 2 (previsti, più piccola)**: Saldo fine mese stimato (entrate da stipendio previste − spese previste, dropdown = scomposizione formula) · Spese previste (spese fisse + accantonamento mensile + budget spese variabili impostato in Smart → Budget, dropdown = elenco completo con link a Smart) · Entrate da stipendio previste (verde, singolo numero, da anagrafica reddito titolare+componenti, mese corrente, dropdown = importo per persona)
+  - **Riga 3 (differenze)**: Differenza saldo/spese/entrate = previsto − effettivo per ciascuna coppia di voci di riga 1/2, colore verde/rosso in base al segno, dropdown = i due valori a confronto
   - Sotto: **Salvadanai** separato in fondo (totale = `piggy_balance`, tenuto in sync col trigger, link a `/dashboard/salvadanai`)
-  - Rimossi rispetto a versioni precedenti: timeline SVG giornaliera, badge "sei in linea" e voce "Spese variabili" a sé stante (assorbita nel range di "Spese previste", gestibile in Smart)
+  - Rimossi rispetto a versioni precedenti: timeline SVG giornaliera, badge "sei in linea" e voce "Spese variabili" a sé stante; **2026-09-14**: rimossa anche la stima automatica min-max di categorie/bollette stagionali — "Spese previste" ora usa il totale budget impostato a mano in Smart → Budget (`category_budgets`), quindi è un valore singolo, non più un range
 - **Banner spese scadute** (`OverdueExpensesBanner`) — spese `fissa` con `due_day` passato senza pagamento confermato né transazione auto-riconosciuta; bottone "Segna come pagata" scrive su `payment_confirmations` e aggiorna `last_paid_date`/`payment_status`
-- **Stima spese mensili + suggerimento risparmio** (`EstimateAndSavingsCard`) — spese fisse (certe) + range min/max spese variabili (media ultimi 3 mesi ± 0.5×dev.std, peso 40% sullo stesso mese anno scorso se disponibile); risparmio suggerito = 80% del potenziale (entrate attese − fisse − variabili stimate), 20% di cuscinetto. **Nota**: usa ancora la vecchia stima media±dev.std, non allineata al nuovo range min-max per categoria di `BalanceHeroCard` — da armonizzare in un task successivo
+- **Spese previste + suggerimento risparmio** (`EstimateAndSavingsCard`) — spese fisse (certe) + budget spese variabili (somma `category_budgets`, stesso dato usato da `BalanceHeroCard`); risparmio suggerito = 80% del potenziale (entrate attese − fisse − budget), 20% di cuscinetto. Rinominata da "Stima spese mensili": non è più una stima statistica ma il totale del budget impostato dall'utente
 - **Card Spese Ricorrenti** (`RecurringDashboardCard`) — accordion per categoria, previsto vs speso, delta colorato
 - **Bottone "Mesi precedenti"** → apre `MonthReportModal`
 - **Campanella 🔔** (`NotificationsBell`) nella top-nav — vedi sezione "Modalità demo"/schema `admin_notifications`
@@ -401,7 +401,7 @@ Wizard 6 step (`smart-page-client.tsx`, `view === "add-goal"`): nome/icona → i
 Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date` e `saving_start_date` su `recurring_expenses`. Banner "fase di recupero" quando la quota mensile è a regime. "Segna come pagata" con "scala dal salvadanaio" ora inserisce un `savings_transactions` withdraw sul primo pot dell'utente (fallback: update diretto di `piggy_balance` se non esistono pot).
 
 #### Tab: Budget
-File a sé (`budget-panel.tsx`, non inline in `smart-page-client.tsx` come le altre tab). Sostituisce il vecchio pannello "Spese variabili" (selezione categorie + range automatico min-max); la logica di quel pannello resta però ancora usata, invariata, per il calcolo "Spese previste" della dashboard (`BalanceHeroCard`/`EstimateAndSavingsCard`, tabella `variable_expense_categories`) — le due cose sono indipendenti finché non si armonizzano in un passo successivo.
+File a sé (`budget-panel.tsx`, non inline in `smart-page-client.tsx` come le altre tab). Sostituisce il vecchio pannello "Spese variabili" (selezione categorie + range automatico min-max). Il totale dei budget (`category_budgets.monthly_budget`) è anche la fonte di "Spese previste"/"Totale previsto" in dashboard (`BalanceHeroCard`, `EstimateAndSavingsCard`).
 - **Schermata principale**: card "Budget del mese" col totale (somma dei budget impostati) e speso finora nel mese; sotto, l'elenco di tutte le categorie di spesa (escluse quelle di reddito/trasferimento: Stipendio, Spostamenti, Salvadanaio) con badge "Nel budget"/"Sopra budget"/"Da impostare".
 - **Sottopagina per categoria** (tap su una riga): budget mensile con bottone "Modifica", spesa del mese corrente, storico degli ultimi 12 mesi con media dei mesi "normali".
 - **Mesi speciali**: un mese che si scosta di oltre il 50% dalla media (`classifyCategoryMonths` in `lib/calculations.ts`, due passate per non far trascinare la soglia da un singolo mese estremo) è escluso dal calcolo della media ed etichettato "⭐ Speciale" nello storico; l'utente può aggiungere/modificare/rimuovere una nota libera per spiegare l'anomalia (`category_budget_notes`), persistita per quel mese specifico indipendentemente da riclassificazioni future.
@@ -507,7 +507,6 @@ Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valo
 | `projectSinkingFund`, `aggregateSinkingFunds` | Calcolo Accantonamenti |
 | `calculateDailyBalanceProjection`, `evaluateBalanceHealth` | Saldo progressivo giornaliero |
 | `currentCycleDueDate`, `findOverdueRecurring` | Rilevamento spese scadute non pagate |
-| `estimateMonthlyExpenses` | Stima min/max spese mensili |
 | `suggestMonthlySavings` | Suggerimento risparmio mensile |
 | `normalizeMonthlyIncome`, `aggregateExpectedIncome`, `hasIncomeInfo` | Anagrafica reddito → reddito atteso mensile del nucleo |
 | `classifyCategoryMonths` | Tab Budget: classifica i mesi di spesa di una categoria come "normali"/"speciali" (scostamento >50% dalla media) e calcola la media sui soli mesi normali |
@@ -565,7 +564,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `028_admin_notifications.sql` | `admin_notifications` + `notification_dismissals` + 3 notifiche di default |
 | `029_demo_savings_seed.sql` | `reseed_demo()` aggiornata: 2 salvadanai demo + goal collegato |
 | `030_family_member_owner.sql` | `family_members.is_owner` + unique index parziale (max 1 proprietario per utente) |
-| `031_variable_expense_categories.sql` | Tabella `variable_expense_categories` (categorie scelte per il range spese variabili in dashboard) |
+| `031_variable_expense_categories.sql` | Tabella `variable_expense_categories` — **legacy**, sostituita da `category_budgets` (migration 032), non più referenziata dal codice |
 | `032_category_budgets.sql` | Tabelle `category_budgets` (budget mensile manuale per categoria) e `category_budget_notes` (annotazione mesi "speciali") — tab Smart → Budget |
 
 ---

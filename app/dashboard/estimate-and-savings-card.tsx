@@ -1,18 +1,18 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatEuro,
   recurringMonthlyEquivalent,
-  txMatchesKeywords,
-  estimateMonthlyExpenses,
   suggestMonthlySavings,
   aggregateExpectedIncome,
   type IncomeInfo,
 } from "@/lib/calculations";
 
 const INCOME_COLS = "income_type, monthly_income, income_frequency, income_payday, income_variability, active_months";
+const TRANSFER_CATS = new Set(["spostamenti", "salvadanaio"]);
 
 type RecurringRow = {
   tipologia: "fissa" | "variabile" | "entrata";
@@ -20,142 +20,102 @@ type RecurringRow = {
   custom_days: number | null;
   amount: number;
   amount_max: number | null;
-  match_keywords: string[];
-  category_id: string | null;
 };
 
 type Tx = {
   amount: number; date: string;
-  description?: string | null; merchant?: string | null; category_id?: string | null;
   categories?: { name: string } | null;
 };
 
 type Props = { userId: string; periodFrom: string; periodTo: string };
 
-const TRANSFER_CATS = new Set(["spostamenti", "salvadanaio"]);
-
-function monthBounds(year: number, month: number) {
-  const from = new Date(year, month, 1).toISOString().split("T")[0];
-  const to = new Date(year, month + 1, 0).toISOString().split("T")[0];
-  return { from, to };
-}
+const isTransfer = (t: Tx) => TRANSFER_CATS.has(t.categories?.name?.toLowerCase() ?? "");
 
 export function EstimateAndSavingsCard({ userId, periodFrom, periodTo }: Props) {
   const [items, setItems] = useState<RecurringRow[]>([]);
-  const [txs, setTxs] = useState<Tx[]>([]);
+  const [periodTxs, setPeriodTxs] = useState<Tx[]>([]);
+  const [budgetTotal, setBudgetTotal] = useState(0);
   const [ownerIncome, setOwnerIncome] = useState<IncomeInfo | null>(null);
   const [membersIncome, setMembersIncome] = useState<(Partial<IncomeInfo> & { is_owner?: boolean })[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const supabase = createClient();
-    const now = new Date();
-    // Storico necessario: ultimi 3 mesi + stesso mese anno scorso. Query filtrata per
-    // data: senza bound si rischia il limite di default di 1000 righe di Supabase, che
-    // senza un ordinamento esplicito puo' tagliare fuori le transazioni piu' recenti.
-    const historyFrom = new Date(now.getFullYear() - 1, now.getMonth(), 1).toISOString().split("T")[0];
 
     Promise.all([
-      supabase.from("recurring_expenses")
-        .select("tipologia, frequency, custom_days, amount, amount_max, match_keywords, category_id")
-        .eq("user_id", userId),
-      supabase.from("transactions")
-        .select("amount, date, description, merchant, category_id, categories(name)")
-        .eq("user_id", userId).gte("date", historyFrom).lte("date", periodTo),
+      supabase.from("recurring_expenses").select("tipologia, frequency, custom_days, amount, amount_max").eq("user_id", userId),
+      supabase.from("transactions").select("amount, date, categories(name)")
+        .eq("user_id", userId).gte("date", periodFrom).lte("date", periodTo),
+      supabase.from("category_budgets").select("monthly_budget").eq("user_id", userId),
       supabase.from("profiles").select(INCOME_COLS).eq("id", userId).single(),
       supabase.from("family_members").select(`is_owner, ${INCOME_COLS}`).eq("user_id", userId),
-    ]).then(([recRes, txRes, profRes, memRes]) => {
+    ]).then(([recRes, txRes, budgetRes, profRes, memRes]) => {
       setItems((recRes.data ?? []) as RecurringRow[]);
-      setTxs((txRes.data ?? []) as unknown as Tx[]);
+      setPeriodTxs((txRes.data ?? []) as unknown as Tx[]);
+      setBudgetTotal((budgetRes.data ?? []).reduce((s, r) => s + Number(r.monthly_budget), 0));
       setOwnerIncome((profRes.data ?? null) as IncomeInfo | null);
       setMembersIncome((memRes.data ?? []) as (Partial<IncomeInfo> & { is_owner?: boolean })[]);
       setLoading(false);
     });
-  }, [userId, periodTo]);
+  }, [userId, periodFrom, periodTo]);
 
   const result = useMemo(() => {
     if (loading) return null;
-    const now = new Date();
-    const calYear = now.getFullYear(), calMonth = now.getMonth();
+    const calMonth = new Date().getMonth();
 
     const fixedItems = items.filter(it => it.tipologia === "fissa");
     const incomeItems = items.filter(it => it.tipologia === "entrata");
     const fixedTotal = fixedItems.reduce((s, it) => s + recurringMonthlyEquivalent(it), 0);
     const recurringIncomeTotal = incomeItems.reduce((s, it) => s + recurringMonthlyEquivalent(it), 0);
 
-    const isTransfer = (t: Tx) => TRANSFER_CATS.has(t.categories?.name?.toLowerCase() ?? "");
-    const isFixedMatch = (t: Tx) => fixedItems.some(it =>
-      it.match_keywords.length > 0 ? txMatchesKeywords(t, it.match_keywords) : (it.category_id && it.category_id === t.category_id)
-    );
+    const totalPrevisto = fixedTotal + budgetTotal;
 
-    function variableTotalForMonth(year: number, month: number): { total: number; hasData: boolean } {
-      const { from, to } = monthBounds(year, month);
-      const monthTxs = txs.filter(t => t.date >= from && t.date <= to);
-      const variable = monthTxs.filter(t => Number(t.amount) < 0 && !isTransfer(t) && !isFixedMatch(t));
-      return {
-        total: variable.reduce((s, t) => s + Math.abs(Number(t.amount)), 0),
-        hasData: monthTxs.length > 0,
-      };
-    }
-
-    const variableMonthlyTotals: number[] = [];
-    for (let i = 1; i <= 3; i++) {
-      const d = new Date(calYear, calMonth - i, 1);
-      const r = variableTotalForMonth(d.getFullYear(), d.getMonth());
-      if (r.hasData) variableMonthlyTotals.push(r.total);
-    }
-
-    const lastYear = variableTotalForMonth(calYear - 1, calMonth);
-    const sameMonthLastYearTotal = lastYear.hasData ? lastYear.total : null;
-
-    const estimate = estimateMonthlyExpenses(fixedTotal, variableMonthlyTotals, sameMonthLastYearTotal);
-
-    const actualIncomeThisPeriod = txs
-      .filter(t => t.date >= periodFrom && t.date <= periodTo && Number(t.amount) > 0 && !isTransfer(t))
+    const actualIncomeThisPeriod = periodTxs
+      .filter(t => Number(t.amount) > 0 && !isTransfer(t))
       .reduce((s, t) => s + Number(t.amount), 0);
     // Se il titolare si e' identificato come Componente, il suo reddito e' li' (evita di sommarlo due volte).
     const hasOwnerMember = membersIncome.some(m => m.is_owner);
     const anagraficaIncome = aggregateExpectedIncome(hasOwnerMember ? null : ownerIncome, membersIncome, calMonth + 1);
     const expectedIncome = Math.max(recurringIncomeTotal, actualIncomeThisPeriod, anagraficaIncome);
 
-    const savings = suggestMonthlySavings(expectedIncome, fixedTotal, estimate.variableAvg);
+    const savings = suggestMonthlySavings(expectedIncome, fixedTotal, budgetTotal);
 
-    return { estimate, savings, hasEnoughData: variableMonthlyTotals.length > 0 || fixedTotal > 0 };
-  }, [loading, items, txs, ownerIncome, membersIncome, periodFrom, periodTo]);
+    return { fixedTotal, totalPrevisto, savings, hasEnoughData: fixedTotal > 0 || budgetTotal > 0 };
+  }, [loading, items, periodTxs, budgetTotal, ownerIncome, membersIncome]);
 
   if (loading || !result || !result.hasEnoughData) return null;
 
-  const { estimate, savings } = result;
+  const { fixedTotal, totalPrevisto, savings } = result;
   const monthLabel = new Date().toLocaleDateString("it-IT", { month: "long" });
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Feature 3 — Stima spese */}
+      {/* Spese previste (fisse + budget variabile impostato in Smart) */}
       <div className="rounded-xl border p-5 flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <span className="text-xl">📊</span>
-          <h2 className="font-semibold">Stima spese di {monthLabel}</h2>
+          <h2 className="font-semibold">Spese previste di {monthLabel}</h2>
         </div>
         <div className="flex flex-col gap-1.5 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Spese fisse (certe)</span>
-            <span className="font-semibold tabular-nums">{formatEuro(estimate.fixedTotal)}</span>
+            <span className="font-semibold tabular-nums">{formatEuro(fixedTotal)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Spese variabili (stimate)</span>
-            <span className="font-semibold tabular-nums">{formatEuro(estimate.variableMin)} – {formatEuro(estimate.variableMax)}</span>
+            <span className="text-muted-foreground">Budget spese variabili</span>
+            <span className="font-semibold tabular-nums">{formatEuro(budgetTotal)}</span>
           </div>
           <div className="pt-2 mt-1 border-t flex justify-between items-baseline">
             <span className="font-medium">Totale previsto</span>
-            <span className="text-lg font-bold tabular-nums">{formatEuro(estimate.totalMin)} – {formatEuro(estimate.totalMax)}</span>
+            <span className="text-lg font-bold tabular-nums">{formatEuro(totalPrevisto)}</span>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          💡 La stima si basa sugli ultimi 3 mesi{estimate.usedSeasonalWeight ? ", con peso sullo stesso mese dell'anno scorso" : ""}.
-        </p>
+        <Link href="/dashboard/smart" className="text-xs text-primary hover:underline">
+          Imposta un budget per categoria in Smart →
+        </Link>
       </div>
 
-      {/* Feature 4 — Suggerimento risparmio */}
+      {/* Suggerimento risparmio */}
       <div className="rounded-xl border p-5 flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <span className="text-xl">💰</span>
