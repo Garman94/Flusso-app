@@ -95,20 +95,20 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/smart": {
-    version: "1.4",
-    whatIsNew: "nuova voce \"Rate\": tieni traccia di mutui, rate d'acquisto e debiti con persone, raggruppata insieme ad Accantonamenti e Budget",
+    version: "2.0",
+    whatIsNew: "Smart riorganizzato: \"Aggiungi spesa ricorrente\", \"Le mie spese ricorrenti\" e \"Previsioni\" lasciano il posto a Rate, Accantonamenti e Budget, per prevedere le spese del mese con più precisione",
     freePreview: [
       {
         title: "Benvenuto in Smart ⚡",
-        message: "Smart è il centro di analisi avanzata di Flusso. Qui puoi tenere sotto controllo le spese ricorrenti, pianificare il budget e tracciare i tuoi obiettivi di risparmio.",
+        message: "Smart è il centro di analisi avanzata di Flusso. Qui organizzi ogni impegno fisso — rate, accantonamenti, budget — e tracci i tuoi obiettivi di risparmio.",
       },
       {
-        title: "Spese ricorrenti 🔁",
-        message: "Inserisci bollette, abbonamenti e spese regolari. Flusso le confronta ogni mese con le transazioni reali e ti mostra se sei in linea o hai sforato.",
+        title: "Rate 📆",
+        message: "Mutui, rate d'acquisto, debiti con persone: importo mensile, quanto manca, quanto hai già pagato.",
       },
       {
-        title: "Previsioni di budget 📊",
-        message: "Pianifica quanto vuoi spendere per categoria e confrontalo con la tua spesa reale media. Scopri dove si nascondono i tuoi soldi.",
+        title: "Accantonamenti e Budget 🏦",
+        message: "Accantonamenti calcola la quota mensile per le spese grandi e irregolari; Budget ti fa impostare quanto spendere per categoria, per le spese variabili.",
       },
       {
         title: "Obiettivi di risparmio 🎯",
@@ -121,28 +121,18 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
     ],
     steps: [
       {
-        title: "Benvenuto in Smart ⚡",
-        message: "Smart è il centro di analisi avanzata: tieni sotto controllo le spese fisse, gli obiettivi e il budget previsto.",
+        title: "Smart si è riorganizzato ⚡",
+        message: "Le spese ricorrenti generiche di prima (\"Aggiungi spesa ricorrente\", \"Le mie spese ricorrenti\", \"Previsioni\") hanno lasciato il posto a tre sezioni dedicate — Rate, Accantonamenti, Budget — pensate per prevedere le spese del mese con più precisione.",
       },
       {
-        target: "[data-tour='smart-ricorrenti']",
-        title: "Spese ricorrenti",
-        message: "Inserisci bollette, abbonamenti e spese regolari. Flusso le confronta con le transazioni reali ogni mese.",
+        target: "[data-tour='smart-impegni']",
+        title: "Rate, Accantonamenti, Budget",
+        message: "Tre modi di tenere sotto controllo i soldi già impegnati: le Rate (mutui, acquisti a rate, debiti — fisse e mensili) mostrano quanto manca e quanto hai già pagato; gli Accantonamenti calcolano la quota mensile per le spese grandi e irregolari; il Budget ti fa impostare quanto vuoi spendere per categoria. La somma dei tre è \"Spese previste\" in dashboard.",
       },
       {
         target: "[data-tour='smart-obiettivi']",
         title: "Obiettivi di risparmio",
         message: "Crea obiettivi con importo e scadenza: Flusso suggerisce la quota mensile, li collega a un salvadanaio e tiene lo storico dei contributi in una pagina di dettaglio.",
-      },
-      {
-        target: "[data-tour='smart-previsioni']",
-        title: "Previsioni",
-        message: "Confronta il budget che hai pianificato con la spesa reale media degli ultimi mesi.",
-      },
-      {
-        target: "[data-tour='smart-impegni']",
-        title: "Rate, Accantonamenti, Budget",
-        message: "Tre modi di tenere sotto controllo i soldi già impegnati: le Rate (mutui, acquisti a rate, debiti — fisse e mensili) mostrano quanto manca e quanto hai già pagato; gli Accantonamenti calcolano la quota mensile per le spese grandi e irregolari; il Budget ti fa impostare quanto vuoi spendere per categoria.",
       },
     ],
   },

@@ -1,6 +1,6 @@
 # CLAUDE.md — Flusso App
 
-Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-14 (tutte le migrazioni applicate in produzione, incl. fix numerazione 013 duplicata).
+Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-14 (Smart riorganizzato: via "Aggiungi spesa ricorrente"/"Le mie spese ricorrenti"/"Previsioni", dentro Rate/Accantonamenti/Budget; "Spese previste" = Rate in corso + Accantonamenti + Budget).
 
 ---
 
@@ -50,9 +50,9 @@ flussoapp/
 │   │   │   └── import-excel-modal.tsx    # Import Excel + selezione membro
 │   │   ├── smart/
 │   │   │   ├── page.tsx                  # Server component Smart; lock screen per piano free
-│   │   │   ├── smart-page-client.tsx     # Tab controller: Previsioni / Ricorrenti / Obiettivi / Impegni (Rate, Accantonamenti, Budget)
+│   │   │   ├── smart-page-client.tsx     # Tab controller: Obiettivi / Impegni (Rate, Accantonamenti, Budget) — Previsioni/Ricorrenti generiche orfane, vedi CLAUDE.md
 │   │   │   ├── budget-panel.tsx          # Tab "Budget" — budget mensile per categoria + sottopagina storico/mesi speciali
-│   │   │   └── recurring-client.tsx      # Tab "Ricorrenti" — spese ricorrenti + report
+│   │   │   └── recurring-client.tsx      # CODICE MORTO (non importato da nessuno, come obiettivi-client.tsx)
 │   │   ├── obiettivi/
 │   │   │   ├── page.tsx                  # redirect → /dashboard/smart (obiettivi vivono nel tab Smart)
 │   │   │   └── obiettivi-client.tsx      # CODICE MORTO (non importato da nessuno)
@@ -355,12 +355,12 @@ Componente: `app/onboarding/page.tsx`
 - **Breakdown macro-categorie** con accordion per categoria
 - **Card saldo unificata** (`BalanceHeroCard`, `data-tour="hero"`) — al primo utilizzo (e da "Modifica") chiede il saldo che l'utente ha OGGI sul conto e lo riporta a inizio periodo sottraendo le transazioni già registrate (`period_starting_balance`/`_date`). Schema a 3 righe, ogni voce è un dropdown che mostra le transazioni (o il calcolo) sottostanti — utile per individuare errori/duplicati:
   - **Riga 1 (effettivi, in grande)**: Saldo attuale stimato (`starting + somma transazioni reali fino a oggi`, nero, dropdown = **contributo netto per componente** — entrate reali meno spese reali intestate a ciascun componente nel periodo corrente, bucket "Non assegnato" per le transazioni senza `member_id` — seguito dalla lista movimenti) · Spese affrontate (rosso, dropdown = lista spese) · Entrate effettive (verde, dropdown = lista entrate) — le ultime due sul periodo corrente, esclusi i trasferimenti (`spostamenti`/`salvadanaio`)
-  - **Riga 2 (previsti, più piccola)**: Saldo fine mese stimato (entrate da stipendio previste − spese previste, dropdown = scomposizione formula) · Spese previste (spese fisse + accantonamento mensile + budget spese variabili impostato in Smart → Budget, dropdown = elenco completo con link a Smart) · Entrate da stipendio previste (verde, singolo numero, da anagrafica reddito titolare+componenti, mese corrente, dropdown = importo per persona)
+  - **Riga 2 (previsti, più piccola)**: Saldo fine mese stimato (entrate da stipendio previste − spese previste, dropdown = scomposizione formula) · Spese previste (**Rate in corso + accantonamento mensile + budget spese variabili**, i tre pilastri di Smart → Rate/Accantonamenti/Budget — le spese fisse generiche non-rata non contano più qui, vedi nota 2026-09-14 nella sezione Smart, dropdown = elenco completo con link a Smart) · Entrate da stipendio previste (verde, singolo numero, da anagrafica reddito titolare+componenti, mese corrente, dropdown = importo per persona)
   - **Riga 3 (differenze)**: Differenza saldo/spese/entrate = previsto − effettivo per ciascuna coppia di voci di riga 1/2, colore verde/rosso in base al segno, dropdown = i due valori a confronto
   - Sotto: **Salvadanai** separato in fondo (totale = `piggy_balance`, tenuto in sync col trigger, link a `/dashboard/salvadanai`)
   - Rimossi rispetto a versioni precedenti: timeline SVG giornaliera, badge "sei in linea" e voce "Spese variabili" a sé stante; **2026-09-14**: rimossa anche la stima automatica min-max di categorie/bollette stagionali — "Spese previste" ora usa il totale budget impostato a mano in Smart → Budget (`category_budgets`), quindi è un valore singolo, non più un range
 - **Banner spese scadute** (`OverdueExpensesBanner`) — spese `fissa` con `due_day` passato senza pagamento confermato né transazione auto-riconosciuta; bottone "Segna come pagata" scrive su `payment_confirmations` e aggiorna `last_paid_date`/`payment_status`
-- **Spese previste + suggerimento risparmio** (`EstimateAndSavingsCard`) — spese fisse (certe) + budget spese variabili (somma `category_budgets`, stesso dato usato da `BalanceHeroCard`); risparmio suggerito = 80% del potenziale (entrate attese − fisse − budget), 20% di cuscinetto. Rinominata da "Stima spese mensili": non è più una stima statistica ma il totale del budget impostato dall'utente
+- **Spese previste + suggerimento risparmio** (`EstimateAndSavingsCard`) — Rate in corso + Accantonamenti (quota mensile) + Budget spese variabili, stessa formula e stessi dati di `BalanceHeroCard`; risparmio suggerito = 80% del potenziale (entrate attese − rate/accantonamenti − budget), 20% di cuscinetto. Rinominata da "Stima spese mensili": non è più una stima statistica ma la somma di quanto pianificato dall'utente
 - **Card Spese Ricorrenti** (`RecurringDashboardCard`) — accordion per categoria, previsto vs speso, delta colorato
 - **Bottone "Mesi precedenti"** → apre `MonthReportModal`
 - **Campanella 🔔** (`NotificationsBell`) nella top-nav — vedi sezione "Modalità demo"/schema `admin_notifications`
@@ -392,10 +392,9 @@ Griglia di salvadanai (`savings_pots`). Card: emoji+nome, saldo, barra verso `ta
 
 ### Smart (`/dashboard/smart`)
 - **Piano free**: schermata di blocco 🔒 + tour `freePreview` che spiega le feature e invita all'upgrade
-- **Piano premium/founder**: accesso completo a Previsioni, Ricorrenti, Obiettivi e al sottomenu "Rate, Accantonamenti, Budget"
+- **Piano premium/founder**: accesso completo a Obiettivi e al sottomenu "Rate, Accantonamenti, Budget"
 
-#### Tab: Ricorrenti
-Sistema di riconoscimento automatico transazioni con `match_keywords`, supporto `historical_avg` per variabilità stagionale (luce/gas), accordion per categoria nel report, template rapidi.
+> **2026-09-14 — riorganizzazione**: la copertina di Smart aveva prima anche "➕ Aggiungi spesa ricorrente" (wizard generico a 6 step, `view === "add-recurring"`), "📋 Le mie spese ricorrenti" (`view === "list-recurring"`, lista fisse/variabili/entrate) e "🔮 Previsioni" (`view === "previsioni"`, ricorrenti previste vs speso). Rimosse dalla copertina — ogni spesa fissa ora si traccia come Rata, Accantonamento o Budget, non più genericamente — ma il **codice resta nel file, ora irraggiungibile dalla UI** (stesso pattern già usato per `obiettivi-client.tsx`, marcato codice morto). Il form generico di modifica (`view === "edit-recurring"`, raggiunto da `goEditRecurring`) **resta invece attivo**: è ancora usato per modificare Rate/Accantonamenti/qualsiasi voce da dentro le rispettive sezioni. Anche `recurring-client.tsx` (file a sé per un vecchio tab "Ricorrenti") non è mai stato importato da nessuna parte — codice morto pre-esistente, non toccato in questa sessione. Al primo accesso dopo l'aggiornamento, il tour (`lib/tour-steps.ts`, v2.0) spiega il cambiamento.
 
 #### Tab: Obiettivi
 Wizard 6 step (`smart-page-client.tsx`, `view === "add-goal"`): nome/icona → importo → scadenza (con quota mensile suggerita) → **salvadanaio collegato** (`goals.savings_pot_id`) → **contributo mensile** (`goals.monthly_contribution`) → riepilogo. `view === "goal-detail"`: progress, quota necessaria vs impostata, stima raggiungimento (`estimateGoalCompletion`), proiezione SVG, storico `goal_contributions` + "Aggiungi contributo" (`goal-actions.ts` → trigger aggiorna `current_amount`). Limite free: 1 obiettivo.
@@ -407,7 +406,7 @@ I tre tab seguenti sono raggruppati in Smart sotto un'unica voce di copertina (`
 Inline in `smart-page-client.tsx` (`view === "rate"` / `"rate-form"`), stessa tabella `recurring_expenses` delle altre voci Ricorrenti — una Rata è una riga con `tipologia = 'fissa'`, `frequency = 'mensile'` e `debt_type` valorizzato ('mutuo' | 'rata_acquisto' | 'debito_persona' | 'altro'), quindi conta automaticamente nelle "Spese fisse" della dashboard senza bisogno di codice dedicato. Form dedicato (non il wizard generico di Ricorrenti, i cui step non calzano): tipo, nome, rata mensile, importo totale finanziato, data di inizio, giorno del mese opzionale, **Collega a transazione** (stesso meccanismo di Ricorrenti: cerca tra le transazioni, il testo scelto diventa `secondary_name` e fa da parola chiave — `effectiveKws`/`txMatchesKeywords`). `end_date` viene calcolato e salvato in automatico (`computeDebtProgress` in `lib/calculations.ts`, stessa forma di `projectSinkingFund` ma "al contrario": scala un importo totale noto invece di accumulare verso una scadenza), così la voce sparisce da sola dalla data di fine riusando la logica `end_date` già esistente. Ogni card mostra: rata mensile, barra di progresso, pagato/totale (dalla proiezione temporale, non dalle transazioni), mesi mancanti, mese di fine, un badge di stato (`computeDebtProgress(...).status`, calcolato da `debt_start_date` vs oggi: **future** = "🕓 Inizia il gg/mm/aaaa" se `debt_start_date` è nel futuro, **active** = "🟢 In corso", **finished** = "⚪ Terminata" quando `monthsRemaining` arriva a 0), e — se collegata a una transazione e in corso — un badge "✅ Pagata questo mese" / "⏳ Non ancora pagata questo mese" calcolato sulle transazioni reali del periodo corrente. Lista ordinata: in corso (le più vicine alla fine in cima) → non ancora iniziate (le più imminenti in cima) → terminate in fondo (le più recenti in cima), queste ultime mostrate un po' sbiadite. **"Totale rate al mese" e "Debito residuo" in cima contano solo le rate in corso** — quelle future non ancora iniziate non pesano finché non partono. Può anche essere modificata dal form generico di Ricorrenti (stessa riga, campi condivisi) — quel form non tocca i campi `debt_*`, quindi non li corrompe, ma nemmeno li aggiorna.
 
 #### Tab: Accantonamenti
-Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date` e `saving_start_date` su `recurring_expenses`. Banner "fase di recupero" quando la quota mensile è a regime. Per ogni voce, se esiste una transazione reale che corrisponde (`effectiveKws`/`txMatchesKeywords`, stesso meccanismo di Ricorrenti) datata dopo l'inizio del ciclo corrente (`saving_start_date`, per non ripescare pagamenti di cicli già confermati), compare un banner "💡 Trovato: importo/data" con un tasto "Conferma" che pre-compila il dialogo di conferma con l'importo reale trovato — resta comunque un passo manuale, non marca da sola per evitare che un match sbagliato sposti soldi dal salvadanaio. "Segna come pagata" (manuale o dal banner) con "scala dal salvadanaio" inserisce un `savings_transactions` withdraw sul primo pot dell'utente (fallback: update diretto di `piggy_balance` se non esistono pot).
+Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date` e `saving_start_date` su `recurring_expenses`. **"+ Aggiungi" apre un form dedicato** (`view === "accantonamento-form"`, solo aggiunta): tipo fisso/variabile, nome, frequenza, importo (+ massimo se variabile), prossima scadenza, Collega a transazione — sostituisce la dipendenza dal vecchio wizard generico di Ricorrenti, che era l'unico modo per crearne di nuovi prima di questa sessione. La **modifica** di una voce esistente resta invece sul form generico di Ricorrenti (bottone ✏️ su ogni card). Banner "fase di recupero" quando la quota mensile è a regime. Per ogni voce, se esiste una transazione reale che corrisponde (`effectiveKws`/`txMatchesKeywords`, stesso meccanismo di Ricorrenti) datata dopo l'inizio del ciclo corrente (`saving_start_date`, per non ripescare pagamenti di cicli già confermati), compare un banner "💡 Trovato: importo/data" con un tasto "Conferma" che pre-compila il dialogo di conferma con l'importo reale trovato — resta comunque un passo manuale, non marca da sola per evitare che un match sbagliato sposti soldi dal salvadanaio. "Segna come pagata" (manuale o dal banner) con "scala dal salvadanaio" inserisce un `savings_transactions` withdraw sul primo pot dell'utente (fallback: update diretto di `piggy_balance` se non esistono pot).
 
 #### Tab: Budget
 File a sé (`budget-panel.tsx`, non inline in `smart-page-client.tsx` come le altre tab). Sostituisce il vecchio pannello "Spese variabili" (selezione categorie + range automatico min-max). Il totale dei budget (`category_budgets.monthly_budget`) è anche la fonte di "Spese previste"/"Totale previsto" in dashboard (`BalanceHeroCard`, `EstimateAndSavingsCard`).
@@ -470,13 +469,12 @@ Se `plan === 'free'` e la pagina ha `freePreview` definito in `PAGE_TOURS`, al p
 hero, breakdown, month-report-btn          dashboard
 nav-transazioni, nav-smart                 nav
 tx-nav, tx-summary, tx-filters, tx-add    transazioni
-smart-ricorrenti, smart-obiettivi,         smart (cover)
-smart-previsioni, smart-impegni
+smart-obiettivi, smart-impegni              smart (cover)
 account-income, account-family,            account
 account-power-user, account-feedback
 ```
 
-> Versioni tour: `/dashboard` v1.7 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v1.4 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.4. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`.
+> Versioni tour: `/dashboard` v1.7 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v2.0 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.4. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`.
 
 ### LocalStorage
 Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valore diverso dalla versione in `PAGE_TOURS` = aggiornamento.

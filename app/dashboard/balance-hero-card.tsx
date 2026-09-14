@@ -5,11 +5,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatEuro,
-  recurringMonthlyEquivalent,
   aggregateExpectedIncome,
   hasIncomeInfo,
   normalizeMonthlyIncome,
   aggregateSinkingFunds,
+  computeDebtProgress,
   type IncomeInfo,
   type SinkingFundInput,
 } from "@/lib/calculations";
@@ -29,6 +29,9 @@ type RecurringRow = {
   amount_max: number | null;
   next_due_date: string | null;
   saving_start_date: string | null;
+  debt_type: string | null;
+  debt_total_amount: number | null;
+  debt_start_date: string | null;
 };
 
 type Tx = {
@@ -223,7 +226,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     Promise.all([
       supabase.from("profiles").select(`period_starting_balance, period_starting_balance_date, ${INCOME_COLS}`).eq("id", userId).single(),
       supabase.from("recurring_expenses")
-        .select("id, name, tipologia, frequency, custom_days, amount, amount_max, next_due_date, saving_start_date")
+        .select("id, name, tipologia, frequency, custom_days, amount, amount_max, next_due_date, saving_start_date, debt_type, debt_total_amount, debt_start_date")
         .eq("user_id", userId),
       // Query filtrata per data: senza bound si rischia il limite di default di 1000 righe
       // di Supabase, che senza un ordinamento esplicito puo' tagliare fuori proprio le
@@ -289,13 +292,22 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     const now = new Date();
     const calMonth = now.getMonth();
 
-    const fixedItems = items.filter(it => it.tipologia === "fissa");
-    const fixedTotal = fixedItems.reduce((s, it) => s + recurringMonthlyEquivalent(it), 0);
+    // Rate in corso (esclude quelle future non ancora iniziate e quelle già terminate).
+    const rateItems = items
+      .filter(it => it.debt_type && it.debt_total_amount && it.debt_start_date)
+      .map(it => ({
+        item: it,
+        progress: computeDebtProgress({ totalAmount: it.debt_total_amount!, monthlyAmount: it.amount, startDate: it.debt_start_date! }),
+      }))
+      .filter(r => r.progress.status === "active");
+    const rateMonthly = rateItems.reduce((s, r) => s + r.item.amount, 0);
 
-    // ── Spese previste: fisse + accantonamento mensile + budget spese variabili
-    // (somma dei budget manuali impostati in Smart > Budget, non più una stima
-    // automatica min-max). Min e max coincidono: formatMoneyRange mostra un valore
-    // solo quando non c'è più alcuna componente a range.
+    // ── Spese previste: rate in corso + accantonamento mensile + budget spese
+    // variabili (somma dei budget manuali impostati in Smart > Budget). Le spese
+    // fisse "generiche" (non rata/accantonamento) non contano più qui — l'utente ha
+    // scelto di tracciare tutte le spese fisse ricorrenti come Rate. Min e max
+    // coincidono: formatMoneyRange mostra un valore solo quando non c'è più alcuna
+    // componente a range.
     const sinkingInputs: SinkingFundInput[] = items
       .filter(it => it.next_due_date && it.saving_start_date)
       .map(it => ({
@@ -309,7 +321,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       }));
     const sinkingSummary = aggregateSinkingFunds(sinkingInputs, piggyBalance);
 
-    const speseMin = fixedTotal + sinkingSummary.this_month_total + budgetTotal;
+    const speseMin = rateMonthly + sinkingSummary.this_month_total + budgetTotal;
     const speseMax = speseMin;
 
     // Se il titolare si e' identificato come Componente, il suo reddito e' li' (evita di sommarlo due volte).
@@ -322,7 +334,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 
     return {
       income, expensesAbs, incomeTxs, expenseTxs, memberBreakdown,
-      actualToday, fixedTotal, fixedItems, sinkingMonthly: sinkingSummary.this_month_total,
+      actualToday, rateMonthly, rateItems, sinkingMonthly: sinkingSummary.this_month_total,
       speseMin, speseMax, saldoMin, saldoMax, entratePreviste,
       deltaSaldo: saldoMid - actualToday,
       deltaSpese: speseMid - expensesAbs,
@@ -352,7 +364,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 
   const {
     income, expensesAbs, incomeTxs, expenseTxs, memberBreakdown,
-    actualToday, fixedTotal, fixedItems, sinkingMonthly,
+    actualToday, rateMonthly, rateItems, sinkingMonthly,
     speseMin, speseMax, saldoMin, saldoMax, entratePreviste,
     deltaSaldo, deltaSpese, deltaEntrate, calMonth,
   } = result;
@@ -500,7 +512,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       )}
       {expanded === "spese-previste" && (
         <SpesePreviste
-          fixedTotal={fixedTotal} fixedItems={fixedItems}
+          rateMonthly={rateMonthly} rateItems={rateItems}
           sinkingMonthly={sinkingMonthly} budgetTotal={budgetTotal}
           speseMin={speseMin} speseMax={speseMax}
         />
@@ -567,10 +579,10 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
 }
 
 function SpesePreviste({
-  fixedTotal, fixedItems, sinkingMonthly, budgetTotal, speseMin, speseMax,
+  rateMonthly, rateItems, sinkingMonthly, budgetTotal, speseMin, speseMax,
 }: {
-  fixedTotal: number;
-  fixedItems: RecurringRow[];
+  rateMonthly: number;
+  rateItems: { item: RecurringRow; progress: { status: string } }[];
   sinkingMonthly: number;
   budgetTotal: number;
   speseMin: number;
@@ -579,13 +591,13 @@ function SpesePreviste({
   return (
     <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs -mt-1">
       <div className="flex justify-between">
-        <span className="text-muted-foreground">Spese fisse (certe)</span>
-        <span className="font-medium tabular-nums">{formatEuro(fixedTotal)}</span>
+        <span className="text-muted-foreground">Rate in corso</span>
+        <span className="font-medium tabular-nums">{formatEuro(rateMonthly)}</span>
       </div>
-      {fixedItems.map(it => (
-        <div key={it.id} className="flex justify-between pl-3 text-muted-foreground">
-          <span className="truncate">{it.name}</span>
-          <span className="tabular-nums">{formatEuro(recurringMonthlyEquivalent(it))}</span>
+      {rateItems.map(({ item }) => (
+        <div key={item.id} className="flex justify-between pl-3 text-muted-foreground">
+          <span className="truncate">{item.name}</span>
+          <span className="tabular-nums">{formatEuro(item.amount)}</span>
         </div>
       ))}
       {sinkingMonthly > 0 && (
@@ -602,8 +614,11 @@ function SpesePreviste({
         <span className="font-medium">= Spese previste</span>
         <span className="font-semibold tabular-nums">{formatMoneyRange(speseMin, speseMax)}</span>
       </div>
-      <Link href="/dashboard/smart" className="text-primary hover:underline pt-1">
-        Imposta un budget per categoria in Smart →
+      <p className="text-muted-foreground pt-1">
+        Somma di Rate in corso + Accantonamenti + Budget — vedi Smart → Rate/Accantonamenti/Budget per il dettaglio.
+      </p>
+      <Link href="/dashboard/smart" className="text-primary hover:underline">
+        Vai a Smart →
       </Link>
     </div>
   );

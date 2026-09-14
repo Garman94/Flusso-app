@@ -44,7 +44,7 @@ type DebtType = "mutuo" | "rata_acquisto" | "debito_persona" | "altro";
 type View =
   | "cover" | "add-recurring" | "edit-recurring" | "list-recurring"
   | "add-goal" | "list-goals" | "goal-detail" | "previsioni"
-  | "impegni" | "accantonamenti" | "budget" | "rate" | "rate-form";
+  | "impegni" | "accantonamenti" | "accantonamento-form" | "budget" | "rate" | "rate-form";
 
 type CategoryBudget = { category_id: string; monthly_budget: number };
 type CategoryBudgetNote = { category_id: string; year: number; month: number; note: string };
@@ -265,6 +265,25 @@ const DEBT_TYPE_META: Record<DebtType, { icon: string; label: string }> = {
   altro:          { icon: "📌", label: "Altro" },
 };
 
+const EMPTY_A = {
+  tipo: "" as "uscita_fissa" | "uscita_variabile" | "",
+  name: "",
+  frequency: "annuale" as Frequency,
+  custom_days: "",
+  amount: "",
+  amount_max: "",
+  next_due_date: "",
+  secondary_name: "",
+};
+
+const ACCANTONAMENTO_FREQ_OPTIONS: { value: Frequency; label: string }[] = [
+  { value: "bimestrale",    label: "Ogni 2 mesi" },
+  { value: "trimestrale",   label: "Ogni 3 mesi" },
+  { value: "semestrale",    label: "Ogni 6 mesi" },
+  { value: "annuale",       label: "Ogni anno" },
+  { value: "personalizzata", label: "Personalizzato" },
+];
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function SmartPageClient({
@@ -295,6 +314,11 @@ export function SmartPageClient({
   const [dEditId, setDEditId] = useState<string | null>(null);
   const [dSaving, setDSaving] = useState(false);
   const [dTxSearch, setDTxSearch] = useState("");
+
+  // Accantonamento form (flat, solo aggiunta — la modifica resta sul form generico Ricorrenti)
+  const [aForm, setAForm] = useState(EMPTY_A);
+  const [aSaving, setASaving] = useState(false);
+  const [aTxSearch, setATxSearch] = useState("");
 
   // Goal wizard
   const [gStep, setGStep] = useState(1);
@@ -421,6 +445,44 @@ export function SmartPageClient({
       }
     }
     setDSaving(false);
+  }
+
+  function goAddAccantonamento() {
+    setAForm(EMPTY_A); setATxSearch(""); setView("accantonamento-form");
+  }
+
+  async function handleSaveAccantonamento() {
+    const amt = parseFloat(aForm.amount.replace(",", "."));
+    if (!aForm.tipo) { toast.error("Scegli il tipo."); return; }
+    if (!aForm.name.trim() || isNaN(amt) || amt <= 0) { toast.error("Inserisci nome e importo."); return; }
+    if (!aForm.next_due_date) { toast.error("Inserisci la prossima scadenza."); return; }
+    const tipologia: Tipologia = aForm.tipo === "uscita_variabile" ? "variabile" : "fissa";
+    const amtMax = tipologia === "variabile" && aForm.amount_max
+      ? parseFloat(aForm.amount_max.replace(",", ".")) : null;
+    const custDays = aForm.frequency === "personalizzata"
+      ? parseInt(aForm.custom_days) || null : null;
+    if (aForm.frequency === "personalizzata" && (!custDays || custDays <= 0)) {
+      toast.error("Inserisci un intervallo valido."); return;
+    }
+
+    setASaving(true);
+    const payload = {
+      name: aForm.name.trim(), tipologia, frequency: aForm.frequency,
+      custom_days: custDays, amount: amt, amount_max: amtMax,
+      match_keywords: [], matching_strategy: "keyword",
+      due_day: null, category_id: null, notes: null,
+      secondary_name: aForm.secondary_name.trim() || null,
+      next_due_date: aForm.next_due_date,
+      saving_start_date: new Date().toISOString().split("T")[0],
+    };
+    const { data, error } = await createClient()
+      .from("recurring_expenses").insert({ user_id: userId, ...payload }).select("*").single();
+    if (error) toast.error(`Errore: ${error.message}`);
+    else {
+      setRecurringItems(prev => [...prev, data as RecurringExpense]);
+      toast.success("Accantonamento aggiunto!"); setView("accantonamenti");
+    }
+    setASaving(false);
   }
 
   function goAddGoal() {
@@ -621,17 +683,19 @@ export function SmartPageClient({
 
   if (view === "cover") {
     const COVER_ITEMS = [
-      { icon: "➕", label: "Aggiungi spesa ricorrente", action: goAddRecurring,              tourAttr: undefined },
-      { icon: "📋", label: "Le mie spese ricorrenti",  action: () => setView("list-recurring"), tourAttr: "smart-ricorrenti" },
-      { icon: "🎯", label: "I miei obiettivi",         action: () => setView("list-goals"),     tourAttr: "smart-obiettivi" },
-      { icon: "🔮", label: "Previsioni",               action: () => setView("previsioni"),     tourAttr: "smart-previsioni" },
-      { icon: "💳", label: "Rate, Accantonamenti, Budget", action: () => setView("impegni"),    tourAttr: "smart-impegni" },
+      { icon: "🎯", label: "I miei obiettivi",             action: () => setView("list-goals"), tourAttr: "smart-obiettivi" },
+      { icon: "💳", label: "Rate, Accantonamenti, Budget", action: () => setView("impegni"),     tourAttr: "smart-impegni" },
     ] as const;
 
     return (
       <div className="flex flex-col gap-4">
         <Suspense><PageTour path="/dashboard/smart" /></Suspense>
         <h1 className="text-2xl font-bold">Smart</h1>
+        <p className="text-sm text-muted-foreground -mt-2">
+          Le spese ricorrenti sono state riorganizzate per prevedere meglio il mese: ogni impegno fisso ora vive in
+          Rate (mutui, rate d&apos;acquisto, debiti), Accantonamenti (spese future grandi) o Budget (spese variabili
+          per categoria) — non più in un elenco generico.
+        </p>
         {COVER_ITEMS.map(({ icon, label, action, tourAttr }) => (
           <button
             key={label}
@@ -1028,7 +1092,185 @@ export function SmartPageClient({
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // RECURRING WIZARD
+  // ACCANTONAMENTO — form (solo aggiunta; la modifica usa il form generico Ricorrenti)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (view === "accantonamento-form") {
+    const isVariabileA = aForm.tipo === "uscita_variabile";
+    return (
+      <div className="flex flex-col gap-6 max-w-md mx-auto w-full">
+        <div className="flex items-center gap-3">
+          <BackButton onClick={() => setView("accantonamenti")} />
+          <h1 className="text-xl font-bold">Nuovo accantonamento</h1>
+        </div>
+
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Tipo</label>
+            <div className="flex gap-2">
+              {([
+                { value: "uscita_fissa", icon: "💸", label: "Importo fisso" },
+                { value: "uscita_variabile", icon: "📊", label: "Importo variabile" },
+              ] as const).map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setAForm(f => ({ ...f, tipo: opt.value }))}
+                  className={`flex-1 flex flex-col items-center gap-1 rounded-xl border-2 py-3 text-xs font-medium transition-all ${
+                    aForm.tipo === opt.value ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                  }`}
+                >
+                  <span className="text-xl">{opt.icon}</span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Nome</label>
+            <input
+              type="text" value={aForm.name}
+              onChange={e => setAForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="es. Assicurazione auto, Manutenzione caldaia…"
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Ogni quanto ricorre</label>
+            <select
+              value={aForm.frequency}
+              onChange={e => setAForm(f => ({ ...f, frequency: e.target.value as Frequency }))}
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            >
+              {ACCANTONAMENTO_FREQ_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            {aForm.frequency === "personalizzata" && (
+              <input
+                type="number" value={aForm.custom_days}
+                onChange={e => setAForm(f => ({ ...f, custom_days: e.target.value }))}
+                placeholder="Ogni quanti giorni?"
+                min={1}
+                className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+              />
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">{isVariabileA ? "Importo minimo (€)" : "Importo (€)"}</label>
+            <input
+              type="text" value={aForm.amount}
+              onChange={e => setAForm(f => ({ ...f, amount: e.target.value }))}
+              placeholder="es. 350"
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            />
+          </div>
+
+          {isVariabileA && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium">Importo massimo (€)</label>
+              <input
+                type="text" value={aForm.amount_max}
+                onChange={e => setAForm(f => ({ ...f, amount_max: e.target.value }))}
+                placeholder="es. 500"
+                className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+              />
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Prossima scadenza</label>
+            <input
+              type="date" value={aForm.next_due_date}
+              onChange={e => setAForm(f => ({ ...f, next_due_date: e.target.value }))}
+              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+            />
+            <p className="text-xs text-muted-foreground -mt-1">
+              Calcoleremo quanto accantonare ogni mese fino a quella data.
+            </p>
+          </div>
+
+          {/* Collega a transazione */}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Collega a transazione</label>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Facoltativo: collega l&apos;ultimo pagamento reale per riconoscere in automatico i prossimi.
+            </p>
+            {aForm.secondary_name ? (
+              <div className="flex items-center gap-3 rounded-xl border-2 border-primary/40 bg-primary/5 px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{aForm.secondary_name}</p>
+                  <p className="text-xs text-muted-foreground">Collegata</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAForm(f => ({ ...f, secondary_name: "" }))}
+                  className="text-xs text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                >
+                  ✕ Scollega
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  value={aTxSearch}
+                  onChange={e => setATxSearch(e.target.value)}
+                  placeholder="Cerca, o sfoglia le più recenti qui sotto…"
+                  className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+                />
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-muted-foreground px-1">
+                    {aTxSearch.trim().length >= 2 ? "Risultati" : "Transazioni recenti"}
+                  </p>
+                  {pickTxCandidates(transactions, aTxSearch).map((t, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setAForm(f => ({ ...f, secondary_name: t.description ?? t.merchant ?? "" }));
+                        setATxSearch("");
+                      }}
+                      className="text-left px-3 py-2.5 rounded-xl border hover:bg-muted/50 transition-colors flex items-center gap-3"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{t.description || t.merchant}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {fmt(Math.abs(Number(t.amount)))} · {new Date(t.date + "T00:00:00").toLocaleDateString("it-IT")}
+                        </p>
+                      </div>
+                      <span className="text-xs text-primary shrink-0">Collega →</span>
+                    </button>
+                  ))}
+                  {pickTxCandidates(transactions, aTxSearch).length === 0 && (
+                    <p className="text-xs text-muted-foreground px-1">Nessuna transazione trovata.</p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <button
+          onClick={handleSaveAccantonamento}
+          disabled={aSaving}
+          className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        >
+          {aSaving ? "Salvataggio…" : "Aggiungi accantonamento"}
+        </button>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RECURRING WIZARD — CODICE ORFANO: non più raggiungibile dalla copertina Smart
+  // (sostituito da Rate/Accantonamenti/Budget), lasciato per non perdere la logica
+  // di modifica generica (edit-recurring, ancora usata da Rate/Accantonamenti/Budget)
+  // che vive più sotto nello stesso file. Vedi anche obiettivi-client.tsx per lo
+  // stesso pattern di codice morto già presente in questo repo.
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (view === "add-recurring") {
@@ -2746,7 +2988,13 @@ export function SmartPageClient({
         <div className="flex flex-col gap-6">
           <div className="flex items-center gap-3">
             <BackButton onClick={() => setView("impegni")} />
-            <h1 className="text-xl font-bold">Accantonamenti</h1>
+            <h1 className="text-xl font-bold flex-1">Accantonamenti</h1>
+            <button
+              onClick={goAddAccantonamento}
+              className="text-sm bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 transition-colors"
+            >
+              + Aggiungi
+            </button>
           </div>
 
           {recurringLoading ? (
@@ -2761,10 +3009,10 @@ export function SmartPageClient({
                 Configura una spesa ricorrente non mensile con una &ldquo;Prossima scadenza&rdquo; per attivare il calcolo dell&apos;accantonamento mensile.
               </p>
               <button
-                onClick={goAddRecurring}
+                onClick={goAddAccantonamento}
                 className="bg-primary text-primary-foreground rounded-xl px-5 py-2.5 text-sm font-medium hover:bg-primary/90 transition-colors"
               >
-                Aggiungi spesa ricorrente
+                Aggiungi accantonamento
               </button>
             </div>
           ) : (
