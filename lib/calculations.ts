@@ -545,6 +545,8 @@ export type DebtInput = {
   startDate: string;      // YYYY-MM-DD, inizio del piano di rientro
 };
 
+export type DebtStatus = "future" | "active" | "finished";
+
 export type DebtProgress = {
   totalMonths: number;
   monthsElapsed: number;
@@ -552,6 +554,7 @@ export type DebtProgress = {
   endDate: Date;
   paidSoFar: number;
   remaining: number;
+  status: DebtStatus; // "future" = non ancora iniziata, "finished" = saldata
 };
 
 /**
@@ -559,7 +562,9 @@ export type DebtProgress = {
  * (projectSinkingFund) ma "al contrario" — invece di accumulare verso una scadenza
  * futura, scala un importo totale noto a rate mensili fisse a partire da una data
  * di inizio. totalMonths e' derivato da totalAmount/monthlyAmount (arrotondato per
- * eccesso), non da una data di fine inserita a mano.
+ * eccesso), non da una data di fine inserita a mano. Una data di inizio futura da'
+ * semplicemente monthsElapsed=0 (nessuna rata ancora pagata) — lo status "future"
+ * distingue questo caso da una rata attiva ma appena cominciata.
  */
 export function computeDebtProgress(input: DebtInput, today: Date = new Date()): DebtProgress {
   const monthly = Math.max(input.monthlyAmount, 0.01);
@@ -574,7 +579,11 @@ export function computeDebtProgress(input: DebtInput, today: Date = new Date()):
   const paidSoFar = Math.min(input.totalAmount, input.monthlyAmount * monthsElapsed);
   const remaining = input.totalAmount - paidSoFar;
 
-  return { totalMonths, monthsElapsed, monthsRemaining, endDate, paidSoFar, remaining };
+  const todayIso = today.toISOString().split("T")[0];
+  const status: DebtStatus =
+    input.startDate > todayIso ? "future" : monthsRemaining <= 0 ? "finished" : "active";
+
+  return { totalMonths, monthsElapsed, monthsRemaining, endDate, paidSoFar, remaining, status };
 }
 
 // ============================================================

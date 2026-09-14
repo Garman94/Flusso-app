@@ -712,12 +712,35 @@ export function SmartPageClient({
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (view === "rate") {
-    const rateItems = recurringItems.filter(it => it.debt_type);
-    const totalMonthly = rateItems.reduce((s, it) => s + it.amount, 0);
-    const totalRemaining = rateItems.reduce((s, it) => {
-      if (!it.debt_total_amount || !it.debt_start_date) return s;
-      return s + computeDebtProgress({ totalAmount: it.debt_total_amount, monthlyAmount: it.amount, startDate: it.debt_start_date }).remaining;
-    }, 0);
+    const rateWithProgress = recurringItems
+      .filter(it => it.debt_type && it.debt_total_amount && it.debt_start_date)
+      .map(item => ({
+        item,
+        progress: computeDebtProgress({
+          totalAmount: item.debt_total_amount!, monthlyAmount: item.amount, startDate: item.debt_start_date!,
+        }),
+      }));
+
+    // In corso prima (le più vicine alla fine in cima), poi quelle non ancora iniziate
+    // (le più imminenti in cima), infine le terminate (le più recenti in cima).
+    const STATUS_ORDER: Record<string, number> = { active: 0, future: 1, finished: 2 };
+    const rateSorted = [...rateWithProgress].sort((a, b) => {
+      const byStatus = STATUS_ORDER[a.progress.status] - STATUS_ORDER[b.progress.status];
+      if (byStatus !== 0) return byStatus;
+      if (a.progress.status === "active") return a.progress.monthsRemaining - b.progress.monthsRemaining;
+      if (a.progress.status === "future") return a.item.debt_start_date!.localeCompare(b.item.debt_start_date!);
+      return b.progress.endDate.getTime() - a.progress.endDate.getTime();
+    });
+
+    const activeOnly = rateWithProgress.filter(r => r.progress.status === "active");
+    const totalMonthly = activeOnly.reduce((s, r) => s + r.item.amount, 0);
+    const totalRemaining = activeOnly.reduce((s, r) => s + r.progress.remaining, 0);
+
+    const STATUS_META: Record<string, { label: string; className: string }> = {
+      active:   { label: "🟢 In corso", className: "bg-green-500/10 text-green-600 dark:text-green-400" },
+      future:   { label: "", className: "bg-muted text-muted-foreground" }, // etichetta calcolata per voce (data di inizio)
+      finished: { label: "⚪ Terminata", className: "bg-muted text-muted-foreground" },
+    };
 
     return (
       <div className="flex flex-col gap-6">
@@ -732,15 +755,15 @@ export function SmartPageClient({
           </button>
         </div>
 
-        {rateItems.length > 0 && (
+        {rateWithProgress.length > 0 && (
           <div className="rounded-2xl border-2 p-5 flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground uppercase tracking-wide">Totale rate al mese</span>
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">Totale rate al mese (in corso)</span>
             <span className="text-2xl font-bold tabular-nums">{fmt(totalMonthly)}</span>
-            <span className="text-xs text-muted-foreground">Debito residuo complessivo: {fmt(totalRemaining)}</span>
+            <span className="text-xs text-muted-foreground">Debito residuo (rate in corso): {fmt(totalRemaining)}</span>
           </div>
         )}
 
-        {rateItems.length === 0 ? (
+        {rateWithProgress.length === 0 ? (
           <div className="flex flex-col items-center gap-4 py-16 text-center">
             <span className="text-5xl">📆</span>
             <p className="text-muted-foreground">Nessuna rata o debito ancora tracciato.</p>
@@ -753,41 +776,48 @@ export function SmartPageClient({
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {rateItems.map(item => {
+            {rateSorted.map(({ item, progress }) => {
               const meta = DEBT_TYPE_META[item.debt_type as DebtType];
-              const progress = item.debt_total_amount && item.debt_start_date
-                ? computeDebtProgress({ totalAmount: item.debt_total_amount, monthlyAmount: item.amount, startDate: item.debt_start_date })
-                : null;
-              const pct = progress && item.debt_total_amount ? Math.min(100, (progress.paidSoFar / item.debt_total_amount) * 100) : 0;
+              const pct = Math.min(100, (progress.paidSoFar / item.debt_total_amount!) * 100);
               const kws = effectiveKws(item);
               const paidThisPeriod = kws.length > 0 && transactions.some(
                 t => Number(t.amount) < 0 && t.date >= pStart && (pEnd ? t.date <= pEnd : true) && txMatchesKws(t, kws)
               );
+              const statusLabel = progress.status === "future"
+                ? `🕓 Inizia il ${new Date(item.debt_start_date! + "T00:00:00").toLocaleDateString("it-IT")}`
+                : STATUS_META[progress.status].label;
               return (
-                <div key={item.id} className="rounded-xl border p-4 flex flex-col gap-3">
+                <div key={item.id} className={`rounded-xl border p-4 flex flex-col gap-3 ${progress.status === "finished" ? "opacity-60" : ""}`}>
                   <div className="flex items-start gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{meta.icon} {item.name}</div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium truncate">{meta.icon} {item.name}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap ${STATUS_META[progress.status].className}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
                         {meta.label} · {fmt(item.amount)}/mese
                         {item.due_day ? ` · giorno ${item.due_day}` : ""}
                       </div>
-                      {kws.length > 0 ? (
-                        <span className={`inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                          paidThisPeriod
-                            ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                            : "bg-muted text-muted-foreground"
-                        }`}>
-                          {paidThisPeriod ? "✅ Pagata questo mese" : "⏳ Non ancora pagata questo mese"}
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => goEditRate(item)}
-                          className="block mt-1.5 text-[10px] text-primary underline hover:no-underline"
-                        >
-                          🔗 Collega una transazione per verificare i pagamenti
-                        </button>
+                      {progress.status === "active" && (
+                        kws.length > 0 ? (
+                          <span className={`inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                            paidThisPeriod
+                              ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                              : "bg-muted text-muted-foreground"
+                          }`}>
+                            {paidThisPeriod ? "✅ Pagata questo mese" : "⏳ Non ancora pagata questo mese"}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => goEditRate(item)}
+                            className="block mt-1.5 text-[10px] text-primary underline hover:no-underline"
+                          >
+                            🔗 Collega una transazione per verificare i pagamenti
+                          </button>
+                        )
                       )}
                     </div>
                     <div className="flex gap-2 shrink-0">
@@ -807,22 +837,18 @@ export function SmartPageClient({
                       </button>
                     </div>
                   </div>
-                  {progress && item.debt_total_amount && (
-                    <>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
-                      </div>
-                      <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span>Pagato: <span className="font-semibold text-foreground">{fmt(progress.paidSoFar)}</span> / {fmt(item.debt_total_amount)}</span>
-                        <span>
-                          {progress.monthsRemaining > 0
-                            ? <>Mancano <span className="font-semibold text-foreground">{progress.monthsRemaining}</span> {progress.monthsRemaining === 1 ? "mese" : "mesi"}</>
-                            : <span className="font-semibold text-green-600 dark:text-green-400">Saldata</span>}
-                        </span>
-                        <span>Termina: <span className="font-semibold text-foreground">{progress.endDate.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</span></span>
-                      </div>
-                    </>
-                  )}
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span>Pagato: <span className="font-semibold text-foreground">{fmt(progress.paidSoFar)}</span> / {fmt(item.debt_total_amount!)}</span>
+                    <span>
+                      {progress.monthsRemaining > 0
+                        ? <>Mancano <span className="font-semibold text-foreground">{progress.monthsRemaining}</span> {progress.monthsRemaining === 1 ? "mese" : "mesi"}</>
+                        : <span className="font-semibold text-green-600 dark:text-green-400">Saldata</span>}
+                    </span>
+                    <span>Termina: <span className="font-semibold text-foreground">{progress.endDate.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</span></span>
+                  </div>
                 </div>
               );
             })}
