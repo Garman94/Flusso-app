@@ -1,6 +1,6 @@
 # CLAUDE.md — Flusso App
 
-Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-14 (riconoscimento automatico transazioni per Rate e Accantonamenti).
+Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-14 (tutte le migrazioni applicate in produzione, incl. fix numerazione 013 duplicata).
 
 ---
 
@@ -556,7 +556,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `011_recurring_strategy.sql` | Campo `matching_strategy` su `recurring_expenses` |
 | `012_coupon_codes.sql` | Tabella `coupon_codes` per upgrade via coupon |
 | `013_excel_upload_log.sql` | Tabella `excel_uploads` (rate limit import free) |
-| `013_smart_wizard_fields.sql` | Campo `due_day`, tipologia estesa con `'entrata'` |
+| `0135_smart_wizard_fields.sql` | Campo `due_day`, tipologia estesa con `'entrata'` — rinominata da `013_...` (collideva col numero di `013_excel_upload_log.sql`, impediva a `supabase migration list`/`db push` di tracciarla) |
 | `014_recurring_extras.sql` | Campi `due_month`, `secondary_name` su `recurring_expenses` |
 | `015_drop_balance.sql` | Rimozione campo `balance` da `profiles` |
 | `016_lock_plan_column.sql` | Trigger anti-autopromozion piano |
