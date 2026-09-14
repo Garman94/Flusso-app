@@ -621,3 +621,49 @@ export const INCOME_VARIABILITY_PCT: Record<"low" | "medium" | "high", number> =
   medium: 0.3,
   high: 0.5,
 };
+
+// ============================================================
+// FEATURE — Budget per categoria (Smart > Budget)
+// ============================================================
+
+export type MonthSpend = { year: number; month: number; total: number };
+export type ClassifiedMonth = MonthSpend & { isSpecial: boolean };
+export type CategoryBudgetAnalysis = {
+  months: ClassifiedMonth[]; // stesso ordine dell'input
+  average: number;           // media dei mesi "normali" (esclusi gli speciali)
+  normalCount: number;
+};
+
+/**
+ * Classifica i mesi di spesa di una categoria: quelli che si scostano di oltre
+ * il 50% dalla media sono "speciali" e vengono esclusi dal calcolo della media.
+ * Two-pass per evitare che un singolo mese estremo trascini la soglia con se':
+ * 1) media grezza su tutti i mesi: 2) esclude chi si scosta >50% da quella media
+ * per ottenere la media "normale"; 3) riclassifica tutti i mesi contro la media
+ * normale (un mese puo' rientrare se la media normale e' piu' bassa di quella grezza).
+ */
+export function classifyCategoryMonths(months: MonthSpend[]): CategoryBudgetAnalysis {
+  if (months.length === 0) return { months: [], average: 0, normalCount: 0 };
+
+  const rawAvg = months.reduce((s, m) => s + m.total, 0) / months.length;
+  if (rawAvg <= 0) {
+    return { months: months.map(m => ({ ...m, isSpecial: false })), average: rawAvg, normalCount: months.length };
+  }
+
+  const deviates = (value: number, avg: number) => Math.abs(value - avg) / avg > 0.5;
+
+  const normalAvg = (() => {
+    const normal = months.filter(m => !deviates(m.total, rawAvg));
+    return normal.length > 0
+      ? normal.reduce((s, m) => s + m.total, 0) / normal.length
+      : rawAvg;
+  })();
+
+  const classified = months.map(m => ({ ...m, isSpecial: normalAvg > 0 && deviates(m.total, normalAvg) }));
+  const finalNormal = classified.filter(m => !m.isSpecial);
+  const average = finalNormal.length > 0
+    ? finalNormal.reduce((s, m) => s + m.total, 0) / finalNormal.length
+    : normalAvg;
+
+  return { months: classified, average, normalCount: finalNormal.length };
+}

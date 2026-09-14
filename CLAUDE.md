@@ -1,6 +1,6 @@
 # CLAUDE.md — Flusso App
 
-Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-12.
+Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-13.
 
 ---
 
@@ -50,7 +50,8 @@ flussoapp/
 │   │   │   └── import-excel-modal.tsx    # Import Excel + selezione membro
 │   │   ├── smart/
 │   │   │   ├── page.tsx                  # Server component Smart; lock screen per piano free
-│   │   │   ├── smart-page-client.tsx     # Tab controller: Previsioni / Ricorrenti / Obiettivi / Accantonamenti
+│   │   │   ├── smart-page-client.tsx     # Tab controller: Previsioni / Ricorrenti / Obiettivi / Accantonamenti / Budget
+│   │   │   ├── budget-panel.tsx          # Tab "Budget" — budget mensile per categoria + sottopagina storico/mesi speciali
 │   │   │   └── recurring-client.tsx      # Tab "Ricorrenti" — spese ricorrenti + report
 │   │   ├── obiettivi/
 │   │   │   ├── page.tsx                  # redirect → /dashboard/smart (obiettivi vivono nel tab Smart)
@@ -184,6 +185,18 @@ Categorie che l'utente considera "spese variabili" ai fini del range min-max in 
 id uuid PK · user_id uuid FK auth.users · category_id uuid FK categories · created_at timestamptz
 unique(user_id, category_id)
 ```
+
+### `category_budgets` / `category_budget_notes`
+Tab Smart → Budget: budget mensile impostato a mano per categoria, con storico e annotazione dei mesi "speciali" (migration 032). Sostituisce, solo nel tab Smart, la selezione + range automatico del vecchio pannello "Spese variabili" — `variable_expense_categories` resta invariata e in uso per il calcolo "Spese previste" in dashboard finché non viene aggiornato a sua volta.
+```
+category_budgets
+  id · user_id FK auth.users · category_id FK categories · monthly_budget numeric default 0 · updated_at
+  unique(user_id, category_id)
+category_budget_notes
+  id · user_id FK auth.users · category_id FK categories · year int · month int (1-12) · note text · created_at/updated_at
+  unique(user_id, category_id, year, month)
+```
+La classificazione "mese speciale" (scostamento >50% dalla media dei mesi normali) è calcolata al volo lato client (`classifyCategoryMonths` in `lib/calculations.ts`) sugli ultimi 12 mesi di transazioni; solo il testo della nota è persistito.
 
 ### `goals`
 Obiettivi di risparmio.
@@ -387,12 +400,11 @@ Wizard 6 step (`smart-page-client.tsx`, `view === "add-goal"`): nome/icona → i
 #### Tab: Accantonamenti
 Pianifica spese future grandi (vacanze, assicurazione…). Campi `next_due_date` e `saving_start_date` su `recurring_expenses`. Banner "fase di recupero" quando la quota mensile è a regime. "Segna come pagata" con "scala dal salvadanaio" ora inserisce un `savings_transactions` withdraw sul primo pot dell'utente (fallback: update diretto di `piggy_balance` se non esistono pot).
 
-#### Tab: Spese variabili
-File a sé (`variable-expenses-panel.tsx`, non inline in `smart-page-client.tsx` come le altre tab). Due parti:
-- **Picker categorie**: checkbox su tutte le categorie utente+sistema, persistito in `variable_expense_categories`; default (nessuna riga salvata) = Alimentari, Abbigliamento, Tecnologia, Trasporti, Intrattenimento.
-- **Bollette stagionali automatiche**: le voci `recurring_expenses` con `matching_strategy = 'historical_avg'` (**esclusi** gli accantonamenti, cioè quelle con `next_due_date`/`saving_start_date` valorizzati, per non contarle due volte) compaiono qui senza bisogno di configurazione — fetch mirato per parola chiave (`description`/`merchant` `ilike`) su tutta la storia, raggruppato per anno sullo stesso mese calendariale (`seasonalBillRange` in `lib/calculations.ts`).
-- **Monitoraggio**: per ogni categoria/bolletta, spesa reale del mese in corso vs range min-max osservato (badge verde/rosso/blu = nel range / sopra / sotto).
-- Il totale mostrato (accantonamento mensile via `aggregateSinkingFunds` + range categorie via `minMaxOverMonths` sugli ultimi 6 mesi + range bollette stagionali) è lo stesso calcolo (`combineVariableExpenses`) usato per "Spese previste" in `BalanceHeroCard`.
+#### Tab: Budget
+File a sé (`budget-panel.tsx`, non inline in `smart-page-client.tsx` come le altre tab). Sostituisce il vecchio pannello "Spese variabili" (selezione categorie + range automatico min-max); la logica di quel pannello resta però ancora usata, invariata, per il calcolo "Spese previste" della dashboard (`BalanceHeroCard`/`EstimateAndSavingsCard`, tabella `variable_expense_categories`) — le due cose sono indipendenti finché non si armonizzano in un passo successivo.
+- **Schermata principale**: card "Budget del mese" col totale (somma dei budget impostati) e speso finora nel mese; sotto, l'elenco di tutte le categorie di spesa (escluse quelle di reddito/trasferimento: Stipendio, Spostamenti, Salvadanaio) con badge "Nel budget"/"Sopra budget"/"Da impostare".
+- **Sottopagina per categoria** (tap su una riga): budget mensile con bottone "Modifica", spesa del mese corrente, storico degli ultimi 12 mesi con media dei mesi "normali".
+- **Mesi speciali**: un mese che si scosta di oltre il 50% dalla media (`classifyCategoryMonths` in `lib/calculations.ts`, due passate per non far trascinare la soglia da un singolo mese estremo) è escluso dal calcolo della media ed etichettato "⭐ Speciale" nello storico; l'utente può aggiungere/modificare/rimuovere una nota libera per spiegare l'anomalia (`category_budget_notes`), persistita per quel mese specifico indipendentemente da riclassificazioni future.
 
 ### Account (`/dashboard/account`)
 - Gestione profilo e cambio nome
@@ -450,12 +462,12 @@ nav-transazioni, nav-smart                 nav
 tx-nav, tx-summary, tx-filters, tx-add    transazioni
 smart-ricorrenti, smart-obiettivi,         smart (cover)
 smart-previsioni, smart-accantonamenti,
-smart-variabili
+smart-budget
 account-income, account-family,            account
 account-power-user, account-feedback
 ```
 
-> Versioni tour: `/dashboard` v1.7 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v1.2 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.4. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`.
+> Versioni tour: `/dashboard` v1.7 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v1.3 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.4. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`.
 
 ### LocalStorage
 Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valore diverso dalla versione in `PAGE_TOURS` = aggiornamento.
@@ -498,6 +510,7 @@ Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valo
 | `estimateMonthlyExpenses` | Stima min/max spese mensili |
 | `suggestMonthlySavings` | Suggerimento risparmio mensile |
 | `normalizeMonthlyIncome`, `aggregateExpectedIncome`, `hasIncomeInfo` | Anagrafica reddito → reddito atteso mensile del nucleo |
+| `classifyCategoryMonths` | Tab Budget: classifica i mesi di spesa di una categoria come "normali"/"speciali" (scostamento >50% dalla media) e calcola la media sui soli mesi normali |
 
 > Nota storica: `calculateProjectedBalance` e `calculateTrendData`, citate in versioni precedenti di questa doc, non esistono più nel codice — probabilmente rimosse in un refactor senza aggiornare CLAUDE.md.
 
@@ -553,6 +566,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `029_demo_savings_seed.sql` | `reseed_demo()` aggiornata: 2 salvadanai demo + goal collegato |
 | `030_family_member_owner.sql` | `family_members.is_owner` + unique index parziale (max 1 proprietario per utente) |
 | `031_variable_expense_categories.sql` | Tabella `variable_expense_categories` (categorie scelte per il range spese variabili in dashboard) |
+| `032_category_budgets.sql` | Tabelle `category_budgets` (budget mensile manuale per categoria) e `category_budget_notes` (annotazione mesi "speciali") — tab Smart → Budget |
 
 ---
 

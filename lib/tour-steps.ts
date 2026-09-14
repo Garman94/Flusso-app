@@ -95,8 +95,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/smart": {
-    version: "1.2",
-    whatIsNew: "nuovo tab Spese variabili: scegli le categorie e monitora il range min-max mese per mese",
+    version: "1.3",
+    whatIsNew: "tab Budget: imposta un budget mensile per categoria e scopri i mesi \"speciali\" fuori media",
     freePreview: [
       {
         title: "Benvenuto in Smart ⚡",
@@ -145,9 +145,9 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
         message: "Pianifica le spese grandi e irregolari (vacanze, assicurazione auto…) accantonando ogni mese la quota necessaria.",
       },
       {
-        target: "[data-tour='smart-variabili']",
-        title: "Spese variabili",
-        message: "Scegli quali categorie contano come spese variabili (alimentari, shopping, trasporti…) e monitora quanto hai speso questo mese rispetto al range min-max osservato. Le bollette luce/gas con \"Media storica\" nelle spese ricorrenti compaiono qui automaticamente.",
+        target: "[data-tour='smart-budget']",
+        title: "Budget",
+        message: "Imposta un budget mensile per ogni categoria. Apri una categoria per vedere lo storico degli ultimi mesi, la media e i mesi \"speciali\" che si scostano di oltre il 50%: puoi annotare perché sono diversi dal solito.",
       },
     ],
   },

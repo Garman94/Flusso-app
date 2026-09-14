@@ -1,0 +1,350 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
+import { formatEuro, classifyCategoryMonths, type MonthSpend } from "@/lib/calculations";
+
+type Category = { id: string; name: string; color: string; icon: string };
+type Tx = { date: string; amount: number; category_id?: string | null };
+type BudgetRow = { category_id: string; monthly_budget: number };
+type NoteRow = { category_id: string; year: number; month: number; note: string };
+
+type Props = {
+  userId: string;
+  categories: Category[];
+  transactions: Tx[];
+  initialBudgets: BudgetRow[];
+  initialNotes: NoteRow[];
+  onBack: () => void;
+};
+
+const HISTORY_MONTHS = 12;
+// Categorie di trasferimento interno e reddito: non hanno senso come voce di budget.
+const EXCLUDED_CATEGORY_NAMES = new Set(["stipendio", "spostamenti", "salvadanaio"]);
+
+function monthBounds(year: number, month: number) {
+  const from = new Date(year, month, 1).toISOString().split("T")[0];
+  const to = new Date(year, month + 1, 0).toISOString().split("T")[0];
+  return { from, to };
+}
+
+function monthLabel(year: number, month: number) {
+  return new Date(year, month - 1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+}
+
+function noteKey(categoryId: string, year: number, month: number) {
+  return `${categoryId}:${year}-${month}`;
+}
+
+export function BudgetPanel({ userId, categories, transactions, initialBudgets, initialNotes, onBack }: Props) {
+  const budgetCategories = useMemo(
+    () => categories.filter(c => !EXCLUDED_CATEGORY_NAMES.has(c.name.toLowerCase())),
+    [categories]
+  );
+
+  const [budgets, setBudgets] = useState<Record<string, number>>(
+    () => Object.fromEntries(initialBudgets.map(b => [b.category_id, Number(b.monthly_budget)]))
+  );
+  const [notes, setNotes] = useState<Record<string, string>>(
+    () => Object.fromEntries(initialNotes.map(n => [noteKey(n.category_id, n.year, n.month), n.note]))
+  );
+
+  const [subview, setSubview] = useState<"list" | "detail">("list");
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [editingBudget, setEditingBudget] = useState(false);
+  const [budgetInput, setBudgetInput] = useState("");
+  const [savingBudget, setSavingBudget] = useState(false);
+  const [editingNoteKey, setEditingNoteKey] = useState<string | null>(null);
+  const [noteInput, setNoteInput] = useState("");
+  const [savingNoteKey, setSavingNoteKey] = useState<string | null>(null);
+
+  const now = new Date();
+  const calYear = now.getFullYear(), calMonth = now.getMonth();
+  const { from: curFrom, to: curTo } = monthBounds(calYear, calMonth);
+
+  const currentSpend = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const c of budgetCategories) {
+      map[c.id] = transactions
+        .filter(t => t.category_id === c.id && t.date >= curFrom && t.date <= curTo && Number(t.amount) < 0)
+        .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+    }
+    return map;
+  }, [budgetCategories, transactions, curFrom, curTo]);
+
+  const totalBudget = useMemo(
+    () => budgetCategories.reduce((s, c) => s + (budgets[c.id] ?? 0), 0),
+    [budgetCategories, budgets]
+  );
+  const totalSpent = useMemo(
+    () => budgetCategories.reduce((s, c) => s + (currentSpend[c.id] ?? 0), 0),
+    [budgetCategories, currentSpend]
+  );
+
+  const category = budgetCategories.find(c => c.id === detailId) ?? null;
+
+  const analysis = useMemo(() => {
+    if (!category) return null;
+    const months: MonthSpend[] = [];
+    for (let i = 1; i <= HISTORY_MONTHS; i++) {
+      const d = new Date(calYear, calMonth - i, 1);
+      const { from, to } = monthBounds(d.getFullYear(), d.getMonth());
+      const total = transactions
+        .filter(t => t.category_id === category.id && t.date >= from && t.date <= to && Number(t.amount) < 0)
+        .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+      months.push({ year: d.getFullYear(), month: d.getMonth() + 1, total });
+    }
+    return classifyCategoryMonths(months);
+  }, [category, transactions, calYear, calMonth]);
+
+  function openDetail(catId: string) {
+    setDetailId(catId);
+    setSubview("detail");
+    setEditingBudget(false);
+    setEditingNoteKey(null);
+  }
+
+  async function saveBudget(catId: string) {
+    const amt = parseFloat(budgetInput.replace(",", "."));
+    if (isNaN(amt) || amt < 0) { toast.error("Inserisci un importo valido."); return; }
+    setSavingBudget(true);
+    const { error } = await createClient()
+      .from("category_budgets")
+      .upsert(
+        { user_id: userId, category_id: catId, monthly_budget: amt, updated_at: new Date().toISOString() },
+        { onConflict: "user_id,category_id" }
+      );
+    setSavingBudget(false);
+    if (error) { toast.error(`Errore: ${error.message}`); return; }
+    setBudgets(prev => ({ ...prev, [catId]: amt }));
+    setEditingBudget(false);
+    toast.success("Budget aggiornato!");
+  }
+
+  async function saveNote(catId: string, year: number, month: number) {
+    const text = noteInput.trim();
+    if (!text) { toast.error("Scrivi una nota."); return; }
+    const key = noteKey(catId, year, month);
+    setSavingNoteKey(key);
+    const { error } = await createClient()
+      .from("category_budget_notes")
+      .upsert(
+        { user_id: userId, category_id: catId, year, month, note: text, updated_at: new Date().toISOString() },
+        { onConflict: "user_id,category_id,year,month" }
+      );
+    setSavingNoteKey(null);
+    if (error) { toast.error(`Errore: ${error.message}`); return; }
+    setNotes(prev => ({ ...prev, [key]: text }));
+    setEditingNoteKey(null);
+    setNoteInput("");
+    toast.success("Nota salvata!");
+  }
+
+  async function removeNote(catId: string, year: number, month: number) {
+    const key = noteKey(catId, year, month);
+    const { error } = await createClient()
+      .from("category_budget_notes")
+      .delete()
+      .eq("user_id", userId).eq("category_id", catId).eq("year", year).eq("month", month);
+    if (error) { toast.error("Errore."); return; }
+    setNotes(prev => { const next = { ...prev }; delete next[key]; return next; });
+  }
+
+  // ═══════════════════════════════ DETAIL ══════════════════════════════
+  if (subview === "detail" && category && analysis) {
+    const budget = budgets[category.id] ?? 0;
+    return (
+      <div className="flex flex-col gap-6 max-w-lg mx-auto w-full">
+        <button onClick={() => setSubview("list")} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors self-start">
+          ← Indietro
+        </button>
+
+        <h1 className="text-xl font-bold">{category.icon} {category.name}</h1>
+
+        <div className="rounded-2xl border-2 p-5 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">Budget mensile</span>
+            {!editingBudget && (
+              <button
+                onClick={() => { setEditingBudget(true); setBudgetInput(budget > 0 ? String(budget).replace(".", ",") : ""); }}
+                className="text-xs text-primary underline hover:no-underline"
+              >
+                Modifica
+              </button>
+            )}
+          </div>
+          {editingBudget ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  type="text" autoFocus value={budgetInput}
+                  onChange={e => setBudgetInput(e.target.value)}
+                  placeholder="es. 200"
+                  className="flex-1 border-2 rounded-xl px-3 py-2 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+                />
+                <button
+                  onClick={() => saveBudget(category.id)}
+                  disabled={savingBudget}
+                  className="bg-primary text-primary-foreground rounded-xl px-4 py-2 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {savingBudget ? "…" : "Salva"}
+                </button>
+                <button
+                  onClick={() => setEditingBudget(false)}
+                  className="rounded-xl border px-4 py-2 text-sm hover:bg-muted/50 transition-colors"
+                >
+                  Annulla
+                </button>
+              </div>
+              {analysis.average > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  💡 Media mesi normali (esclusi gli speciali): <span className="font-medium">{formatEuro(analysis.average)}</span>
+                  {" — "}
+                  <button
+                    type="button"
+                    onClick={() => setBudgetInput(String(analysis.average.toFixed(2)).replace(".", ","))}
+                    className="text-primary underline hover:no-underline"
+                  >
+                    usa questo valore
+                  </button>
+                </p>
+              )}
+            </div>
+          ) : (
+            <span className="text-2xl font-bold tabular-nums">{formatEuro(budget)}</span>
+          )}
+          <span className="text-xs text-muted-foreground">
+            Speso questo mese: {formatEuro(currentSpend[category.id] ?? 0)}
+            {analysis.average > 0 && ` · Media mesi normali: ${formatEuro(analysis.average)}`}
+          </span>
+        </div>
+
+        <div className="rounded-xl border p-5 flex flex-col gap-1">
+          <h2 className="font-semibold text-sm mb-2">Storico ultimi {HISTORY_MONTHS} mesi</h2>
+          <div className="flex flex-col divide-y">
+            {analysis.months.map(m => {
+              const key = noteKey(category.id, m.year, m.month);
+              const note = notes[key];
+              const deltaPct = analysis.average > 0 ? ((m.total - analysis.average) / analysis.average) * 100 : 0;
+              return (
+                <div key={key} className="py-3 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm capitalize">{monthLabel(m.year, m.month)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium tabular-nums">{formatEuro(m.total)}</span>
+                      {m.isSpecial && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                          ⭐ Speciale {deltaPct > 0 ? "+" : ""}{deltaPct.toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {m.isSpecial && (
+                    editingNoteKey === key ? (
+                      <div className="flex flex-col gap-2">
+                        <textarea
+                          autoFocus value={noteInput}
+                          onChange={e => setNoteInput(e.target.value)}
+                          placeholder="Perché questo mese è diverso dal solito?"
+                          rows={2}
+                          className="border-2 rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:border-primary transition-colors resize-none"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => saveNote(category.id, m.year, m.month)}
+                            disabled={savingNoteKey === key}
+                            className="bg-primary text-primary-foreground rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                          >
+                            Salva nota
+                          </button>
+                          <button
+                            onClick={() => { setEditingNoteKey(null); setNoteInput(""); }}
+                            className="rounded-lg border px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors"
+                          >
+                            Annulla
+                          </button>
+                        </div>
+                      </div>
+                    ) : note ? (
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-xs text-muted-foreground italic">&ldquo;{note}&rdquo;</p>
+                        <div className="flex gap-2 shrink-0">
+                          <button onClick={() => { setEditingNoteKey(key); setNoteInput(note); }} className="text-xs text-primary underline hover:no-underline">Modifica</button>
+                          <button onClick={() => removeNote(category.id, m.year, m.month)} className="text-xs text-muted-foreground hover:text-destructive">Rimuovi</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setEditingNoteKey(key); setNoteInput(""); }}
+                        className="text-xs text-primary underline hover:no-underline self-start"
+                      >
+                        + Aggiungi nota
+                      </button>
+                    )
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════ LIST ═══════════════════════════════
+  return (
+    <div className="flex flex-col gap-6 max-w-lg mx-auto w-full">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors self-start">
+        ← Indietro
+      </button>
+
+      <div>
+        <h1 className="text-xl font-bold">Budget</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Imposta un budget mensile per categoria. Apri una categoria per vedere lo storico e la media.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border-2 p-5 flex flex-col gap-1">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">Budget del mese</span>
+        <span className="text-2xl font-bold tabular-nums">{formatEuro(totalBudget)}</span>
+        <span className="text-xs text-muted-foreground">Speso finora questo mese: {formatEuro(totalSpent)}</span>
+      </div>
+
+      <div className="rounded-xl border p-2 flex flex-col divide-y">
+        {budgetCategories.map(c => {
+          const budget = budgets[c.id] ?? 0;
+          const spent = currentSpend[c.id] ?? 0;
+          const over = budget > 0 && spent > budget;
+          return (
+            <button
+              key={c.id}
+              onClick={() => openDetail(c.id)}
+              className="flex items-center justify-between gap-3 px-3 py-3 text-left hover:bg-muted/50 rounded-lg transition-colors"
+            >
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-medium truncate">{c.icon} {c.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  Speso: {formatEuro(spent)}{budget > 0 && ` · Budget: ${formatEuro(budget)}`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {budget > 0 ? (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                    over ? "bg-red-500/10 text-red-500" : "bg-green-500/10 text-green-600 dark:text-green-400"
+                  }`}>
+                    {over ? "Sopra budget" : "Nel budget"}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">Da impostare</span>
+                )}
+                <span className="text-muted-foreground">›</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
