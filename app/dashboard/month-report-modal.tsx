@@ -6,6 +6,7 @@ import {
   formatEuro,
   calculateFinancialScore,
   calculateCategoryBreakdown,
+  isTransferCategory,
   type Transaction,
 } from "@/lib/calculations";
 
@@ -13,8 +14,6 @@ const MONTH_NAMES = [
   "Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
   "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre",
 ];
-
-const TRANSFER_CATS = new Set(["spostamenti", "salvadanaio"]);
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
 
@@ -67,7 +66,7 @@ export function MonthReportModal({ userId, onClose }: MonthReportModalProps) {
     else setMonth(m => m + 1);
   }
 
-  const spendable = txs.filter(t => !TRANSFER_CATS.has(t.categories?.name?.toLowerCase() ?? ""));
+  const spendable = txs.filter(t => !isTransferCategory(t.categories?.name));
   const income     = spendable.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
   const expenses   = spendable.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   const savings    = income - expenses;

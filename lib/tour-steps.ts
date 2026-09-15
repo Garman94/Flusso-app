@@ -95,8 +95,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/smart": {
-    version: "2.0",
-    whatIsNew: "Smart riorganizzato: \"Aggiungi spesa ricorrente\", \"Le mie spese ricorrenti\" e \"Previsioni\" lasciano il posto a Rate, Accantonamenti e Budget, per prevedere le spese del mese con più precisione",
+    version: "2.1",
+    whatIsNew: "Ogni accantonamento ora può collegarsi a un salvadanaio specifico (invece del primo disponibile), e le transazioni categorizzate \"Accantonamenti\" non contano più come spesa — vedi quanto hai accantonato per davvero questo mese",
     freePreview: [
       {
         title: "Benvenuto in Smart ⚡",

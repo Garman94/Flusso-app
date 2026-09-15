@@ -6,14 +6,13 @@ import {
   formatEuro,
   calculateCategoryBreakdown,
   estimateGoalCompletion,
+  isTransferCategory,
   type Transaction,
   type Goal,
 } from "@/lib/calculations";
-import { RecurringDashboardCard } from "./recurring-dashboard-card";
 import { SinkingFundsCard } from "./sinking-funds-card";
 import { BalanceHeroCard } from "./balance-hero-card";
 import { OverdueExpensesBanner } from "./overdue-expenses-banner";
-import { EstimateAndSavingsCard } from "./estimate-and-savings-card";
 import { MonthReportModal } from "./month-report-modal";
 import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
@@ -194,10 +193,8 @@ export function DashboardClient({
     : now.toLocaleString("it-IT", { month: "long", year: "numeric" });
 
   // ── Aggregates ────────────────────────────────────────────────────────────
-  // Spostamenti e Salvadanaio sono trasferimenti interni: esclusi da entrate/uscite/score
-  const TRANSFER_CATS = new Set(['spostamenti', 'salvadanaio']);
-  const isTransfer = (t: typeof currentTxs[number]) =>
-    TRANSFER_CATS.has(t.categories?.name?.toLowerCase() ?? '');
+  // Spostamenti, Salvadanaio e Accantonamenti sono trasferimenti interni: esclusi da entrate/uscite/score
+  const isTransfer = (t: typeof currentTxs[number]) => isTransferCategory(t.categories?.name);
 
   const spendableTxs = currentTxs.filter(t => !isTransfer(t));
   const income      = spendableTxs.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
@@ -475,12 +472,6 @@ export function DashboardClient({
           </div>
         </div>
       )}
-
-      {/* ── Stima spese mensili + suggerimento risparmio ── */}
-      <EstimateAndSavingsCard userId={userId} periodFrom={periodFrom} periodTo={periodTo} />
-
-      {/* ── Spese ricorrenti ── */}
-      <RecurringDashboardCard userId={userId} />
 
       {/* ── Accantonamenti ── */}
       <SinkingFundsCard userId={userId} />

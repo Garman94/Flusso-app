@@ -38,6 +38,7 @@ export type RecurringExpense = {
   debt_type: DebtType | null;
   debt_total_amount: number | null;
   debt_start_date: string | null;
+  savings_pot_id: string | null;
 };
 type TipoCard = "uscita_fissa" | "uscita_variabile" | "entrata";
 type DebtType = "mutuo" | "rata_acquisto" | "debito_persona" | "altro";
@@ -233,6 +234,7 @@ const EMPTY_R = {
   secondary_name: "",
   end_date: "",
   next_due_date: "",
+  savings_pot_id: "",
 };
 
 const EMPTY_G = {
@@ -274,6 +276,7 @@ const EMPTY_A = {
   amount_max: "",
   next_due_date: "",
   secondary_name: "",
+  savings_pot_id: "",
 };
 
 const ACCANTONAMENTO_FREQ_OPTIONS: { value: Frequency; label: string }[] = [
@@ -383,6 +386,7 @@ export function SmartPageClient({
       secondary_name: item.secondary_name ?? "",
       end_date: item.end_date ?? "",
       next_due_date: item.next_due_date ?? "",
+      savings_pot_id: item.savings_pot_id ?? "",
     });
     setEEditId(item.id); setETxSearch(""); setView("edit-recurring");
   }
@@ -474,6 +478,7 @@ export function SmartPageClient({
       secondary_name: aForm.secondary_name.trim() || null,
       next_due_date: aForm.next_due_date,
       saving_start_date: new Date().toISOString().split("T")[0],
+      savings_pot_id: aForm.savings_pot_id || null,
     };
     const { data, error } = await createClient()
       .from("recurring_expenses").insert({ user_id: userId, ...payload }).select("*").single();
@@ -612,6 +617,7 @@ export function SmartPageClient({
       end_date: eForm.end_date || null,
       next_due_date: nextDueDate,
       saving_start_date: savingStartDate,
+      savings_pot_id: eForm.savings_pot_id || null,
     };
     const { data, error } = await createClient()
       .from("recurring_expenses").update(payload).eq("id", eEditId).select("*").single();
@@ -1191,6 +1197,47 @@ export function SmartPageClient({
             <p className="text-xs text-muted-foreground -mt-1">
               Calcoleremo quanto accantonare ogni mese fino a quella data.
             </p>
+          </div>
+
+          {/* Salvadanaio collegato */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">
+              Salvadanaio{" "}
+              <span className="text-muted-foreground font-normal">— facoltativo</span>
+            </label>
+            <p className="text-xs text-muted-foreground -mt-1">
+              &ldquo;Segna come pagata&rdquo; scalerà da questo salvadanaio invece che dal primo disponibile.
+            </p>
+            <div className="flex flex-col gap-2">
+              {pots.map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setAForm(f => ({ ...f, savings_pot_id: p.id }))}
+                  className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-all ${
+                    aForm.savings_pot_id === p.id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <span className="text-xl">{p.emoji}</span>
+                  <span className="flex-1 text-sm font-medium">{p.name}</span>
+                  <span className="text-xs text-muted-foreground">{fmt(Number(p.current_balance))}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setAForm(f => ({ ...f, savings_pot_id: "" }))}
+                className={`rounded-xl border-2 px-4 py-3 text-left text-sm transition-all ${
+                  !aForm.savings_pot_id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                }`}
+              >
+                Nessuno
+              </button>
+              {pots.length === 0 && (
+                <a href="/dashboard/salvadanai" className="text-xs text-primary hover:underline">
+                  Crea un salvadanaio →
+                </a>
+              )}
+            </div>
           </div>
 
           {/* Collega a transazione */}
@@ -1932,6 +1979,49 @@ export function SmartPageClient({
                   {new Date(eForm.next_due_date).toLocaleDateString("it-IT")}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Salvadanaio collegato (accantonamento) */}
+          {eForm.frequency !== "mensile" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium">
+                Salvadanaio{" "}
+                <span className="text-muted-foreground font-normal">— facoltativo, per accantonamento</span>
+              </label>
+              <p className="text-xs text-muted-foreground -mt-1">
+                &ldquo;Segna come pagata&rdquo; scalerà da questo salvadanaio invece che dal primo disponibile.
+              </p>
+              <div className="flex flex-col gap-2">
+                {pots.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setEForm(f => ({ ...f, savings_pot_id: p.id }))}
+                    className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-all ${
+                      eForm.savings_pot_id === p.id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                    }`}
+                  >
+                    <span className="text-xl">{p.emoji}</span>
+                    <span className="flex-1 text-sm font-medium">{p.name}</span>
+                    <span className="text-xs text-muted-foreground">{fmt(Number(p.current_balance))}</span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setEForm(f => ({ ...f, savings_pot_id: "" }))}
+                  className={`rounded-xl border-2 px-4 py-3 text-left text-sm transition-all ${
+                    !eForm.savings_pot_id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                  }`}
+                >
+                  Nessuno
+                </button>
+                {pots.length === 0 && (
+                  <a href="/dashboard/salvadanai" className="text-xs text-primary hover:underline">
+                    Crea un salvadanaio →
+                  </a>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -2823,6 +2913,21 @@ export function SmartPageClient({
 
     const readyToPay = summary.projections.filter(p => p.months_remaining <= 0);
 
+    // Saldo del salvadanaio collegato alla voce (fallback: totale aggregato, come "Segna come pagata").
+    const potBalanceFor = (it: RecurringExpense) =>
+      it.savings_pot_id
+        ? Number(pots.find(p => p.id === it.savings_pot_id)?.current_balance ?? 0)
+        : piggyBalance;
+
+    // Notifica: quanto è stato accantonato davvero questo mese, dalle transazioni
+    // categorizzate "Accantonamenti" (escluse da entrate/spese perché trasferimenti).
+    const accCategoryId = categories.find(c => c.name.toLowerCase() === "accantonamenti")?.id ?? null;
+    const accTxThisMonth = accCategoryId
+      ? transactions
+          .filter(t => t.category_id === accCategoryId && Number(t.amount) < 0 && t.date >= pStart && (pEnd ? t.date <= pEnd : true))
+          .reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
+      : 0;
+
     // ── Mark-paid dialog preview calculations ─────────────────────────────────
     const dialogItem = paidDialog?.item ?? null;
     const dialogProj = paidDialog?.proj ?? null;
@@ -2851,7 +2956,11 @@ export function SmartPageClient({
     const dialogNewQuota = dialogNewCycleMonths > 0
       ? dialogEffectiveAmt / dialogNewCycleMonths
       : 0;
-    const dialogPiggyAfter = piggyBalance - dialogEffectiveAmt;
+    const dialogPot = dialogItem?.savings_pot_id
+      ? pots.find(p => p.id === dialogItem.savings_pot_id) ?? null
+      : null;
+    const dialogPotBalance = dialogPot ? Number(dialogPot.current_balance) : piggyBalance;
+    const dialogPiggyAfter = dialogPotBalance - dialogEffectiveAmt;
     const dialogGoesNegative = paidDeduct && dialogPiggyAfter < 0;
 
     return (
@@ -2919,12 +3028,20 @@ export function SmartPageClient({
                     className="mt-0.5 shrink-0"
                   />
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">Scala dal salvadanaio</span>
+                    <span className="text-sm font-medium">
+                      {dialogPot ? `Scala da ${dialogPot.emoji} ${dialogPot.name}` : "Scala dal salvadanaio"}
+                    </span>
                     <span className="text-xs text-muted-foreground">
-                      Salvadanaio: {fmt(piggyBalance)} → dopo: {fmt(dialogPiggyAfter)}
+                      {dialogPot ? dialogPot.name : "Salvadanaio"}: {fmt(dialogPotBalance)} → dopo: {fmt(dialogPiggyAfter)}
                     </span>
                   </div>
                 </label>
+                {!dialogPot && (
+                  <p className="text-xs text-muted-foreground pl-6">
+                    Nessun salvadanaio collegato a questa voce: verrà usato il primo disponibile.
+                    Collegane uno con ✏️.
+                  </p>
+                )}
                 {dialogGoesNegative && (
                   <p className="text-xs text-destructive font-medium pl-6">
                     ⚠️ Il salvadanaio andrebbe in negativo ({fmt(dialogPiggyAfter)}).
@@ -3088,6 +3205,14 @@ export function SmartPageClient({
                 </div>
               </div>
 
+              {/* Notifica: accantonato da transazioni reali questo mese */}
+              {accTxThisMonth > 0 && (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">💰 Accantonato da transazioni questo mese</span>
+                  <span className="font-semibold">{fmt(accTxThisMonth)}</span>
+                </div>
+              )}
+
               {/* Lista voci */}
               <div className="flex flex-col gap-3">
                 {summary.projections.map(proj => {
@@ -3132,6 +3257,14 @@ export function SmartPageClient({
                               ? `${proj.months_remaining} ${proj.months_remaining === 1 ? "mese rimasto" : "mesi rimasti"}`
                               : "pronto per il pagamento"}
                           </div>
+                          {(() => {
+                            const linkedPot = item.savings_pot_id ? pots.find(p => p.id === item.savings_pot_id) : null;
+                            return linkedPot ? (
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {linkedPot.emoji} {linkedPot.name}
+                              </div>
+                            ) : null;
+                          })()}
                           {isCatchup && catchup && (
                             <div className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
                               A regime: {fmt(catchup.steady_monthly)}/mese
@@ -3183,7 +3316,7 @@ export function SmartPageClient({
                             onClick={() => {
                               const foundAmt = Math.abs(Number(candidateTx.amount));
                               setPaidAmount(foundAmt % 1 === 0 ? foundAmt.toString() : foundAmt.toFixed(2));
-                              setPaidDeduct(piggyBalance >= foundAmt);
+                              setPaidDeduct(potBalanceFor(item) >= foundAmt);
                               setPaidDialog({ proj, item });
                             }}
                             className="shrink-0 bg-primary text-primary-foreground rounded-lg px-3 py-1.5 font-medium hover:bg-primary/90 transition-colors"
@@ -3202,7 +3335,7 @@ export function SmartPageClient({
                             setPaidAmount(defaultAmt % 1 === 0
                               ? defaultAmt.toString()
                               : defaultAmt.toFixed(2));
-                            setPaidDeduct(piggyBalance >= defaultAmt);
+                            setPaidDeduct(potBalanceFor(item) >= defaultAmt);
                             setPaidDialog({ proj, item });
                           }}
                           className={`text-xs font-medium rounded-lg px-3 py-1.5 transition-colors ${

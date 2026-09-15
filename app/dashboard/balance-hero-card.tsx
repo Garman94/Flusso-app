@@ -10,6 +10,7 @@ import {
   normalizeMonthlyIncome,
   aggregateSinkingFunds,
   computeDebtProgress,
+  isTransferCategory,
   type IncomeInfo,
   type SinkingFundInput,
 } from "@/lib/calculations";
@@ -17,7 +18,6 @@ import { updateStartingBalance } from "./saldo-action";
 import { toast } from "sonner";
 
 const INCOME_COLS = "income_type, monthly_income, income_frequency, income_payday, income_variability, active_months";
-const TRANSFER_CATS = new Set(["spostamenti", "salvadanaio"]);
 
 type RecurringRow = {
   id: string;
@@ -59,7 +59,7 @@ function todayIso() {
   return new Date().toISOString().split("T")[0];
 }
 
-const isTransfer = (t: Tx) => TRANSFER_CATS.has(t.categories?.name?.toLowerCase() ?? "");
+const isTransfer = (t: Tx) => isTransferCategory(t.categories?.name);
 
 /** Mostra un singolo valore se min e max coincidono (nessuna componente variabile), altrimenti il range. */
 function formatMoneyRange(min: number, max: number): string {

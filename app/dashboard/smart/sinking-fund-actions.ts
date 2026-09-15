@@ -41,7 +41,7 @@ export async function markSinkingFundPaid(
 
   const { data: rec } = await supabase
     .from("recurring_expenses")
-    .select("amount, amount_max, tipologia, frequency, custom_days, next_due_date")
+    .select("amount, amount_max, tipologia, frequency, custom_days, next_due_date, savings_pot_id")
     .eq("id", recurringId)
     .eq("user_id", userId)
     .single();
@@ -78,15 +78,29 @@ export async function markSinkingFundPaid(
     const current = Number(profile?.piggy_balance ?? 0);
     newPiggyBalance = Math.round((current - amountToDeduct) * 100) / 100;
 
-    // Preferisci scalare da un salvadanaio (il trigger sync_piggy_balance
-    // aggiorna profiles.piggy_balance). Fallback: update diretto se non ci sono pot.
-    const { data: pot } = await supabase
-      .from("savings_pots")
-      .select("id")
-      .eq("user_id", userId)
-      .order("created_at")
-      .limit(1)
-      .maybeSingle();
+    // Preferisci scalare dal salvadanaio collegato a questa voce (savings_pot_id).
+    // Se non è collegato nessun pot, fallback al primo pot creato (comportamento
+    // storico); se l'utente non ha alcun pot, update diretto di piggy_balance.
+    let pot: { id: string } | null = null;
+    if (rec.savings_pot_id) {
+      const { data } = await supabase
+        .from("savings_pots")
+        .select("id")
+        .eq("id", rec.savings_pot_id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      pot = data;
+    }
+    if (!pot) {
+      const { data } = await supabase
+        .from("savings_pots")
+        .select("id")
+        .eq("user_id", userId)
+        .order("created_at")
+        .limit(1)
+        .maybeSingle();
+      pot = data;
+    }
 
     if (pot?.id) {
       const { error: txErr } = await supabase.from("savings_transactions").insert({
