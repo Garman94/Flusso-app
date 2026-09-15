@@ -64,10 +64,11 @@ export function getCategoryMacroKey(categoryName?: string | null): MacroKey {
 }
 
 // ─── Trasferimenti interni ─────────────────────────────────────────────────────
-// Spostamenti/Salvadanaio/Accantonamenti non sono entrate o spese reali: sono
-// soldi che restano nelle tasche dell'utente, solo spostati tra conto e
-// salvadanaio. Vanno esclusi ovunque si calcoli "quanto guadagno/spendo".
-export const TRANSFER_CATEGORY_NAMES = new Set(["spostamenti", "salvadanaio", "accantonamenti"]);
+// Spostamenti/Salvadanaio non sono entrate o spese reali: sono soldi che
+// restano nelle tasche dell'utente, solo spostati tra conto e salvadanaio.
+// Vanno esclusi ovunque si calcoli "quanto guadagno/spendo". Accantonamenti
+// invece conta come spesa reale (voluto: vedi CLAUDE.md).
+export const TRANSFER_CATEGORY_NAMES = new Set(["spostamenti", "salvadanaio"]);
 
 export function isTransferCategory(categoryName?: string | null): boolean {
   return TRANSFER_CATEGORY_NAMES.has(categoryName?.toLowerCase() ?? "");
