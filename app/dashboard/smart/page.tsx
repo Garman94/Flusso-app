@@ -1,3 +1,5 @@
+import { toISODate } from "@/lib/dates";
+import { TrackOnMount } from "@/components/track-on-mount";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
@@ -16,29 +18,34 @@ async function SmartContent() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, pay_day, piggy_balance")
+    .select("*")
     .eq("id", userId)
     .single();
 
-  const plan = await getEffectivePlan(profile?.plan ?? "free");
+  const plan = await getEffectivePlan(profile?.plan ?? "free", profile?.trial_ends_at);
 
   if (plan === "free") {
+    // trial_ends_at valorizzata + piano ancora free = prova terminata
+    const trialExpired = !!profile?.trial_ends_at;
     return (
       <div className="flex flex-col items-center justify-center gap-6 py-20 text-center max-w-md mx-auto">
         <Suspense><PageTour path="/dashboard/smart" plan="free" /></Suspense>
+        <TrackOnMount name="smart_locked_viewed" props={{ trial_expired: trialExpired }} />
         <span className="text-6xl">🔒</span>
         <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold">Sezione Budget</h1>
+          <h1 className="text-2xl font-bold">{trialExpired ? "La prova Premium è finita" : "Sezione Budget"}</h1>
           <p className="text-muted-foreground">
-            Previsioni, spese ricorrenti e obiettivi di risparmio sono disponibili con il piano Premium o Founder.
+            {trialExpired
+              ? "Budget per categoria, accantonamenti, rate e obiettivi illimitati sono inclusi in Premium. I tuoi dati restano tutti qui."
+              : "Budget per categoria, accantonamenti, rate e obiettivi illimitati sono disponibili con il piano Premium o Founder."}
           </p>
         </div>
         <div className="flex flex-col gap-3 w-full">
           <a
-            href="/pricing"
+            href="/dashboard/account"
             className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-6 py-3 text-sm font-medium hover:bg-primary/90 transition-colors"
           >
-            Scopri Premium
+            Passa a Premium
           </a>
           <a
             href="/dashboard/account"
@@ -56,7 +63,7 @@ async function SmartContent() {
   // Copre anche i 12 mesi di storico usati dal tab Budget per categoria. Le voci "Media
   // storica" (bollette stagionali) usano query mirate per parola chiave, quindi non
   // dipendono da questa finestra.
-  const transactionsFrom = new Date(new Date().getFullYear() - 1, new Date().getMonth(), 1).toISOString().split("T")[0];
+  const transactionsFrom = toISODate(new Date(new Date().getFullYear() - 1, new Date().getMonth(), 1));
 
   const [goalsRes, transactionsRes, categoriesRes, recurringRes, potsRes, contribRes, categoryBudgetsRes, budgetNotesRes] = await Promise.all([
     supabase.from("goals").select("*").eq("user_id", userId).order("created_at", { ascending: false }),

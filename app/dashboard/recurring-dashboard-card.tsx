@@ -1,5 +1,6 @@
 "use client";
 
+import { toISODate } from "@/lib/dates";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -88,7 +89,7 @@ export function RecurringDashboardCard({ userId }: Props) {
   useEffect(() => {
     const supabase = createClient();
     const now = new Date();
-    const _monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+    const _monthStart = toISODate(new Date(now.getFullYear(), now.getMonth(), 1));
 
     Promise.all([
       supabase
@@ -125,7 +126,7 @@ export function RecurringDashboardCard({ userId }: Props) {
   const now = new Date();
   const calYear  = now.getFullYear();
   const calMonth = now.getMonth();
-  const monthStart = new Date(calYear, calMonth, 1).toISOString().split("T")[0];
+  const monthStart = toISODate(new Date(calYear, calMonth, 1));
 
   // Spesa reale mese corrente per categoria
   const actualByCategory = new Map<string, number>();

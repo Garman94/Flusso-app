@@ -12,33 +12,33 @@ const features = [
   },
   {
     icon: "📁",
-    title: "Carica il tuo Excel",
+    title: "Carica l'estratto conto",
     description:
-      "Importa l'estratto conto direttamente dal file della tua banca. Le categorie vengono rilevate automaticamente.",
+      "Importa il file Excel o CSV della tua banca. Se le colonne non sono quelle attese le indichi tu una volta sola, e i doppioni vengono riconosciuti.",
   },
   {
     icon: "🏷️",
-    title: "Categorie smart",
+    title: "Categorie automatiche",
     description:
-      "Regole intelligenti che categorizzano automaticamente le spese. Se un movimento contiene \"Esselunga\" diventa Alimentari.",
+      "I movimenti vengono categorizzati per parole chiave: se contiene \"Esselunga\" diventa Alimentari. Puoi correggere e creare le tue regole.",
   },
   {
-    icon: "🔮",
-    title: "Previsioni spese",
+    icon: "📆",
+    title: "Budget per categoria",
     description:
-      "Analizza le spese passate e prevede quanto spenderai il prossimo mese per ogni categoria.",
+      "Decidi quanto vuoi spendere in ogni categoria e confrontalo con la tua media reale, escludendo i mesi fuori dal normale.",
   },
   {
-    icon: "💡",
-    title: "Consigli di risparmio",
+    icon: "🏦",
+    title: "Accantonamenti e rate",
     description:
-      "Suggerimenti personalizzati basati sulle tue abitudini di spesa per aiutarti a risparmiare di più.",
+      "Assicurazione, bollo, vacanze: Flusso calcola quanto mettere da parte ogni mese. Per mutuo e rate vedi quanto hai pagato e quanto manca.",
   },
   {
     icon: "🎯",
-    title: "Obiettivi finanziari",
+    title: "Obiettivi e salvadanai",
     description:
-      "Imposta obiettivi di risparmio e tieni traccia dei progressi. Vacanza, fondo emergenza, acquisto importante.",
+      "Crea più salvadanai (anche condivisi con la famiglia) e obiettivi con scadenza: vacanza, fondo emergenza, acquisto importante.",
   },
 ];
 
@@ -51,7 +51,7 @@ const steps = [
   {
     step: "2",
     title: "Carica le tue spese",
-    description: "Importa il file Excel della banca o inserisci le transazioni manualmente.",
+    description: "Importa il file Excel o CSV della banca, oppure inserisci i movimenti a mano.",
   },
   {
     step: "3",
@@ -98,7 +98,7 @@ export default function HomePage() {
           </h1>
 
           <p className="text-xl text-muted-foreground max-w-xl">
-            Carica l&apos;estratto conto della tua banca, Flusso categorizza tutto automaticamente e ti dice dove puoi risparmiare. Gratis.
+            Carica l&apos;estratto conto della tua banca: Flusso categorizza i movimenti, ti mostra dove vanno i soldi e quanto mettere da parte per le spese che arriveranno. Gratis.
           </p>
 
           <div className="flex gap-3 flex-wrap justify-center">
@@ -126,15 +126,17 @@ export default function HomePage() {
           <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
             <span>✓ Piano gratuito senza scadenza</span>
             <span>✓ Setup in 2 minuti</span>
-            <span>✓ Dati al sicuro in EU</span>
+            <span>✓ Database in Europa</span>
             <span>✓ Rimborso garantito 30 giorni (Premium)</span>
           </div>
         </section>
 
-        {/* Social proof bar */}
+        {/* Beta note — onesta: niente numeri di utenti finché non sono veri */}
         <section className="w-full max-w-5xl px-5 pb-16 flex flex-col items-center gap-2">
-          <p className="text-sm text-muted-foreground text-center">
-            Già usato da <span className="text-foreground font-semibold">100+ persone</span> al posto di Excel
+          <p className="text-sm text-muted-foreground text-center max-w-lg">
+            <span className="text-foreground font-semibold">Beta aperta.</span>{" "}
+            Flusso lo sviluppo io, da solo, e cerco i primi utenti: se ti manca qualcosa
+            scrivimi dalla chat in app, rispondo di persona.
           </p>
         </section>
 
@@ -178,9 +180,10 @@ export default function HomePage() {
                   </svg>
                 </div>
 
-                {/* Score badge */}
-                <div className="rounded-lg bg-green-500/10 border border-green-500/20 px-3 py-2 text-xs font-medium text-green-600 dark:text-green-400 text-center">
-                  🟢 Ottimo mese!
+                {/* Saldo previsto */}
+                <div className="rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 text-xs flex items-center justify-between">
+                  <span className="text-muted-foreground">Fine mese stimato</span>
+                  <span className="font-semibold">€ 1.920,00</span>
                 </div>
 
                 {/* Category pills */}
@@ -310,8 +313,8 @@ export default function HomePage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
               {[
                 { icon: "🔒", text: "Crittografia dei dati (in transito e a riposo)" },
-                { icon: "☁️", text: "Dati conservati su infrastruttura cloud sicura (Supabase)" },
-                { icon: "🚫", text: "Non vendiamo i tuoi dati a terzi" },
+                { icon: "🇪🇺", text: "Database in Europa (Supabase, Irlanda). Con l'import da screenshot l'immagine passa da Anthropic (USA) e Flusso non la conserva" },
+                { icon: "🚫", text: "Non vendiamo i tuoi dati a terzi. Puoi esportare i movimenti o cancellare tutto quando vuoi" },
               ].map((item) => (
                 <div key={item.text} className="flex flex-col items-center text-center gap-2">
                   <span className="text-3xl">{item.icon}</span>
@@ -329,13 +332,13 @@ export default function HomePage() {
               Pronto a controllare le tue finanze?
             </h2>
             <p className="text-primary-foreground/80 max-w-md">
-              Unisciti a chi ha già il controllo delle proprie finanze.
+              Bastano due minuti: importa un estratto conto e guarda dove vanno i tuoi soldi.
             </p>
             <Link
               href="/auth/sign-up"
               className="inline-flex items-center justify-center rounded-md bg-background text-foreground px-8 py-3 text-sm font-medium hover:bg-background/90 transition-colors"
             >
-              Unisciti a chi ha già il controllo delle proprie finanze →
+              Prova Flusso gratis →
             </Link>
           </div>
         </section>

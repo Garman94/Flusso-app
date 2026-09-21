@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { track } from "@/lib/track";
+import { TRIAL_DAYS } from "@/lib/config";
 import { Suspense } from "react";
 
 const TOTAL_STEPS = 3;
@@ -15,6 +17,12 @@ const USAGES = [
   { value: "gruppo",   label: "Con coinquilini / amici",    icon: "🏠" },
 ];
 
+// Dove atterrare a fine onboarding. L'import parte già aperto e senza tour sopra.
+const DESTINATIONS = {
+  import:    "/dashboard/transazioni?import=1&notour=1",
+  dashboard: "/dashboard?tour=1",
+} as const;
+
 function OnboardingInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -25,9 +33,10 @@ function OnboardingInner() {
   const [fullName, setFullName] = useState("");
   const [usage, setUsage] = useState("");
 
-  async function handleComplete() {
+  async function finish(dest: keyof typeof DESTINATIONS) {
+    const href = DESTINATIONS[dest];
     if (isPreview) {
-      router.push("/dashboard?tour=1");
+      router.push(href);
       return;
     }
 
@@ -42,7 +51,13 @@ function OnboardingInner() {
         .update({ full_name: fullName.trim() || undefined })
         .eq("id", session.user.id);
 
-      router.push("/dashboard?tour=1");
+      // usage_type esiste dalla migration 036: se manca, l'errore si ignora e si va avanti
+      if (usage) {
+        await supabase.from("profiles").update({ usage_type: usage }).eq("id", session.user.id);
+      }
+
+      void track("onboarding_completed", { usage: usage || null, dest });
+      router.push(href);
     } catch {
       toast.error("Qualcosa è andato storto. Riprova.");
       setLoading(false);
@@ -107,7 +122,7 @@ function OnboardingInner() {
           <div className="flex flex-col gap-6">
             <div>
               <h1 className="text-2xl font-bold">Come userai Flusso?</h1>
-              <p className="text-muted-foreground mt-1">Ci aiuta a mostrarti le funzioni più utili per te.</p>
+              <p className="text-muted-foreground mt-1">Lo uso per capire a chi serve di più e cosa migliorare.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {USAGES.map(u => (
@@ -144,54 +159,44 @@ function OnboardingInner() {
           </div>
         )}
 
-        {/* Step 3 — Pronto */}
+        {/* Step 3 — Da dove partire: dritti al primo valore */}
         {step === 3 && (
-          <div className="flex flex-col gap-6 text-center">
-            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-3xl">
-              🎉
-            </div>
-            <div>
+          <div className="flex flex-col gap-6">
+            <div className="text-center">
+              <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-3xl mb-3">
+                🎉
+              </div>
               <h1 className="text-2xl font-bold">
                 Pronto{fullName ? `, ${fullName.split(" ")[0]}` : ""}!
               </h1>
               <p className="text-muted-foreground mt-1">
-                Il tuo account è configurato. Puoi iniziare ad aggiungere le tue transazioni.
+                Per i primi {TRIAL_DAYS} giorni hai anche Premium. Il modo più veloce per vedere dove vanno i tuoi soldi è caricare un estratto conto.
               </p>
             </div>
 
-            <div className="rounded-xl border p-4 text-left flex flex-col gap-3 text-sm bg-muted/20">
-              <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Come iniziare</p>
-              <div className="flex items-start gap-3">
-                <span className="text-lg">➕</span>
-                <div>
-                  <p className="font-medium">Aggiungi le tue transazioni</p>
-                  <p className="text-xs text-muted-foreground">Manualmente o importando l&apos;estratto conto Excel della tua banca.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="text-lg">📊</span>
-                <div>
-                  <p className="font-medium">Guarda dove vanno i soldi</p>
-                  <p className="text-xs text-muted-foreground">La dashboard mostra entrate, uscite e breakdown per categoria.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="text-lg">🎯</span>
-                <div>
-                  <p className="font-medium">Imposta i tuoi obiettivi</p>
-                  <p className="text-xs text-muted-foreground">Tieni traccia dei risparmi con obiettivi personalizzati.</p>
-                </div>
-              </div>
-            </div>
+            <button
+              onClick={() => finish("import")}
+              disabled={loading}
+              className="w-full bg-primary text-primary-foreground rounded-xl p-4 text-left flex items-start gap-3 hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              <span className="text-2xl">📁</span>
+              <span className="flex flex-col gap-0.5">
+                <span className="font-semibold text-sm">{loading ? "Avvio…" : "Importa il mio estratto conto"}</span>
+                <span className="text-xs opacity-90">
+                  In home banking cerca <em>Movimenti</em> e poi <em>Esporta</em> (Excel o CSV). Ci vogliono due minuti.
+                </span>
+              </span>
+            </button>
 
             <button
-              onClick={handleComplete}
+              onClick={() => finish("dashboard")}
               disabled={loading}
-              className="w-full bg-primary text-primary-foreground rounded-md py-2.5 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              className="text-sm text-muted-foreground hover:text-foreground hover:underline text-center"
             >
-              {loading ? "Avvio…" : "Vai alla dashboard →"}
+              Prima do un&apos;occhiata alla dashboard →
             </button>
-            <button onClick={() => setStep(2)} className="text-sm text-muted-foreground hover:underline">
+
+            <button onClick={() => setStep(2)} className="text-xs text-muted-foreground hover:underline text-center">
               ← Modifica
             </button>
           </div>

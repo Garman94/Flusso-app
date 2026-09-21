@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { resolvePlan } from "@/lib/plans";
 
 const PREVIEW_COOKIE = "preview_plan";
 const VALID_PLANS = ["free", "premium", "founder"] as const;
@@ -20,7 +21,8 @@ export async function getPreviewPlan(): Promise<string | null> {
   return value;
 }
 
-export async function getEffectivePlan(realPlan: string): Promise<string> {
+/** Piano da usare per i permessi: anteprima admin, altrimenti piano reale con eventuale prova Premium attiva. */
+export async function getEffectivePlan(realPlan: string, trialEndsAt?: string | null): Promise<string> {
   const preview = await getPreviewPlan();
-  return preview ?? realPlan;
+  return preview ?? resolvePlan(realPlan, trialEndsAt);
 }

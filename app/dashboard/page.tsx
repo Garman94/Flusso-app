@@ -1,3 +1,4 @@
+import { toISODate } from "@/lib/dates";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
@@ -16,7 +17,7 @@ function adjustBizDay(date: Date): Date {
 }
 
 function fmt(d: Date) {
-  return d.toISOString().split("T")[0];
+  return toISODate(d);
 }
 
 /**
@@ -80,7 +81,7 @@ async function DashboardContent() {
   // Fetch profile first to know the payDay
   const profileRes = await supabase
     .from("profiles")
-    .select("full_name, plan, pay_day, piggy_balance")
+    .select("*")
     .eq("id", userId)
     .single();
 
@@ -109,7 +110,7 @@ async function DashboardContent() {
       userId={userId}
       profile={{
         full_name: profileRes.data?.full_name ?? null,
-        plan: await getEffectivePlan(profileRes.data?.plan ?? "free"),
+        plan: await getEffectivePlan(profileRes.data?.plan ?? "free", profileRes.data?.trial_ends_at),
         piggy_balance: Number(profileRes.data?.piggy_balance ?? 0),
       }}
       currentTxs={(currentTxsRes.data ?? []) as unknown as Transaction[]}

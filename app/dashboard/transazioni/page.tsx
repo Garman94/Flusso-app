@@ -26,7 +26,7 @@ async function TransazioniContent({
   monthStart.setHours(0, 0, 0, 0);
 
   const [profileRes, transactionsRes, categoriesRes, uncategorizedRes, displayRulesRes, categoryRulesRes, excelUploadsRes, familyMembersRes] = await Promise.all([
-    supabase.from("profiles").select("plan, pay_day, power_user").eq("id", userId).single(),
+    supabase.from("profiles").select("*").eq("id", userId).single(),
     supabase
       .from("transactions")
       .select("*, categories(id, name, color, icon), family_members(id, name, color)")
@@ -70,7 +70,7 @@ async function TransazioniContent({
   return (
     <TransazioniClient
       userId={userId}
-      plan={await getEffectivePlan(profileRes.data?.plan ?? "free")}
+      plan={await getEffectivePlan(profileRes.data?.plan ?? "free", profileRes.data?.trial_ends_at)}
       excelUploadsThisMonth={excelUploadsRes.count ?? 0}
       initialTransactions={transactionsRes.data ?? []}
       categories={categoriesRes.data ?? []}

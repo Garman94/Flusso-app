@@ -4,6 +4,23 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Round 1 sul feedback (2026-09-20)
+
+Dati reali (Supabase, 20/09): 12 tester oltre al titolare, 8 non hanno mai inserito una transazione → il muro è tra iscrizione e primo import. Da qui le modifiche:
+
+- **Date**: `lib/dates.ts` (`toISODate`, `todayISO`). MAI `toISOString().split("T")[0]` su date locali: a est di Greenwich sposta di un giorno (Dashboard e Transazioni mostravano periodi diversi). Test: `tests/dates-period.test.ts`.
+- **Test**: `npm test` (node:test + tsx), `npm run typecheck`. I calcoli in `lib/` vanno coperti da test.
+- **Eventi**: tabella `events` (migration 035), `lib/track.ts`, `components/activity-ping.tsx`. Mai importi o descrizioni nei props. Query di analisi in `docs/09-metriche.md`.
+- **Prova Premium**: `TRIAL_DAYS` in `lib/config.ts`; `profiles.trial_ends_at` (migration 036) scritta solo dal server (`lib/trial.ts`, avviata nel layout della dashboard); `resolvePlan()` e `trialDaysLeft()` in `lib/plans.ts`; `getEffectivePlan(plan, trial_ends_at)`. Le query profilo usano `select("*")`, così le pagine reggono anche senza la colonna.
+- **Abbonamenti**: `subscription_cancelled` NON declassa (l'utente ha già pagato il periodo): salva `premium_ends_at`; si torna free su `subscription_expired` o `order_refunded`; il Founder non viene mai toccato dal webhook. I pulsanti dei piani su landing e prezzi portano a `/auth/sign-up`: il checkout parte solo da Account, che aggiunge lo `user_id` (senza, il pagamento non si collega a nessun utente).
+- **Import**: `lib/import-parse.ts` (intestazioni note, Entrate/Uscite separate, date `dd.mm.yyyy`, importi `1.234,56` e `1,234.56`, mappatura manuale con anteprima e memoria per tipo di file) e `lib/categorize.ts` (vince la parola chiave più lunga, le corte valgono solo come parola intera). La colonna descrizione `operazione` resta prima di `dettaglio` per non rompere il dedup dei file già importati.
+- **Onboarding**: 3 passi, salva `profiles.usage_type`, porta a `/dashboard/transazioni?import=1&notour=1`. `GettingStartedCard` in dashboard finché non ci sono transazioni. Tour dashboard ridotto a 5 passi.
+- **Export**: `GET /api/export` → CSV dei movimenti (separatore `;`, virgola decimale), reimportabile in Flusso.
+- **Testi**: landing, prezzi, privacy (sub-processor Resend e Anthropic) e tour allineati al prodotto reale.
+- **Migrazioni da applicare PRIMA del deploy**: `035_events.sql`, `036_trial_and_billing.sql` (additive, collaudate in transazione con rollback).
+
+---
+
 ## Panoramica progetto
 
 **Flusso** è una web app di gestione finanziaria personale. Permette di:

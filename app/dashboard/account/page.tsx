@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectivePlan } from "@/lib/preview-plan";
-import { getPlanLabel, getPlanBadgeColor } from "@/lib/plans";
+import { getPlanLabel, getPlanBadgeColor, trialDaysLeft } from "@/lib/plans";
 import { UpdateNameForm } from "./update-name-form";
 import { DeleteAccountButton } from "./delete-account-button";
 import { PlanSection } from "./plan-section";
@@ -34,7 +34,7 @@ async function AccountContent() {
     .eq("is_owner", true)
     .maybeSingle();
 
-  const plan = await getEffectivePlan(profile?.plan ?? "free");
+  const plan = await getEffectivePlan(profile?.plan ?? "free", profile?.trial_ends_at);
   const checkoutUrl = process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL ?? null;
 
   return (
@@ -67,6 +67,8 @@ async function AccountContent() {
         planLabel={getPlanLabel(plan)}
         planBadgeColor={getPlanBadgeColor(plan)}
         hasSubscription={!!profile?.lemon_squeezy_subscription_id}
+        trialDaysLeft={profile?.plan === "free" ? trialDaysLeft(profile?.trial_ends_at) : 0}
+        premiumEndsAt={profile?.premium_ends_at ?? null}
       />
 
       {/* Owner income — nascosto se il titolare si e' identificato come Componente */}
@@ -107,6 +109,21 @@ async function AccountContent() {
       {/* Feedback */}
       <div data-tour="account-feedback">
         <FeedbackChat userId={data.claims.sub} />
+      </div>
+
+      {/* Export dati */}
+      <div className="rounded-xl border p-6 flex flex-col gap-3">
+        <h2 className="font-semibold">Esporta i tuoi movimenti</h2>
+        <p className="text-sm text-muted-foreground">
+          Scarica tutte le tue transazioni in un file CSV (si apre con Excel). I tuoi dati restano tuoi.
+        </p>
+        <a
+          href="/api/export"
+          download
+          className="inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted/50 w-fit transition-colors"
+        >
+          Scarica il CSV
+        </a>
       </div>
 
       {/* Delete account */}

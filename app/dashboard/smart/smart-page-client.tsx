@@ -1,5 +1,6 @@
 "use client";
 
+import { toISODate, todayISO } from "@/lib/dates";
 import { useEffect, useState, Suspense } from "react";
 import { PageTour } from "@/components/tour/page-tour";
 import { toast } from "sonner";
@@ -426,7 +427,7 @@ export function SmartPageClient({
       due_day: dForm.due_day, category_id: null, notes: null,
       secondary_name: dForm.secondary_name.trim() || null,
       next_due_date: null, saving_start_date: null,
-      end_date: progress.endDate.toISOString().split("T")[0],
+      end_date: toISODate(progress.endDate),
       debt_type: dForm.debt_type, debt_total_amount: total, debt_start_date: dForm.debt_start_date,
     };
 
@@ -477,7 +478,7 @@ export function SmartPageClient({
       due_day: null, category_id: null, notes: null,
       secondary_name: aForm.secondary_name.trim() || null,
       next_due_date: aForm.next_due_date,
-      saving_start_date: new Date().toISOString().split("T")[0],
+      saving_start_date: todayISO(),
       savings_pot_id: aForm.savings_pot_id || null,
     };
     const { data, error } = await createClient()
@@ -519,7 +520,7 @@ export function SmartPageClient({
     setContribSaving(false);
     if (res?.error) { toast.error(res.error); return; }
     setContributions(prev => [
-      { id: res.id ?? crypto.randomUUID(), goal_id: gDetailId, amount: amt, note: contribNote || null, date: new Date().toISOString().split("T")[0] },
+      { id: res.id ?? crypto.randomUUID(), goal_id: gDetailId, amount: amt, note: contribNote || null, date: todayISO() },
       ...prev,
     ]);
     setGoals(prev => prev.map(g => g.id === gDetailId ? { ...g, current_amount: Number(g.current_amount) + amt } : g));
@@ -556,7 +557,7 @@ export function SmartPageClient({
       due_day: rForm.due_day, category_id: null, notes: null,
       secondary_name: rForm.secondary_name.trim() || null,
       next_due_date: nextDueDate,
-      saving_start_date: nextDueDate ? new Date().toISOString().split("T")[0] : null,
+      saving_start_date: nextDueDate ? todayISO() : null,
     };
 
     if (rEditId) {
@@ -606,7 +607,7 @@ export function SmartPageClient({
     const nextDueDate = eForm.next_due_date || null;
     const originalItem = recurringItems.find(it => it.id === eEditId);
     const savingStartDate = nextDueDate
-      ? (originalItem?.saving_start_date ?? new Date().toISOString().split("T")[0])
+      ? (originalItem?.saving_start_date ?? todayISO())
       : null;
     const payload = {
       name: eForm.name.trim(), tipologia, frequency: eForm.frequency,
@@ -3230,7 +3231,7 @@ export function SmartPageClient({
                   // successiva all'inizio del ciclo corrente (saving_start_date) — evita di
                   // ripescare un pagamento di un ciclo già confermato in precedenza.
                   const kws = effectiveKws(item);
-                  const today = new Date().toISOString().split("T")[0];
+                  const today = todayISO();
                   const candidateTx = kws.length > 0 ? transactions
                     .filter(t => Number(t.amount) < 0 && t.date >= item.saving_start_date! && t.date <= today && txMatchesKws(t, kws))
                     .sort((a, b) => b.date.localeCompare(a.date))[0] ?? null : null;
@@ -3355,7 +3356,7 @@ export function SmartPageClient({
                             if (res.error) toast.error(res.error);
                             else {
                               toast.success("Ricalcolo aggiornato.");
-                              const today = new Date().toISOString().split("T")[0];
+                              const today = todayISO();
                               setRecurringItems(prev => prev.map(it =>
                                 it.id === proj.input.id
                                   ? { ...it, saving_start_date: today }

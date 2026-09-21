@@ -1,5 +1,6 @@
 "use server";
 
+import { toISODate, todayISO } from "@/lib/dates";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { addMonths, monthsPerCycle } from "@/lib/calculations";
@@ -9,7 +10,7 @@ export async function resetSavingStartDate(recurringId: string) {
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims) return { error: "Non autenticato." };
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayISO();
 
   const { error } = await supabase
     .from("recurring_expenses")
@@ -50,7 +51,7 @@ export async function markSinkingFundPaid(
 
   const cycleMonths = monthsPerCycle(rec.frequency, rec.custom_days);
   const newDueDate = addMonths(new Date(rec.next_due_date + "T00:00:00"), cycleMonths);
-  const newSavingStart = options.paidOn ?? new Date().toISOString().split("T")[0];
+  const newSavingStart = options.paidOn ?? todayISO();
 
   const fallbackAmount =
     rec.tipologia === "variabile" && rec.amount_max != null
@@ -61,7 +62,7 @@ export async function markSinkingFundPaid(
   const { error: updateErr } = await supabase
     .from("recurring_expenses")
     .update({
-      next_due_date: newDueDate.toISOString().split("T")[0],
+      next_due_date: toISODate(newDueDate),
       saving_start_date: newSavingStart,
     })
     .eq("id", recurringId)
@@ -124,7 +125,7 @@ export async function markSinkingFundPaid(
   revalidatePath("/dashboard");
   return {
     success: true,
-    newDueDate: newDueDate.toISOString().split("T")[0],
+    newDueDate: toISODate(newDueDate),
     newSavingStart,
     deducted: options.deductFromPiggy ? amountToDeduct : 0,
     newPiggyBalance,

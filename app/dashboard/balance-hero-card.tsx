@@ -1,5 +1,6 @@
 "use client";
 
+import { todayISO } from "@/lib/dates";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -56,7 +57,7 @@ type ExpandKey =
   | "delta-saldo" | "delta-spese" | "delta-entrate";
 
 function todayIso() {
-  return new Date().toISOString().split("T")[0];
+  return todayISO();
 }
 
 const isTransfer = (t: Tx) => isTransferCategory(t.categories?.name);

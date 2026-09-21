@@ -1,5 +1,6 @@
 "use client";
 
+import { toISODate } from "@/lib/dates";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -33,8 +34,8 @@ const ACCANTONAMENTI_NAME = "accantonamenti";
 const EXCLUDED_CATEGORY_NAMES = new Set(["stipendio", "spostamenti", "salvadanaio"]);
 
 function monthBounds(year: number, month: number) {
-  const from = new Date(year, month, 1).toISOString().split("T")[0];
-  const to = new Date(year, month + 1, 0).toISOString().split("T")[0];
+  const from = toISODate(new Date(year, month, 1));
+  const to = toISODate(new Date(year, month + 1, 0));
   return { from, to };
 }
 

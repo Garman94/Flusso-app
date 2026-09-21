@@ -1,5 +1,7 @@
 // Pay-period computation shared by server pages and client components.
 
+import { toISODate } from "./dates";
+
 function adjustBizDay(date: Date): Date {
   const dow = date.getDay();
   if (dow === 6) return new Date(date.getTime() - 86_400_000); // Sat → Fri
@@ -7,7 +9,7 @@ function adjustBizDay(date: Date): Date {
   return date;
 }
 
-function fmt(d: Date): string { return d.toISOString().split("T")[0]; }
+function fmt(d: Date): string { return toISODate(d); }
 
 export type PeriodRange = { from: string; to: string };
 

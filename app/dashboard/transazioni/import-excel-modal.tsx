@@ -1,10 +1,22 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useDemoGuard } from "@/components/demo-context";
+import { guessCategoryName } from "@/lib/categorize";
+import {
+  detectColumns,
+  loadRememberedMap,
+  parseWithMap,
+  rememberMap,
+  sniffColumns,
+  type ColumnMap,
+  type Grid,
+  type RawRow,
+} from "@/lib/import-parse";
+import { readGrid } from "@/lib/import-read";
+import { track } from "@/lib/track";
 import {
   hashFile,
   classifyRows,
@@ -30,80 +42,6 @@ type Props = {
   onImported: (count: number) => void;
 };
 
-// ─── Bank category → our app category name ───────────────────────────────────
-const BANK_CATEGORY_MAP: Record<string, string> = {
-  "Generi alimentari e supermercato": "Alimentari",
-  "Ristoranti e bar":                 "Ristoranti",
-  "Carburanti":                       "Trasporti",
-  "Manutenzione veicoli":             "Trasporti",
-  "Pedaggi e Telepass":               "Trasporti",
-  "Trasporti, noleggi, taxi e parcheggi": "Trasporti",
-  "Treno, aereo, nave":               "Viaggi",
-  "Farmacia":                         "Salute",
-  "Cura della persona":               "Salute",
-  "Abbigliamento e accessori":        "Abbigliamento",
-  "Lavanderia e sartoria":            "Abbigliamento",
-  "Spettacoli e musei":               "Intrattenimento",
-  "Libri, film e musica":             "Intrattenimento",
-  "Tempo libero varie":               "Intrattenimento",
-  "Giochi e giocattoli":              "Hobby",
-  "Corsi e sport":                    "Palestra",
-  "Domiciliazioni e Utenze":          "Bollette",
-  "Gas & energia elettrica":          "Bollette",
-  "TV, Internet, telefono":           "Bollette",
-  "Cellulare":                        "Bollette",
-  "Polizze":                          "Assicurazioni",
-  "Stipendi e pensioni":              "Stipendio",
-  "Hi-tech e informatica":            "Tecnologia",
-  "Elettrodomestici, arredamento e giardino": "Casa",
-  "Casa varie":                       "Casa",
-  "Manutenzione casa":                "Casa",
-  "Affitti incassati":                "Casa",
-  "Rate Mutuo e Finanziamento":       "Casa",
-  "Istruzione":                       "Istruzione",
-  "Trasferimenti":                    "Accantonamenti",
-  "Giroconti":                        "Accantonamenti",
-};
-
-// ─── keyword fallback ─────────────────────────────────────────────────────────
-const KEYWORD_MAP: Record<string, string[]> = {
-  Alimentari:      ["esselunga","coop","lidl","aldi","carrefour","pam","conad","eurospin","penny","supermercato","despar","famila","tigros","bennet","iper"],
-  Ristoranti:      ["ristorante","pizzeria","osteria","trattoria","bar ","caffè","caffe","mcdonald","burger","kebab","sushi","just eat","deliveroo","glovo"],
-  Trasporti:       ["eni","q8","shell","tamoil","benzina","gasolio","autostrada","telepass","taxi","uber","atm ","trenitalia","italo","flixbus","parking","parcheggio"],
-  Viaggi:          ["hotel","airbnb","booking","expedia","volo","aeroporto","hostel"],
-  Salute:          ["farmacia","medico","dentista","ospedale","clinica","visita","esame"],
-  Abbigliamento:   ["zara","h&m","primark","mango","nike","adidas","decathlon","zalando","asos"],
-  Intrattenimento: ["netflix","spotify","disney","amazon prime","dazn","sky ","cinema","teatro"],
-  Hobby:           ["steam","nintendo","playstation","xbox","gamestop","modellismo","hobby","bricolage","warhammer","subsonica","games workshop","citta del sole"],
-  Tecnologia:      ["apple","amazon","mediaworld","unieuro","euronics","microsoft","google"],
-  Istruzione:      ["università","udemy","coursera","mondadori","feltrinelli"],
-  Palestra:        ["palestra","fitness","virgin active","mcfit","gym","crossfit","piscina"],
-  Bollette:        ["enel","a2a","iren","hera","snam","eni gas","luce","gas ","acqua","bolletta","utenza"],
-  Assicurazioni:   ["generali","allianz","unipol","assicurazione","polizza","rcauto"],
-  Accantonamenti:  ["giroconto","accantonamento","bonifico risparmio","salvadanaio","conto deposito","fondo comune"],
-  Stipendio:       ["stipendio","accredito stipendio","salary"],
-};
-
-function guessFromKeyword(description: string, categories: Category[]): string | null {
-  const lower = description.toLowerCase();
-  for (const [catName, keywords] of Object.entries(KEYWORD_MAP)) {
-    if (keywords.some(k => lower.includes(k))) {
-      const found = categories.find(c => c.name === catName);
-      if (found) return found.id;
-    }
-  }
-  return null;
-}
-
-function guessCategory(bankCat: string, description: string, categories: Category[]): string | null {
-  const mapped = BANK_CATEGORY_MAP[bankCat.trim()];
-  if (mapped) {
-    const found = categories.find(c => c.name === mapped);
-    if (found) return found.id;
-  }
-  return guessFromKeyword(description, categories);
-}
-
 // ─── bank detection ───────────────────────────────────────────────────────────
 type BankFormat = "isybank" | "generic";
 
@@ -111,41 +49,6 @@ function detectBank(rows: unknown[][]): BankFormat {
   const flat = rows.slice(0, 15).map(r => (r as unknown[]).map(c => String(c)).join(" ").toLowerCase());
   if (flat.some(r => r.includes("movimenti selezionati") || r.includes("conti e carte"))) return "isybank";
   return "generic";
-}
-
-// ─── header detection ─────────────────────────────────────────────────────────
-const DATE_HEADERS   = ["data","date","data operazione","data val","dt","giorno"];
-const AMOUNT_HEADERS = ["importo","amount","importo eur","importo in euro","valore","dare/avere"];
-const DESC_HEADERS   = ["operazione","descrizione","description","causale","dettaglio","movimento","wording","note"];
-const CAT_HEADERS    = ["categoria","category","categoria "];
-
-function detectCol(headers: string[], candidates: string[]): number {
-  for (const h of candidates) {
-    const idx = headers.findIndex(header => header.toLowerCase().trim().startsWith(h));
-    if (idx !== -1) return idx;
-  }
-  return -1;
-}
-
-function parseDate(raw: unknown): string | null {
-  if (!raw && raw !== 0) return null;
-  if (typeof raw === "number") {
-    const d = XLSX.SSF.parse_date_code(raw);
-    if (d) return `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
-  }
-  const s = String(raw).trim();
-  const it = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if (it) return `${it[3]}-${it[2].padStart(2,"0")}-${it[1].padStart(2,"0")}`;
-  const iso = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
-  if (iso) return `${iso[1]}-${iso[2].padStart(2,"0")}-${iso[3].padStart(2,"0")}`;
-  return null;
-}
-
-function parseAmount(raw: unknown): number | null {
-  if (raw === null || raw === undefined || raw === "") return null;
-  const s = String(raw).replace(/\s/g, "").replace(/\.(?=\d{3})/g, "").replace(",", ".");
-  const n = parseFloat(s);
-  return isNaN(n) ? null : n;
 }
 
 function formatEuro(n: number) {
@@ -157,7 +60,7 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
   const hasMembers = familyMembers.length > 0;
   const demoGuard = useDemoGuard();
 
-  const [step, setStep] = useState<"person" | "upload" | "preview">(hasMembers ? "person" : "upload");
+  const [step, setStep] = useState<"person" | "upload" | "map" | "preview">(hasMembers ? "person" : "upload");
 
   // Feature 1 — selezione persona
   const [personId, setPersonId] = useState<string | null>(null); // null = titolare
@@ -182,77 +85,107 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
   const personLabel = familyMembers.find(m => m.id === personId)?.name ?? "—";
 
   // ── Parsing ────────────────────────────────────────────────────────────────
+  // Griglia grezza del file e mappatura proposta all'utente quando le colonne non si riconoscono da sole
+  const [grid, setGrid] = useState<Grid>([]);
+  const [mapDraft, setMapDraft] = useState<ColumnMap | null>(null);
+  const fileMetaRef = useRef<{ hash: string; filename: string } | null>(null);
+  const mappingHowRef = useRef<"auto" | "remembered" | "manual">("auto");
+
+  useEffect(() => { void track("import_opened"); }, []);
+
+  function toParsedRows(raw: RawRow[]): ParsedRow[] {
+    return raw.map(r => {
+      const name = guessCategoryName(r.bankCategory, r.description);
+      const cat = name ? categories.find(c => c.name === name) : undefined;
+      return { date: r.date, amount: r.amount, description: r.description, category_id: cat?.id ?? null };
+    });
+  }
+
   async function processFile(file: File) {
     setParsing(true);
     try {
       const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(new Uint8Array(buffer), { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const json: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      const json: Grid = readGrid(buffer, file.name);
 
       if (json.length < 2) {
         toast.error("Il file sembra vuoto o non valido.");
+        void track("import_failed", { reason: "empty" });
         return;
       }
 
-      const bank = detectBank(json);
-      setDetectedBank(bank);
+      setDetectedBank(detectBank(json));
+      fileMetaRef.current = { hash: await hashFile(buffer), filename: file.name };
 
-      let headerIdx = -1;
-      for (let i = 0; i < Math.min(30, json.length); i++) {
-        const row = (json[i] as unknown[]).map(c => String(c).toLowerCase().trim());
-        const hasDate   = DATE_HEADERS.some(h => row.some(c => c.startsWith(h)));
-        const hasAmount = AMOUNT_HEADERS.some(h => row.some(c => c.startsWith(h)));
-        if (hasDate && hasAmount) { headerIdx = i; break; }
-      }
-      if (headerIdx === -1) {
-        toast.error("Impossibile trovare la riga di intestazione. Servono le colonne 'Data' e 'Importo'.");
+      // Una mappatura già confermata per questo tipo di file ha la precedenza
+      const remembered = loadRememberedMap(json);
+      const map = remembered ?? detectColumns(json);
+      if (!map) {
+        void track("import_failed", { reason: "columns_not_found" });
+        openMapping(json);
         return;
       }
-
-      const headers = (json[headerIdx] as unknown[]).map(h => String(h));
-      const dateCol   = detectCol(headers, DATE_HEADERS);
-      const amountCol = detectCol(headers, AMOUNT_HEADERS);
-      const descCol   = detectCol(headers, DESC_HEADERS);
-      const catCol    = detectCol(headers, CAT_HEADERS);
-
-      const parsed: ParsedRow[] = [];
-      for (let i = headerIdx + 1; i < json.length; i++) {
-        const row = json[i] as unknown[];
-        const date   = parseDate(row[dateCol]);
-        const amount = parseAmount(row[amountCol]);
-        if (!date || amount === null) continue;
-        const description = descCol !== -1 ? String(row[descCol] ?? "").trim() : "";
-        const bankCat     = catCol  !== -1 ? String(row[catCol]  ?? "").trim() : "";
-        parsed.push({ date, amount, description, category_id: guessCategory(bankCat, description, categories) });
-      }
-
-      if (parsed.length === 0) {
-        toast.error("Nessuna riga valida trovata nel file.");
-        return;
-      }
-
-      const hash = await hashFile(buffer);
-      pendingRef.current = { rows: parsed, hash, filename: file.name };
-
-      // Livello 1 — stesso file gia' caricato?
-      const supabase = createClient();
-      const { data: prev } = await supabase
-        .from("import_logs")
-        .select("imported_at")
-        .eq("user_id", userId)
-        .eq("file_hash", hash)
-        .order("imported_at", { ascending: false })
-        .limit(1);
-
-      if (prev && prev.length > 0) {
-        setDupFile({ date: prev[0].imported_at });
-        return; // resta su "upload", mostra il warning
-      }
-
-      await goToPreview(parsed);
+      await continueWithMap(json, map, remembered ? "remembered" : "auto");
     } catch {
       toast.error("Errore nel leggere il file. Usa un .xlsx, .xls o .csv valido.");
+      void track("import_failed", { reason: "read_error" });
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  function openMapping(g: Grid) {
+    setGrid(g);
+    setMapDraft(sniffColumns(g) ?? { headerRow: -1, date: -1, desc: null, category: null, amount: null, income: null, expense: null });
+    setStep("map");
+  }
+
+  async function continueWithMap(g: Grid, map: ColumnMap, how: "auto" | "remembered" | "manual") {
+    const meta = fileMetaRef.current;
+    const parsed = toParsedRows(parseWithMap(g, map));
+    if (parsed.length === 0 || !meta) {
+      toast.error("Nessuna riga valida trovata con queste colonne.");
+      void track("import_failed", { reason: "no_valid_rows", how });
+      if (how !== "manual") openMapping(g);
+      return;
+    }
+    pendingRef.current = { rows: parsed, hash: meta.hash, filename: meta.filename };
+    mappingHowRef.current = how;
+
+    // Livello 1 — stesso file gia' caricato?
+    const supabase = createClient();
+    const { data: prev } = await supabase
+      .from("import_logs")
+      .select("imported_at")
+      .eq("user_id", userId)
+      .eq("file_hash", meta.hash)
+      .order("imported_at", { ascending: false })
+      .limit(1);
+
+    if (prev && prev.length > 0) {
+      setDupFile({ date: prev[0].imported_at });
+      setStep("upload"); // mostra il warning
+      return;
+    }
+
+    await goToPreview(parsed);
+  }
+
+  const draftValid = !!mapDraft && mapDraft.date >= 0 &&
+    (mapDraft.amount !== null ||
+      (mapDraft.income !== null && mapDraft.income >= 0 && mapDraft.expense !== null && mapDraft.expense >= 0));
+
+  const draftPreview = useMemo(() => {
+    if (!mapDraft || !draftValid) return [];
+    return parseWithMap(grid, mapDraft);
+  }, [grid, mapDraft, draftValid]);
+
+  async function confirmMapping() {
+    if (!mapDraft || !draftValid) return;
+    setParsing(true);
+    try {
+      rememberMap(grid, mapDraft);
+      void track("import_map_saved", { split: mapDraft.amount === null });
+      await continueWithMap(grid, mapDraft, "manual");
     } finally {
       setParsing(false);
     }
@@ -351,6 +284,7 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
       const { error } = await supabase.from("transactions").insert(toInsert.slice(i, i + BATCH));
       if (error) {
         toast.error("Errore durante l'importazione.");
+        void track("import_failed", { reason: "insert_error" });
         setImporting(false);
         return;
       }
@@ -369,6 +303,7 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
     toast.success(skipped > 0
       ? `${toInsert.length} movimenti importati, ${skipped} saltati.`
       : `${toInsert.length} movimenti importati!`);
+    void track("import_completed", { rows: toInsert.length, skipped, how: mappingHowRef.current, bank: detectedBank ?? "generic" });
     onImported(toInsert.length);
     onClose();
   }
@@ -392,7 +327,8 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
           <div className="flex flex-col">
             <h2 className="font-semibold text-lg">
               {step === "person" ? "Chi ha fatto questi movimenti?"
-                : step === "upload" ? "Carica file Excel"
+                : step === "upload" ? "Carica l'estratto conto"
+                : step === "map" ? "Indica le colonne"
                 : `Anteprima — ${rows.length} movimenti`}
             </h2>
             {step !== "person" && hasMembers && (
@@ -443,8 +379,8 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
           {step === "upload" && (
             <div className="flex flex-col gap-6">
               <p className="text-sm text-muted-foreground">
-                Carica un estratto conto in formato <strong>.xlsx</strong>, <strong>.xls</strong> o <strong>.csv</strong>.
-                Le categorie vengono rilevate automaticamente.
+                Carica l&apos;estratto conto in formato <strong>.xlsx</strong>, <strong>.xls</strong> o <strong>.csv</strong>.
+                Le categorie vengono assegnate in automatico. Se non riconosco le colonne, mi dici tu dove sono (una volta sola).
               </p>
 
               {dupFile ? (
@@ -488,11 +424,151 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
               )}
 
               <div className="rounded-lg bg-muted/40 p-4 text-xs text-muted-foreground flex flex-col gap-1">
-                <p className="font-medium text-foreground">Banche supportate</p>
-                <p>Isybank e qualsiasi estratto conto con colonne <em>Data</em> e <em>Importo</em>.</p>
+                <p className="font-medium text-foreground">Come esportare il file dalla banca</p>
+                <p>Nell&apos;home banking cerca <em>Movimenti</em> (o <em>Estratto conto</em>) e poi <em>Esporta</em> in Excel o CSV.</p>
+                <p>Va bene qualsiasi file con una colonna data e un importo, anche con <em>Entrate</em> e <em>Uscite</em> separate.</p>
               </div>
             </div>
           )}
+
+          {/* STEP MAP — l'utente indica le colonne quando il riconoscimento automatico non basta */}
+          {step === "map" && mapDraft && (() => {
+            const scan = grid.slice(0, 30);
+            const width = Math.min(20, Math.max(1, ...scan.map(r => (r ?? []).length)));
+            const cols = Array.from({ length: width }, (_, c) => c);
+            const letter = (c: number) => (c < 26 ? String.fromCharCode(65 + c) : String(c + 1));
+            const headerCells = mapDraft.headerRow >= 0 ? (grid[mapDraft.headerRow] ?? []) : [];
+            const firstData = grid[mapDraft.headerRow + 1] ?? [];
+            const label = (c: number) => {
+              const h = String(headerCells[c] ?? "").trim();
+              const sample = String(firstData[c] ?? "").trim();
+              return `${letter(c)} — ${(h || sample || "(vuota)").slice(0, 28)}`;
+            };
+            const colSelect = (value: number | null, onChange: (v: number | null) => void, optional: boolean) => (
+              <select
+                value={value ?? -1}
+                onChange={e => onChange(Number(e.target.value) < 0 ? null : Number(e.target.value))}
+                className="border rounded-md px-2 py-1.5 text-sm bg-background w-full"
+              >
+                <option value={-1}>{optional ? "— nessuna —" : "— scegli —"}</option>
+                {cols.map(c => <option key={c} value={c}>{label(c)}</option>)}
+              </select>
+            );
+            const split = mapDraft.amount === null && (mapDraft.income !== null || mapDraft.expense !== null);
+            const setDraft = (patch: Partial<ColumnMap>) => setMapDraft({ ...mapDraft, ...patch });
+            return (
+              <div className="flex flex-col gap-5">
+                <p className="text-sm text-muted-foreground">
+                  Non ho riconosciuto le colonne di questo file. Indicami dove sono <strong>data</strong>, <strong>importo</strong>{" "}
+                  e (se c&apos;è) <strong>descrizione</strong>: la prossima volta che caricherai un file fatto così me le ricorderò.
+                </p>
+
+                <div className="rounded-xl border overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Riga</th>
+                        {cols.slice(0, 10).map(c => <th key={c} className="px-2 py-1.5 text-left font-medium text-muted-foreground">{letter(c)}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grid.slice(0, 12).map((row, i) => (
+                        <tr key={i} className={`border-b last:border-b-0 ${i === mapDraft.headerRow ? "bg-primary/10 font-medium" : ""}`}>
+                          <td className="px-2 py-1 text-muted-foreground">{i + 1}</td>
+                          {cols.slice(0, 10).map(c => (
+                            <td key={c} className="px-2 py-1 max-w-[160px] truncate">{String((row ?? [])[c] ?? "")}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                  <label className="flex flex-col gap-1">
+                    <span className="font-medium">Riga delle intestazioni</span>
+                    <select
+                      value={mapDraft.headerRow}
+                      onChange={e => setDraft({ headerRow: Number(e.target.value) })}
+                      className="border rounded-md px-2 py-1.5 text-sm bg-background"
+                    >
+                      <option value={-1}>Nessuna: i dati iniziano dalla prima riga</option>
+                      {grid.slice(0, 15).map((_, i) => <option key={i} value={i}>Riga {i + 1}</option>)}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="font-medium">Data</span>
+                    {colSelect(mapDraft.date >= 0 ? mapDraft.date : null, v => setDraft({ date: v ?? -1 }), false)}
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="font-medium">Descrizione</span>
+                    {colSelect(mapDraft.desc, v => setDraft({ desc: v }), true)}
+                  </label>
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium">Importo</span>
+                    <div className="flex gap-3 text-xs">
+                      <label className="flex items-center gap-1.5">
+                        <input type="radio" checked={!split} onChange={() => setDraft({ amount: mapDraft.amount, income: null, expense: null })} />
+                        Una colonna (con il segno)
+                      </label>
+                      <label className="flex items-center gap-1.5">
+                        <input type="radio" checked={split} onChange={() => setDraft({ amount: null, income: mapDraft.income ?? -1, expense: mapDraft.expense ?? -1 })} />
+                        Entrate e uscite separate
+                      </label>
+                    </div>
+                  </div>
+                  {!split ? (
+                    <label className="flex flex-col gap-1 sm:col-span-2">
+                      <span className="font-medium">Colonna importo</span>
+                      {colSelect(mapDraft.amount, v => setDraft({ amount: v }), false)}
+                    </label>
+                  ) : (
+                    <>
+                      <label className="flex flex-col gap-1">
+                        <span className="font-medium">Colonna entrate</span>
+                        {colSelect(mapDraft.income !== null && mapDraft.income >= 0 ? mapDraft.income : null, v => setDraft({ income: v }), false)}
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="font-medium">Colonna uscite</span>
+                        {colSelect(mapDraft.expense !== null && mapDraft.expense >= 0 ? mapDraft.expense : null, v => setDraft({ expense: v }), false)}
+                      </label>
+                    </>
+                  )}
+                </div>
+
+                <div className="rounded-lg border p-3 text-sm flex flex-col gap-2">
+                  {draftPreview.length === 0 ? (
+                    <p className="text-muted-foreground">Scegli data e importo: qui vedrai le prime righe lette.</p>
+                  ) : (
+                    <>
+                      <p className="font-medium">Ho letto {draftPreview.length} movimenti. Le prime righe:</p>
+                      <ul className="flex flex-col gap-1 text-xs">
+                        {draftPreview.slice(0, 5).map((r, i) => (
+                          <li key={i} className="flex justify-between gap-3">
+                            <span className="text-muted-foreground whitespace-nowrap">{new Date(r.date + "T00:00:00").toLocaleDateString("it-IT")}</span>
+                            <span className="truncate flex-1">{r.description || "—"}</span>
+                            <span className={`font-medium whitespace-nowrap ${r.amount < 0 ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>{formatEuro(r.amount)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-muted-foreground">Controlla che date e importi siano giusti prima di continuare.</p>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => setStep("upload")} className="border rounded-md px-4 py-2 text-sm hover:bg-muted/50">Indietro</button>
+                  <button
+                    onClick={confirmMapping}
+                    disabled={!draftValid || draftPreview.length === 0 || parsing}
+                    className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {parsing ? "Un attimo…" : "Usa queste colonne"}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* STEP PREVIEW */}
           {step === "preview" && (

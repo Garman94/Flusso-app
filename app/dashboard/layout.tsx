@@ -11,6 +11,10 @@ import { siteConfig } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
 import { getPreviewPlan } from "@/lib/preview-plan";
 import { isDemoEmail } from "@/lib/demo";
+import { trialDaysLeft } from "@/lib/plans";
+import { startTrialIfNeeded } from "@/lib/trial";
+import { TrialBanner } from "@/components/trial-banner";
+import { ActivityPing } from "@/components/activity-ping";
 
 async function DashboardNav() {
   const supabase = await createClient();
@@ -56,9 +60,20 @@ export default async function DashboardLayout({
     ? adminEmails.includes(claimsData.claims.email as string)
     : false;
 
+  // Giorni di Premium inclusi: parte al primo accesso di un utente Gratuito
+  let trialLeft = 0;
+  if (claimsData?.claims && !isDemo) {
+    const { data: profile } = await supabase
+      .from("profiles").select("*").eq("id", claimsData.claims.sub).maybeSingle();
+    const trialEndsAt = await startTrialIfNeeded(profile, claimsData.claims.sub as string);
+    if ((profile?.plan ?? "free") === "free") trialLeft = trialDaysLeft(trialEndsAt);
+  }
+
   return (
     <main className="min-h-screen flex flex-col items-center">
       {isDemo && <DemoBanner />}
+      {trialLeft > 0 && <TrialBanner daysLeft={trialLeft} />}
+      {!isDemo && <ActivityPing />}
       <div className="flex-1 w-full flex flex-col items-center">
         {/* Top nav */}
         <nav className="w-full flex justify-center border-b border-b-foreground/10 h-16 sticky top-0 bg-background/80 backdrop-blur-sm z-50">

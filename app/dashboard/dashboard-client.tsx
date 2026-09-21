@@ -17,6 +17,7 @@ import { MonthReportModal } from "./month-report-modal";
 import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
 import { PageTour } from "@/components/tour/page-tour";
+import { GettingStartedCard } from "./getting-started-card";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Profile = { full_name: string | null; plan: string; piggy_balance: number };
@@ -259,6 +260,9 @@ export function DashboardClient({
           <span className="hidden sm:inline">Mesi precedenti</span>
         </button>
       </div>
+
+      {/* ── Primi passi: finché non c'è nessuna transazione ── */}
+      {totalTxCount === 0 && <GettingStartedCard payDay={payDay} goalsCount={goals.length} />}
 
       {/* ── Banner: spese scadute non pagate ── */}
       <OverdueExpensesBanner userId={userId} />

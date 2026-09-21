@@ -19,8 +19,8 @@ export async function extractTransactionsFromScreenshot(
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims?.claims) return { error: "Non autenticato." };
   const { data: profile } = await supabase
-    .from("profiles").select("plan").eq("id", claims.claims.sub).single();
-  const plan = await getEffectivePlan(profile?.plan ?? "free");
+    .from("profiles").select("*").eq("id", claims.claims.sub).single();
+  const plan = await getEffectivePlan(profile?.plan ?? "free", profile?.trial_ends_at);
   if (!isPremium(plan)) return { error: "L'import da screenshot è una funzione Premium." };
 
   if (!process.env.ANTHROPIC_API_KEY) {

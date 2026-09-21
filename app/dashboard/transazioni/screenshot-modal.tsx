@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { track } from "@/lib/track";
 import { extractTransactionsFromScreenshot, ExtractedTransaction } from "./screenshot-action";
 
 type Category = { id: string; name: string; color: string; icon: string };
@@ -89,6 +90,7 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
       toast.error("Errore nel salvataggio.");
     } else {
       toast.success(`${selected.length} transazioni importate!`);
+      void track("screenshot_import_completed", { rows: selected.length });
       onImported(data ?? []);
       onClose();
     }

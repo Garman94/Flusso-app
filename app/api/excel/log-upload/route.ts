@@ -14,8 +14,8 @@ export async function POST() {
   const userId = data.claims.sub as string;
 
   const { data: profile } = await supabase
-    .from("profiles").select("plan").eq("id", userId).single();
-  const plan = await getEffectivePlan(profile?.plan ?? "free");
+    .from("profiles").select("*").eq("id", userId).single();
+  const plan = await getEffectivePlan(profile?.plan ?? "free", profile?.trial_ends_at);
 
   if (!isPremium(plan)) {
     const monthStart = new Date();

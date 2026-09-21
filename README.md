@@ -90,6 +90,8 @@ Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 | `018_family_members.sql` | Tabella `family_members`; `member_id` su `transactions` |
 | `019_power_user.sql` | Campo `power_user boolean` su `profiles` |
 | `020_feedback.sql` | Tabella `feedback_messages` (chat utente↔founder) |
+| `035_events.sql` | Tabella `events` (eventi d'uso first-party) |
+| `036_trial_and_billing.sql` | `trial_ends_at`, `premium_ends_at`, `usage_type` su `profiles`; il trigger anti-autopromozione le protegge |
 
 **Via CLI:**
 ```bash
@@ -140,9 +142,9 @@ Il pulsante "Passa a Premium" in `/dashboard/account` aggiunge automaticamente `
 
 | Piano | Prezzo | Funzionalità |
 |---|---|---|
-| **Free** | Gratis | 50 tx/mese, 1 obiettivo, funzionalità base |
-| **Premium** | €4.99/mese o €39/anno | Tutto illimitato, previsioni smart |
-| **Founder** | €49 una tantum | Tutto Premium + accesso a vita + supporto prioritario |
+| **Free** | Gratis | Transazioni manuali illimitate, 3 import file/mese, 1 obiettivo, export CSV (+ 14 giorni di Premium alla registrazione) |
+| **Premium** | €4.99/mese o €39/anno | Import illimitati, screenshot AI, Smart (Budget, Accantonamenti, Rate), obiettivi illimitati |
+| **Founder** | €49 una tantum | Tutto Premium + accesso a vita. Attivato a mano (coupon o admin), non acquistabile dal sito |
 
 Tutti i prezzi e le feature sono configurabili in `lib/config.ts`.
 
