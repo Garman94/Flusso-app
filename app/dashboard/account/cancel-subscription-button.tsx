@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-export function CancelSubscriptionButton({ onCancelled }: { onCancelled: () => void }) {
+export function CancelSubscriptionButton({ onCancelled }: { onCancelled: (endsAt: string | null) => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -16,8 +16,8 @@ export function CancelSubscriptionButton({ onCancelled }: { onCancelled: () => v
         toast.error(result?.error ?? "Errore durante l'annullamento.");
         return;
       }
-      toast.success("Abbonamento annullato. Sei tornato al piano Gratuito.");
-      onCancelled();
+      toast.success("Abbonamento annullato. Premium resta attivo fino alla fine del periodo già pagato.");
+      onCancelled(result?.endsAt ?? null);
       setOpen(false);
     } catch {
       toast.error("Errore di rete. Riprova.");
@@ -40,7 +40,7 @@ export function CancelSubscriptionButton({ onCancelled }: { onCancelled: () => v
           <div className="bg-background border rounded-xl p-6 max-w-md w-full mx-4 flex flex-col gap-4 shadow-xl">
             <h3 className="font-semibold text-lg">Annullare l&apos;abbonamento?</h3>
             <p className="text-sm text-muted-foreground">
-              Il tuo abbonamento Premium verrà annullato immediatamente e tornerai al piano Gratuito. Non ti verranno addebitati ulteriori pagamenti.
+              Non ti verranno addebitati altri pagamenti. Premium resta attivo fino alla fine del periodo che hai già pagato, poi torni al piano Gratuito e i tuoi dati restano tutti qui.
             </p>
 
             <div className="flex gap-3">

@@ -60,16 +60,27 @@ export async function POST() {
     return NextResponse.json({ error: "Errore durante l'annullamento. Riprova." }, { status: 502 });
   }
 
-  // Downgrade immediately; the subsequent subscription_cancelled webhook is idempotent.
+  // Lemon Squeezy tiene l'abbonamento attivo fino a fine periodo: il piano resta Premium
+  // e torna Gratuito quando arriva subscription_expired (webhook). Qui salviamo solo
+  // la data di fine per mostrarla all'utente.
+  let endsAt: string | null = null;
+  try {
+    const json = await lsResponse.json();
+    endsAt = json?.data?.attributes?.ends_at ?? null;
+  } catch {
+    // risposta senza corpo: non è un errore
+  }
+
   const { error: updateError } = await service
     .from("profiles")
-    .update({ plan: "free", lemon_squeezy_subscription_id: null })
+    .update({ premium_ends_at: endsAt })
     .eq("id", userId);
 
   if (updateError) {
-    console.error("[subscription/cancel] Failed to downgrade plan after cancellation:", updateError);
-    return NextResponse.json({ error: "Abbonamento annullato ma si è verificato un errore. Ricarica la pagina." }, { status: 500 });
+    // Colonna assente (migration 036 non ancora applicata) o errore DB: l'annullamento
+    // su Lemon Squeezy è comunque riuscito, quindi non lo trattiamo come fallimento.
+    console.error("[subscription/cancel] premium_ends_at non salvata:", updateError.message);
   }
 
-  return NextResponse.json({ plan: "free" });
+  return NextResponse.json({ plan: "premium", endsAt });
 }

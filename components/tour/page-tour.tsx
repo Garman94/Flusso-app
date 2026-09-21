@@ -20,6 +20,15 @@ export function PageTour({ path, plan }: Props) {
 
     const forceTour = searchParams.get("tour") === "1";
 
+    // ?notour=1: si arriva con un'azione già in corso (es. import aperto): niente tour sopra
+    if (searchParams.get("notour") === "1") {
+      markTourSeen(path);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("notour");
+      router.replace(url.pathname + (url.search || ""));
+      return;
+    }
+
     if (forceTour) {
       // rimuovi ?tour=1 dall'URL senza reload
       const url = new URL(window.location.href);

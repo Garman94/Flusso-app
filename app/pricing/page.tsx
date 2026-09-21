@@ -10,11 +10,11 @@ const faqs = [
   },
   {
     q: "Cosa succede quando supero il limite del piano gratuito?",
-    a: "Raggiunti i 50 movimenti mensili o i 3 upload Excel, ti verrà chiesto di fare l'upgrade. Non perdi nessun dato.",
+    a: "I movimenti manuali sono illimitati. Raggiunti i 3 import di file al mese ti verrà proposto l'upgrade: non perdi nessun dato.",
   },
   {
     q: "Che formato Excel supportate?",
-    a: "Supportiamo i formati .xlsx e .csv esportati dalle principali banche italiane. Il sistema rileva automaticamente le colonne.",
+    a: "Accettiamo file .xlsx, .xls e .csv. Flusso cerca da solo le colonne Data, Importo e Descrizione (anche con Entrate e Uscite separate). Se non le trova te le fa indicare una volta e se le ricorda.",
   },
   {
     q: "Cos'è una regola di categorizzazione?",
@@ -22,7 +22,7 @@ const faqs = [
   },
   {
     q: "Cos'è il piano Founder?",
-    a: "Paghi una volta e hai accesso a vita a tutte le funzionalità Premium, inclusi tutti gli aggiornamenti futuri.",
+    a: "Paghi una volta e hai accesso a vita a tutte le funzionalità Premium, aggiornamenti inclusi. Non è acquistabile dal sito: lo attivo io a mano. Registrati e scrivimi dalla chat in Account.",
   },
   {
     q: "Offrite rimborsi?",
@@ -30,11 +30,11 @@ const faqs = [
   },
   {
     q: "I miei dati bancari sono al sicuro?",
-    a: "Sì. Non ci colleghiamo alla tua banca. Tu carichi solo il file Excel che esporti dalla tua banca. I dati sono crittografati e conservati su server europei.",
+    a: "Non ci colleghiamo alla tua banca: carichi solo il file che esporti tu. Il database è in Europa (Irlanda) e i dati sono crittografati. Se usi l'import da screenshot (Premium) l'immagine viene elaborata da Anthropic (USA) e non viene conservata da Flusso.",
   },
   {
     q: "Funziona con la mia banca?",
-    a: "Funziona con qualsiasi banca italiana che permette di esportare i movimenti in Excel o CSV (praticamente tutte).",
+    a: "Funziona con le banche che permettono di esportare i movimenti in Excel o CSV. Se il tuo file non viene letto bene, scrivimi dalla chat in Account e lo aggiungo.",
   },
 ];
 
@@ -78,15 +78,15 @@ export default function PricingPage() {
                 </thead>
                 <tbody>
                   {[
-                    ["Transazioni/mese", "50", "Illimitate", "Illimitate"],
-                    ["Upload Excel", "3/mese", "Illimitati", "Illimitati"],
-                    ["Categorie base", "✅", "✅", "✅"],
-                    ["Regole categorizzazione", "5", "Illimitate", "Illimitate"],
-                    ["Obiettivi finanziari", "1", "Illimitati", "Illimitati"],
-                    ["Previsioni spese", "❌", "✅", "✅"],
-                    ["Consigli di risparmio", "❌", "✅", "✅"],
-                    ["Export dati", "❌", "✅", "✅"],
-                    ["Supporto prioritario", "❌", "❌", "✅"],
+                    ["Transazioni manuali", "Illimitate", "Illimitate", "Illimitate"],
+                    ["Import estratto conto (Excel/CSV)", "3 file/mese", "Illimitati", "Illimitati"],
+                    ["Categorie e regole personalizzate", "✅", "✅", "✅"],
+                    ["Obiettivi di risparmio", "1", "Illimitati", "Illimitati"],
+                    ["Import da screenshot (AI)", "❌", "✅", "✅"],
+                    ["Budget per categoria", "❌", "✅", "✅"],
+                    ["Accantonamenti e rate", "❌", "✅", "✅"],
+                    ["Esporta i movimenti (CSV)", "✅", "✅", "✅"],
+                    ["Supporto diretto e voto sulle novità", "❌", "❌", "✅"],
                     ["Accesso a vita", "❌", "❌", "✅"],
                     ["Prezzo mensile", "Gratis", "€4,99/mese", "€49 una tantum"],
                     ["Opzione annuale", "—", "€39/anno", "—"],
@@ -123,7 +123,7 @@ export default function PricingPage() {
         <section className="w-full max-w-5xl px-5 py-16 flex flex-col items-center text-center gap-6">
           <h2 className="text-2xl font-bold">Hai altre domande?</h2>
           <p className="text-muted-foreground">
-            Scrivici, ti rispondiamo entro 24 ore.
+            Registrati e scrivimi dalla chat in Account: rispondo di persona.
           </p>
           <Link
             href="/auth/sign-up"

@@ -36,7 +36,8 @@ export default function PrivacyPage() {
           <ul className="list-disc list-inside space-y-2">
             <li><strong className="text-foreground">Dati di account:</strong> indirizzo email, password (in forma hash — non leggibile), piano sottoscritto.</li>
             <li><strong className="text-foreground">Dati finanziari:</strong> transazioni (importo, data, descrizione, categoria) caricate manualmente o tramite file Excel. Non accediamo direttamente ai conti bancari.</li>
-            <li><strong className="text-foreground">Dati di utilizzo:</strong> log di accesso, preferenze, obiettivi finanziari inseriti.</li>
+            <li><strong className="text-foreground">Screenshot (solo Premium, solo se scegli questa funzione):</strong> l&apos;immagine viene inviata ad Anthropic per estrarre le transazioni e non viene conservata da Flusso; le transazioni estratte le confermi tu prima che vengano salvate.</li>
+            <li><strong className="text-foreground">Dati di utilizzo:</strong> log di accesso, preferenze, obiettivi finanziari inseriti ed eventi d&apos;uso legati al tuo account (ad esempio: import completato, pagina aperta, errore di lettura di un file), senza importi né descrizioni dei movimenti. Servono a capire quali funzioni vengono usate e dove l&apos;app crea difficoltà; non sono condivisi con strumenti di analytics di terzi.</li>
             <li><strong className="text-foreground">Dati di pagamento:</strong> gestiti da Lemon Squeezy (merchant of record). Non conserviamo dati di carte di credito.</li>
           </ul>
         </Section>
@@ -47,6 +48,7 @@ export default function PrivacyPage() {
             <li>Elaborazione pagamenti &rarr; Esecuzione del contratto (Art. 6.1.b GDPR)</li>
             <li>Comunicazioni di servizio &rarr; Esecuzione del contratto (Art. 6.1.b GDPR)</li>
             <li>Prevenzione frodi e sicurezza &rarr; Interesse legittimo (Art. 6.1.f GDPR)</li>
+            <li>Miglioramento del prodotto (eventi d&apos;uso) &rarr; Interesse legittimo (Art. 6.1.f GDPR)</li>
             <li>Adempimento obblighi fiscali &rarr; Obbligo legale (Art. 6.1.c GDPR)</li>
             <li>Comunicazioni promozionali &rarr; Consenso revocabile (Art. 6.1.a GDPR)</li>
           </ul>
@@ -57,14 +59,16 @@ export default function PrivacyPage() {
             <li><strong className="text-foreground">Supabase Inc.</strong> — database e autenticazione. DPA: supabase.com/privacy.</li>
             <li><strong className="text-foreground">Vercel Inc.</strong> — hosting applicazione web. Privacy: vercel.com/legal/privacy-policy.</li>
             <li><strong className="text-foreground">Lemon Squeezy LLC</strong> — elaborazione pagamenti e merchant of record. Agisce come titolare autonomo per i dati di pagamento.</li>
+            <li><strong className="text-foreground">Resend Inc.</strong> — invio delle email di servizio (ad esempio la email di benvenuto).</li>
+            <li><strong className="text-foreground">Anthropic PBC</strong> — solo se usi l&apos;import da screenshot: elabora l&apos;immagine che carichi per estrarne le transazioni.</li>
           </ul>
         </Section>
 
         <Section title="5. Trasferimento di dati fuori dall&apos;UE">
           <p>
-            Supabase e Vercel sono aziende con sede negli Stati Uniti. I trasferimenti avvengono sulla base delle{" "}
+            Supabase, Vercel, Resend e Anthropic sono aziende con sede negli Stati Uniti (il database Supabase è ospitato in Irlanda). I trasferimenti avvengono sulla base delle{" "}
             <strong className="text-foreground">Clausole Contrattuali Standard (SCC)</strong> approvate dalla
-            Commissione Europea (Decisione 2021/914/UE), che garantiscono un livello adeguato di protezione.
+            Commissione Europea (Decisione 2021/914/UE) o di altre garanzie adeguate previste dal capo V del GDPR.
           </p>
         </Section>
 

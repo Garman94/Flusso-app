@@ -31,3 +31,19 @@ export function getPlanBadgeColor(plan: string): string {
       return "bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-500";
   }
 }
+
+/**
+ * Piano effettivo: un utente Gratuito con la prova ancora attiva conta come Premium.
+ * `trial_ends_at` viene scritta solo dal server (vedi migration 036 e startTrialIfNeeded).
+ */
+export function resolvePlan(plan: string, trialEndsAt?: string | null, now: Date = new Date()): string {
+  if (plan === "free" && trialEndsAt && new Date(trialEndsAt).getTime() > now.getTime()) return "premium";
+  return plan;
+}
+
+/** Giorni interi rimasti di prova (arrotondati per eccesso), 0 se scaduta o assente. */
+export function trialDaysLeft(trialEndsAt?: string | null, now: Date = new Date()): number {
+  if (!trialEndsAt) return 0;
+  const ms = new Date(trialEndsAt).getTime() - now.getTime();
+  return ms > 0 ? Math.ceil(ms / 86_400_000) : 0;
+}

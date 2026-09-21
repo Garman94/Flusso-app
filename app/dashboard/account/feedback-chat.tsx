@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { useDemoGuard } from "@/components/demo-context";
+import { track } from "@/lib/track";
 
 type FeedbackMsg = {
   id: string;
@@ -51,6 +52,7 @@ export function FeedbackChat({ userId }: { userId: string }) {
     if (error) {
       toast.error("Errore nell'invio del messaggio");
     } else {
+      void track("feedback_sent");
       setBody("");
       await load();
     }

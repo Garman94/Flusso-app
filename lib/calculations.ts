@@ -2,6 +2,8 @@
 // Financial calculations — pure functions, no side effects
 // ============================================================
 
+import { toISODate } from "./dates";
+
 export type Transaction = {
   id?: string;
   amount: number;
@@ -385,7 +387,7 @@ export function calculateDailyBalanceProjection(
     }
 
     running += dayEvents.reduce((s, e) => s + e.amount, 0);
-    out.push({ day: d.getDate(), date: d.toISOString().split("T")[0], balance: running, events: dayEvents });
+    out.push({ day: d.getDate(), date: toISODate(d), balance: running, events: dayEvents });
   }
 
   return out;
@@ -473,7 +475,7 @@ export function findOverdueRecurring(
     if (matched) continue;
 
     const mid = it.amount_max != null ? (it.amount + it.amount_max) / 2 : it.amount;
-    out.push({ item: it, dueDate: due.toISOString().split("T")[0], amount: Math.abs(mid) });
+    out.push({ item: it, dueDate: toISODate(due), amount: Math.abs(mid) });
   }
 
   return out.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
@@ -590,7 +592,7 @@ export function computeDebtProgress(input: DebtInput, today: Date = new Date()):
   const paidSoFar = Math.min(input.totalAmount, input.monthlyAmount * monthsElapsed);
   const remaining = input.totalAmount - paidSoFar;
 
-  const todayIso = today.toISOString().split("T")[0];
+  const todayIso = toISODate(today);
   const status: DebtStatus =
     input.startDate > todayIso ? "future" : monthsRemaining <= 0 ? "finished" : "active";
 

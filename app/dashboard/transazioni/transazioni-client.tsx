@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { todayISO } from "@/lib/dates";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { ImportExcelModal } from "./import-excel-modal";
@@ -165,7 +166,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
   }
 
   // Form state
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(todayISO());
   const [amount, setAmount] = useState("");
   const [txType, setTxType] = useState<"uscita" | "entrata" | "neutra">("uscita");
   const [description, setDescription] = useState("");
@@ -176,6 +177,17 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
   const [excelUploadsCount, setExcelUploadsCount] = useState(excelUploadsThisMonth);
   const isFree = plan === "free";
   const canUploadExcel = !isFree || excelUploadsCount < EXCEL_FREE_LIMIT;
+
+  // Arrivo dall'onboarding o dalla checklist: /dashboard/transazioni?import=1 apre subito l'import
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("import") !== "1") return;
+    params.delete("import");
+    const qs = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    if (canUploadExcel) setShowImport(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const canUploadScreenshot = !isFree;
 
   async function handleAddTransaction(e: React.FormEvent) {

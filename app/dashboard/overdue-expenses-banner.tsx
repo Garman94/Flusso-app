@@ -1,5 +1,6 @@
 "use client";
 
+import { todayISO } from "@/lib/dates";
 import { useEffect, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatEuro, findOverdueRecurring, type OverdueCheckItem, type OverdueResult } from "@/lib/calculations";
@@ -19,7 +20,7 @@ function OverdueRow({ overdue, onPaid }: { overdue: OverdueResult; onPaid: () =>
 
   function handleMarkPaid() {
     startTransition(async () => {
-      const res = await markRecurringAsPaid(overdue.item.id, overdue.amount, new Date().toISOString().split("T")[0]);
+      const res = await markRecurringAsPaid(overdue.item.id, overdue.amount, todayISO());
       if (res?.error) {
         toast.error(res.error);
       } else {

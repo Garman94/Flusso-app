@@ -11,53 +11,39 @@ export type PageTourDef = {
 export const PAGE_TOURS: Record<string, PageTourDef> = {
 
   "/dashboard": {
-    version: "1.7",
-    whatIsNew: "spese previste come range min-max (accantonamento + categorie + bollette stagionali), gestibili in Smart",
+    version: "2.0",
+    whatIsNew: "giro di benvenuto più corto e checklist di partenza in dashboard",
     steps: [
       {
         title: "Benvenuto in Flusso! 👋",
-        message: "Ti guidiamo in pochi secondi attraverso le funzioni principali. Clicca Avanti — o tocca lo sfondo — per continuare.",
+        message: "Quattro tocchi e sai dove trovare tutto.",
       },
       {
         target: "[data-tour='hero']",
-        title: "Il tuo saldo, oggi e a fine mese",
-        message: "In alto il saldo reale di oggi con spese ed entrate effettive. Sotto, le stesse voci previste per fine mese: le spese previste sono un range min-max (accantonamenti + categorie variabili + bollette stagionali, personalizzabili in Smart). In fondo la differenza tra previsto ed effettivo. Tocca una voce per aprirla e vedere le transazioni o il calcolo che la compongono. In fondo trovi i salvadanai.",
+        title: "Saldo di oggi e di fine mese",
+        message: "In alto quello che hai davvero, sotto quello che ti aspetti a fine mese. Tocca una voce per vedere da dove nasce il numero.",
       },
       {
         target: "[data-tour='breakdown']",
         title: "Dove vanno i soldi",
-        message: "Clicca su una categoria per espanderla e vedere le singole transazioni del mese.",
-      },
-      {
-        target: "[data-tour='month-report-btn']",
-        title: "Report mesi precedenti",
-        message: "Da qui puoi navigare i mesi passati e vedere entrate, uscite e breakdown per categoria di ogni mese.",
-      },
-      {
-        target: "[data-tour='notifications-bell']",
-        title: "Novità e suggerimenti 🔔",
-        message: "La campanella raccoglie gli avvisi dello sviluppatore: consigli d'uso, aggiornamenti e richieste di feedback. Il pallino rosso indica quante non hai ancora letto.",
+        message: "Tocca una categoria per vedere i singoli movimenti.",
       },
       {
         target: "[data-tour='nav-transazioni']",
-        title: "Aggiungi le transazioni",
-        message: "Da Transazioni aggiungi movimenti manualmente o importi l'estratto conto Excel della tua banca. È il punto di partenza.",
+        title: "Da qui si parte",
+        message: "In Transazioni importi l'estratto conto della banca o aggiungi i movimenti a mano.",
       },
       {
         target: "[data-tour='nav-smart']",
-        title: "Analisi Smart",
-        message: "Smart contiene previsioni di budget, monitoraggio delle spese ricorrenti (bollette, abbonamenti…) e obiettivi di risparmio.",
-      },
-      {
-        title: "Sei pronto! 🚀",
-        message: "Inizia aggiungendo le tue prime transazioni. Più dati hai, più accurate saranno le analisi.",
+        title: "Smart",
+        message: "Budget, accantonamenti e rate: le spese che ti aspettano nei prossimi mesi.",
       },
     ],
   },
 
   "/dashboard/transazioni": {
-    version: "1.2",
-    whatIsNew: "import Excel guidato: scelta della persona e controllo anti-duplicati",
+    version: "1.3",
+    whatIsNew: "se il file della banca non viene letto puoi indicare tu le colonne (e Flusso se le ricorda); supporta anche Entrate e Uscite separate",
     steps: [
       {
         title: "Le tue transazioni 💸",
@@ -95,8 +81,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/smart": {
-    version: "2.1",
-    whatIsNew: "Ogni accantonamento ora può collegarsi a un salvadanaio specifico (invece del primo disponibile), e le transazioni categorizzate \"Accantonamenti\" non contano più come spesa — vedi quanto hai accantonato per davvero questo mese",
+    version: "2.2",
+    whatIsNew: "ogni accantonamento può collegarsi a un salvadanaio specifico; le transazioni categorizzate \"Accantonamenti\" contano come spesa reale",
     freePreview: [
       {
         title: "Benvenuto in Smart ⚡",
@@ -159,8 +145,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/account": {
-    version: "1.4",
-    whatIsNew: "checkbox \"Sei tu\" nei componenti: identifica te stesso per non contare il reddito due volte",
+    version: "1.5",
+    whatIsNew: "puoi esportare i tuoi movimenti in CSV",
     steps: [
       {
         title: "Impostazioni account ⚙️",
