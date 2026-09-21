@@ -54,6 +54,9 @@ NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL=
 RESEND_API_KEY=
 RESEND_FROM_EMAIL=noreply@tuodominio.com
 
+# Anthropic — https://console.anthropic.com → API keys (import da screenshot, solo server-side)
+ANTHROPIC_API_KEY=
+
 # Secret interno per webhook Supabase (stringa casuale sicura)
 SUPABASE_WEBHOOK_SECRET=
 

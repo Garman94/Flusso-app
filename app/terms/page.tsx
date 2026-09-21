@@ -25,7 +25,7 @@ export default function TermsPage() {
 
         <Section title="1. Descrizione del servizio">
           <p>
-            {siteConfig.name} è un&apos;applicazione web di gestione finanziaria personale che consente di:
+            {siteConfig.name}{" "}è un&apos;applicazione web di gestione finanziaria personale che consente di:
             tracciare entrate e uscite, importare movimenti bancari tramite file Excel/CSV, categorizzare
             automaticamente le spese, visualizzare previsioni e impostare obiettivi di risparmio.
           </p>
@@ -61,7 +61,7 @@ export default function TermsPage() {
 
         <Section title="4. Politica di rimborso">
           <p>
-            <strong className="text-foreground">Garanzia 30 giorni soddisfatti o rimborsati</strong> per i piani Premium e Founder:
+            <strong className="text-foreground">Garanzia 30 giorni soddisfatti o rimborsati</strong>{" "}per i piani Premium e Founder:
             se non sei soddisfatto del Servizio entro 30 giorni dall&apos;acquisto, puoi richiedere il rimborso
             completo scrivendo a{" "}
             <a href="mailto:garofalo.marco94@gmail.com" className="underline">garofalo.marco94@gmail.com</a>{" "}

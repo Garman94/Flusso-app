@@ -17,6 +17,8 @@ Dati reali (Supabase, 20/09): 12 tester oltre al titolare, 8 non hanno mai inser
 - **Onboarding**: 3 passi, salva `profiles.usage_type`, porta a `/dashboard/transazioni?import=1&notour=1`. `GettingStartedCard` in dashboard finché non ci sono transazioni. Tour dashboard ridotto a 5 passi.
 - **Export**: `GET /api/export` → CSV dei movimenti (separatore `;`, virgola decimale), reimportabile in Flusso.
 - **Testi**: landing, prezzi, privacy (sub-processor Resend e Anthropic) e tour allineati al prodotto reale.
+- **Screenshot (fix 2026-09-21)**: non funzionava mai — in produzione mancava `ANTHROPIC_API_KEY` (ora documentata in `.env.example`/README) e il salvataggio inseriva `source: "screenshot"`, rifiutato da `transactions_source_check` (ammessi: manual, excel, import). Ora: immagine ridotta e convertita in JPEG nel browser (`lib/image-prepare.ts`), prompt con la data di oggi, risposta letta e validata da `lib/screenshot-extract.ts`, tetto di 20 analisi/24h per utente (eventi `screenshot_extract`), duplicati segnalati come nell'import Excel, `serverActions.bodySizeLimit` a 4 MB.
+- **Import (fix 2026-09-21)**: i movimenti "NON CONTABILIZZATO" (Intesa Sanpaolo) vengono saltati e contati (`isPendingStatus`); con titoli sconosciuti e due colonne "a incastro" la proposta è Entrate/Uscite separate. Layout verificati da parser open source in `tests/import-banks.test.ts`. Postepay: dall'app non si scarica il file, solo dal sito (Movimenti → Scarica elenco su file).
 - **Migrazioni da applicare PRIMA del deploy**: `035_events.sql`, `036_trial_and_billing.sql` (additive, collaudate in transazione con rollback).
 
 ---

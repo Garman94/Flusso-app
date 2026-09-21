@@ -18,7 +18,7 @@ export default function CookiePolicyPage() {
         </div>
 
         <p className="text-muted-foreground leading-relaxed">
-          La presente Cookie Policy descrive come {siteConfig.name} utilizza i cookie e tecnologie
+          La presente Cookie Policy descrive come {siteConfig.name}{" "}utilizza i cookie e tecnologie
           simili, in conformità al Provvedimento del Garante per la protezione dei dati personali
           dell&apos;8 gennaio 2015 e alle successive Linee guida del 10 giugno 2021, nonché alla
           Direttiva ePrivacy 2002/58/CE.

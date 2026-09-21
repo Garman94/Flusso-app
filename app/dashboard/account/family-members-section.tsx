@@ -162,7 +162,7 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
       </div>
 
       <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-        💡 Aggiungi anche <strong>te stesso</strong> come primo componente e spunta &quot;Sei tu&quot;: da
+        💡 Aggiungi anche <strong>te stesso</strong>{" "}come primo componente e spunta &quot;Sei tu&quot;: da
         quando esiste almeno un componente, l&apos;import di transazioni e i salvadanai condivisi chiedono
         sempre di scegliere una persona precisa, senza più un &quot;Io&quot; generico — e il tuo reddito si
         gestisce da lì invece che nella sezione &quot;Il tuo reddito&quot; qui sopra.
@@ -212,7 +212,7 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
               className="mt-0.5 accent-primary"
             />
             <span>
-              <span className="font-medium">Sei tu</span> (il proprietario dell&apos;account)
+              <span className="font-medium">Sei tu</span>{" "}(il proprietario dell&apos;account)
               <span className="block text-xs text-muted-foreground">
                 Il reddito si gestisce da qui invece che in &quot;Il tuo reddito&quot;. Solo un componente può esserlo.
               </span>

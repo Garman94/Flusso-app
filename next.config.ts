@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  experimental: {
+    // L'import da screenshot invia l'immagine (già ridotta dal browser) a una server action:
+    // il limite di default è 1 MB. Su Vercel il tetto per richiesta è 4,5 MB.
+    serverActions: { bodySizeLimit: "4mb" },
+  },
 };
 
 export default nextConfig;
