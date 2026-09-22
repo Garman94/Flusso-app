@@ -52,10 +52,17 @@ export async function extractTransactionsFromScreenshot(
   const plan = await getEffectivePlan(profile?.plan ?? "free", profile?.trial_ends_at);
   if (!isPremium(plan)) return { error: "L'import da screenshot è una funzione Premium." };
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  // .trim(): uno spazio o un a-capo rimasti da un copia-incolla nel pannello di Vercel
+  // basta a rompere l'autenticazione senza che si veda nulla di strano guardando il valore.
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) {
     // Configurazione mancante: il dettaglio va nei log, all'utente un messaggio comprensibile
     console.error("[screenshot] ANTHROPIC_API_KEY non configurata: import da screenshot non disponibile");
-    return { error: "L'import da screenshot non è ancora attivo. Nel frattempo puoi caricare un file Excel o CSV." };
+    return { error: "DIAGNOSTICA: chiave non configurata su Vercel (variabile assente o vuota)." };
+  }
+  if (!apiKey.startsWith("sk-ant-")) {
+    console.error("[screenshot] ANTHROPIC_API_KEY presente ma con un formato inatteso (non inizia con sk-ant-)");
+    return { error: "DIAGNOSTICA: la chiave è presente ma non ha il formato giusto (dovrebbe iniziare con sk-ant-). Controlla di aver copiato tutta la stringa, senza spazi o testo attorno." };
   }
   if (!base64Image || base64Image.length > MAX_BASE64_CHARS) {
     return { error: "L'immagine è troppo grande. Prova con uno screenshot più piccolo." };
@@ -64,7 +71,7 @@ export async function extractTransactionsFromScreenshot(
     return { error: `Hai raggiunto il limite di ${DAILY_LIMIT} analisi nelle ultime 24 ore. Riprova domani.` };
   }
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const client = new Anthropic({ apiKey });
   const today = todayISO();
 
   let raw = "";
@@ -88,13 +95,16 @@ export async function extractTransactionsFromScreenshot(
       .join("")
       .trim();
   } catch (err) {
-    console.error("[screenshot] errore API Anthropic:", err instanceof Error ? err.message : err);
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[screenshot] errore API Anthropic:", detail);
     if (err instanceof Anthropic.APIError) {
-      if (err.status === 401 || err.status === 403) return { error: "L'import da screenshot non è ancora attivo. Nel frattempo puoi caricare un file Excel o CSV." };
+      if (err.status === 401) return { error: "DIAGNOSTICA: la chiave su Vercel non è valida per Anthropic (401 — controlla di averla ricopiata giusta, senza pezzi mancanti)." };
+      if (err.status === 403) return { error: "DIAGNOSTICA: Anthropic rifiuta la chiave (403 — l'account potrebbe non avere ancora credito attivo)." };
+      if (/credit/i.test(detail)) return { error: "DIAGNOSTICA: manca credito sull'account Anthropic, o non è ancora attivo (Billing → Plans & Billing)." };
       if (err.status === 429) return { error: "Troppe richieste in questo momento. Riprova tra un minuto." };
-      if (err.status === 400) return { error: "Non riesco a leggere questa immagine. Usa uno screenshot PNG o JPG." };
+      if (err.status === 400) return { error: `DIAGNOSTICA: richiesta rifiutata (400) — ${detail.slice(0, 150)}` };
     }
-    return { error: "L'analisi non è riuscita. Riprova tra poco." };
+    return { error: `DIAGNOSTICA: errore imprevisto — ${detail.slice(0, 150)}` };
   }
 
   const { transactions, truncated, dropped } = parseExtraction(raw, today);
