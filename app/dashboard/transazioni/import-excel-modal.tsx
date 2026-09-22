@@ -9,6 +9,7 @@ import {
   detectColumns,
   loadRememberedMap,
   parseWithMap,
+  parseWithMapDetailed,
   rememberMap,
   sniffColumns,
   type ColumnMap,
@@ -88,6 +89,8 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
   // Griglia grezza del file e mappatura proposta all'utente quando le colonne non si riconoscono da sole
   const [grid, setGrid] = useState<Grid>([]);
   const [mapDraft, setMapDraft] = useState<ColumnMap | null>(null);
+  /** movimenti non ancora contabilizzati saltati nell'ultimo file letto */
+  const [pendingIgnored, setPendingIgnored] = useState(0);
   const fileMetaRef = useRef<{ hash: string; filename: string } | null>(null);
   const mappingHowRef = useRef<"auto" | "remembered" | "manual">("auto");
 
@@ -141,7 +144,9 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
 
   async function continueWithMap(g: Grid, map: ColumnMap, how: "auto" | "remembered" | "manual") {
     const meta = fileMetaRef.current;
-    const parsed = toParsedRows(parseWithMap(g, map));
+    const result = parseWithMapDetailed(g, map);
+    setPendingIgnored(result.pending);
+    const parsed = toParsedRows(result.rows);
     if (parsed.length === 0 || !meta) {
       toast.error("Nessuna riga valida trovata con queste colonne.");
       void track("import_failed", { reason: "no_valid_rows", how });
@@ -427,6 +432,14 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
                 <p className="font-medium text-foreground">Come esportare il file dalla banca</p>
                 <p>Nell&apos;home banking cerca <em>Movimenti</em> (o <em>Estratto conto</em>) e poi <em>Esporta</em> in Excel o CSV.</p>
                 <p>Va bene qualsiasi file con una colonna data e un importo, anche con <em>Entrate</em> e <em>Uscite</em> separate.</p>
+                <p>
+                  <strong className="text-foreground">Postepay:</strong>
+                  {" dall'app non si può scaricare il file. Usa il sito ("}
+                  <em>Movimenti</em>
+                  {" → "}
+                  <em>Scarica elenco su file</em>
+                  {" → Excel) oppure, dall'app, l'import da screenshot."}
+                </p>
               </div>
             </div>
           )}
@@ -594,6 +607,14 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-yellow-500" /> <strong>{summary.possible}</strong> possibili duplicati</span>
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /> <strong>{summary.exact}</strong> duplicati esatti (saltati)</span>
               </div>
+
+              {pendingIgnored > 0 && (
+                <p className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs">
+                  {pendingIgnored === 1
+                    ? "Ho saltato 1 movimento non ancora contabilizzato: quando la banca lo conferma potrebbe cambiare data o descrizione. Lo importerai col prossimo file."
+                    : `Ho saltato ${pendingIgnored} movimenti non ancora contabilizzati: quando la banca li conferma potrebbero cambiare data o descrizione. Li importerai col prossimo file.`}
+                </p>
+              )}
 
               {summary.possible > 0 && (
                 <label className="flex items-center gap-2 text-sm">

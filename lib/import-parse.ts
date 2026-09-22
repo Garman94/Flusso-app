@@ -23,6 +23,8 @@ export type ColumnMap = {
   /** …oppure Entrate e Uscite in due colonne */
   income: number | null;
   expense: number | null;
+  /** colonna "Contabilizzazione"/"Stato": serve a saltare i movimenti non ancora contabilizzati */
+  status?: number | null;
 };
 
 export type RawRow = { date: string; amount: number; description: string; bankCategory: string };
@@ -50,6 +52,7 @@ const HEADERS = {
   // farebbe apparire come "possibili duplicati" i movimenti già importati (stessa data e importo, descrizione diversa).
   desc: ["descrizione completa", "operazione", "descrizione operazioni", "descrizione operazione", "descrizione", "causale", "dettaglio", "dettagli", "movimento", "description", "partner name", "payee", "wording", "note"],
   category: ["categoria", "category"],
+  status: ["contabilizzazione", "stato operazione", "stato", "status", "state"],
 } as const;
 
 function findColumn(cells: string[], candidates: readonly string[], taken: number[]): number {
@@ -79,11 +82,13 @@ export function detectColumns(grid: Grid, maxScan = 40): ColumnMap | null {
     const used = [date, amount, income, expense];
     const desc = findColumn(cells, HEADERS.desc, used);
     const category = findColumn(cells, HEADERS.category, [...used, desc]);
+    const status = findColumn(cells, HEADERS.status, [...used, desc, category]);
     return {
       headerRow: i,
       date,
       desc: desc === -1 ? null : desc,
       category: category === -1 ? null : category,
+      status: status === -1 ? null : status,
       amount: amount === -1 ? null : amount,
       income: amount === -1 && hasSplit ? income : null,
       expense: amount === -1 && hasSplit ? expense : null,
@@ -166,8 +171,19 @@ export function parseAmount(raw: unknown): number | null {
 
 const cell = (row: unknown[], i: number | null) => (i === null ? undefined : row[i]);
 
-export function parseWithMap(grid: Grid, map: ColumnMap): RawRow[] {
+/**
+ * Movimenti non ancora definitivi: quando la banca li conferma cambiano data o descrizione
+ * e importandoli ora si duplicherebbero. (Intesa Sanpaolo li segna "NON CONTABILIZZATO".)
+ */
+export function isPendingStatus(v: unknown): boolean {
+  return /non contabilizzat|da contabilizzare|in attesa|pending|declined|failed|reverted|rifiutat/.test(normHeader(v));
+}
+
+export type ParseResult = { rows: RawRow[]; /** righe valide saltate perché non ancora contabilizzate */ pending: number };
+
+export function parseWithMapDetailed(grid: Grid, map: ColumnMap): ParseResult {
   const out: RawRow[] = [];
+  let pending = 0;
   for (let i = map.headerRow + 1; i < grid.length; i++) {
     const row = grid[i] ?? [];
     const date = parseDate(row[map.date]);
@@ -183,6 +199,11 @@ export function parseWithMap(grid: Grid, map: ColumnMap): RawRow[] {
     }
     if (amount === null) continue;
 
+    if (map.status != null && map.status >= 0 && isPendingStatus(row[map.status])) {
+      pending++;
+      continue;
+    }
+
     out.push({
       date,
       amount,
@@ -190,7 +211,11 @@ export function parseWithMap(grid: Grid, map: ColumnMap): RawRow[] {
       bankCategory: String(cell(row, map.category) ?? "").trim(),
     });
   }
-  return out;
+  return { rows: out, pending };
+}
+
+export function parseWithMap(grid: Grid, map: ColumnMap): RawRow[] {
+  return parseWithMapDetailed(grid, map).rows;
 }
 
 // ── mappatura proposta guardando i valori ───────────────────────────────────
@@ -226,34 +251,68 @@ export function sniffColumns(grid: Grid, maxScan = 40): ColumnMap | null {
 
   const headerCells = first > 0 ? (grid[first - 1] ?? []).map(normHeader) : [];
   const isBalance = (c: number) => /saldo|balance/.test(headerCells[c] ?? "");
+  const isNumeric = (v: unknown) => parseDate(v) === null && String(v ?? "").trim() !== "" && parseAmount(v) !== null;
 
   let amount = -1, bestAmount = 0;
   for (let c = 0; c < width; c++) {
     if (c === date || isBalance(c)) continue;
-    const s = share(c, (v) => parseDate(v) === null && String(v ?? "").trim() !== "" && parseAmount(v) !== null);
+    const s = share(c, isNumeric);
     if (s > bestAmount) { bestAmount = s; amount = c; }
   }
-  if (amount === -1 || bestAmount < 0.5) return null;
 
-  let desc = -1, bestLen = 0;
+  // Entrate e uscite in due colonne: una è piena dove l'altra è vuota (Intesa v1, Fineco, Poste…).
+  // Insieme coprono (quasi) tutte le righe e quasi mai si sovrappongono. Una colonna importo
+  // con il segno, invece, è già piena da sola e non può avere un "partner" così.
+  const numeric: number[] = [];
   for (let c = 0; c < width; c++) {
-    if (c === date || c === amount) continue;
-    const texts = sample.map((r) => String((r ?? [])[c] ?? "")).filter((t) => t && parseAmount(t) === null && parseDate(t) === null);
-    if (texts.length < sample.length * 0.5) continue;
-    const avg = texts.reduce((s, t) => s + t.length, 0) / texts.length;
-    if (avg > bestLen) { bestLen = avg; desc = c; }
+    if (c !== date && !isBalance(c) && sample.some((r) => isNumeric((r ?? [])[c]))) numeric.push(c);
+  }
+  let pair: [number, number] | null = null;
+  let bestCover = 0;
+  for (let i = 0; i < numeric.length; i++) {
+    for (let j = i + 1; j < numeric.length; j++) {
+      const [x, y] = [numeric[i], numeric[j]];
+      const both = sample.filter((r) => isNumeric((r ?? [])[x]) && isNumeric((r ?? [])[y])).length / sample.length;
+      const either = sample.filter((r) => isNumeric((r ?? [])[x]) || isNumeric((r ?? [])[y])).length / sample.length;
+      if (both <= 0.05 && either >= 0.9 && either > bestCover) { pair = [x, y]; bestCover = either; }
+    }
   }
 
+  if (pair) {
+    let [income, expense] = pair;
+    const incomeHint = /entrat|accredit|avere|credit|incoming/;
+    const expenseHint = /uscit|addebit|dare|debit|outgoing/;
+    const hInc = headerCells[income] ?? "";
+    const hExp = headerCells[expense] ?? "";
+    // senza indizi, la colonna a sinistra è l'entrata (Entrate/Uscite, Accrediti/Addebiti); "Dare/Avere" si riconosce dai titoli
+    if (expenseHint.test(hInc) || incomeHint.test(hExp)) [income, expense] = [expense, income];
+    return { headerRow: first - 1, date, desc: pickDescription(sample, width, [date, income, expense]), category: null, amount: null, income, expense };
+  }
+
+  if (amount === -1 || bestAmount < 0.5) return null;
   return {
     // Le righe prima della prima riga dati (intestazione, titoli, righe vuote) vengono comunque saltate.
     headerRow: first - 1,
     date,
-    desc: desc === -1 ? null : desc,
+    desc: pickDescription(sample, width, [date, amount]),
     category: null,
     amount,
     income: null,
     expense: null,
   };
+}
+
+/** Colonna di testo più lunga in media: quasi sempre la descrizione del movimento. */
+function pickDescription(sample: Grid, width: number, exclude: number[]): number | null {
+  let desc = -1, bestLen = 0;
+  for (let c = 0; c < width; c++) {
+    if (exclude.includes(c)) continue;
+    const texts = sample.map((r) => String((r ?? [])[c] ?? "")).filter((t) => t && parseAmount(t) === null && parseDate(t) === null);
+    if (texts.length < sample.length * 0.5) continue;
+    const avg = texts.reduce((n, t) => n + t.length, 0) / texts.length;
+    if (avg > bestLen) { bestLen = avg; desc = c; }
+  }
+  return desc === -1 ? null : desc;
 }
 
 // ── mappatura ricordata per tipo di file ────────────────────────────────────

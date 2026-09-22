@@ -4,7 +4,13 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { track } from "@/lib/track";
-import { extractTransactionsFromScreenshot, ExtractedTransaction } from "./screenshot-action";
+import { useDemoGuard } from "@/components/demo-context";
+import { prepareImage } from "@/lib/image-prepare";
+import { classifyRows, type DedupStatus } from "@/lib/import-dedup";
+import { guessFromDescription } from "@/lib/categorize";
+import { parseAmount } from "@/lib/import-parse";
+import type { ExtractedTransaction } from "@/lib/screenshot-extract";
+import { extractTransactionsFromScreenshot } from "./screenshot-action";
 
 type Category = { id: string; name: string; color: string; icon: string };
 
@@ -15,9 +21,18 @@ type Props = {
   onImported: (transactions: ExtractedTransaction[]) => void;
 };
 
-type Row = ExtractedTransaction & { selected: boolean; category_id: string };
+type Row = ExtractedTransaction & {
+  selected: boolean;
+  category_id: string;
+  status: DedupStatus;
+  /** testo digitato nel campo importo: senza, "12," tornerebbe "12" a ogni tasto */
+  amountText: string;
+};
+
+const euroText = (n: number) => String(n).replace(".", ",");
 
 export function ScreenshotModal({ userId, categories, onClose, onImported }: Props) {
+  const demoGuard = useDemoGuard();
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
@@ -29,34 +44,64 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
       toast.error("Carica un'immagine (PNG, JPG, WebP).");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const dataUrl = e.target?.result as string;
-      setPreview(dataUrl);
-      setRows(null);
-      setExtracting(true);
-
-      // Estrai base64 puro (senza il prefisso data:image/...;base64,)
-      const base64 = dataUrl.split(",")[1];
-      const mediaType = file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif";
-
-      const result = await extractTransactionsFromScreenshot(base64, mediaType);
-      setExtracting(false);
-
-      if (result.error) {
-        toast.error(result.error);
+    setRows(null);
+    setExtracting(true);
+    try {
+      // Riduce e converte in JPEG: gli screenshot del telefono pesano più del limite di invio
+      let prepared;
+      try {
+        prepared = await prepareImage(file);
+      } catch {
+        toast.error("Non riesco ad aprire questa immagine. Prova con un PNG o un JPG.");
+        void track("screenshot_failed", { reason: "decode" });
         return;
       }
-      if (!result.transactions?.length) {
+      setPreview(prepared.dataUrl);
+
+      const result = await extractTransactionsFromScreenshot(prepared.base64, prepared.mediaType);
+      if (result.error) {
+        toast.error(result.error);
+        void track("screenshot_failed", { reason: "server" });
+        return;
+      }
+      const found = result.transactions ?? [];
+      if (found.length === 0) {
         toast.error("Nessuna transazione trovata nello screenshot.");
         return;
       }
+      if (result.warning) toast.info(result.warning, { duration: 9000 });
+
+      // Segna i movimenti già presenti (stesso giorno, importo e inizio descrizione)
+      const supabase = createClient();
+      const dates = found.map((t) => t.date).sort();
+      const { data: existing } = await supabase
+        .from("transactions")
+        .select("date, amount, description")
+        .eq("user_id", userId)
+        .gte("date", dates[0])
+        .lte("date", dates[dates.length - 1]);
+      const { classified } = classifyRows(found, existing ?? []);
 
       setRows(
-        result.transactions.map((t) => ({ ...t, selected: true, category_id: "" })),
+        classified.map(({ row, status }) => {
+          const name = guessFromDescription(row.description);
+          const cat = name ? categories.find((c) => c.name === name) : undefined;
+          return {
+            ...row,
+            status,
+            selected: status !== "exact",
+            category_id: cat?.id ?? "",
+            amountText: euroText(row.amount),
+          };
+        }),
       );
-    };
-    reader.readAsDataURL(file);
+      void track("screenshot_extracted", { rows: found.length });
+    } catch {
+      toast.error("Qualcosa è andato storto. Riprova.");
+      void track("screenshot_failed", { reason: "exception" });
+    } finally {
+      setExtracting(false);
+    }
   }
 
   function handleDrop(e: React.DragEvent) {
@@ -67,6 +112,7 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
 
   async function handleSave() {
     if (!rows) return;
+    if (demoGuard()) return;
     const selected = rows.filter((r) => r.selected);
     if (!selected.length) { toast.error("Seleziona almeno una transazione."); return; }
 
@@ -81,13 +127,16 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
           amount: r.amount,
           description: r.description,
           category_id: r.category_id || null,
-          source: "screenshot",
+          // "screenshot" non è ammesso dal vincolo transactions_source_check (manual, excel, import)
+          source: "import",
         })),
       )
       .select("*, categories(id, name, color, icon)");
 
     if (error) {
+      console.error("[screenshot] salvataggio non riuscito:", error.message);
       toast.error("Errore nel salvataggio.");
+      void track("screenshot_failed", { reason: "save" });
     } else {
       toast.success(`${selected.length} transazioni importate!`);
       void track("screenshot_import_completed", { rows: selected.length });
@@ -98,6 +147,8 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
   }
 
   const allSelected = rows?.every((r) => r.selected) ?? false;
+  const patch = (i: number, p: Partial<Row>) =>
+    setRows((prev) => prev!.map((r, j) => (j === i ? { ...r, ...p } : r)));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -110,7 +161,7 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
 
         <div className="flex flex-col gap-4 overflow-y-auto p-6">
           {/* Drop zone */}
-          {!rows && (
+          {!rows && !extracting && (
             <div
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
@@ -119,7 +170,9 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
             >
               <span className="text-4xl">📷</span>
               <p className="font-medium text-sm">Trascina uno screenshot qui oppure clicca per scegliere</p>
-              <p className="text-xs text-muted-foreground">PNG, JPG, WebP — screenshot del tuo estratto conto o lista movimenti</p>
+              <p className="text-xs text-muted-foreground">
+                Screenshot della lista movimenti (PNG, JPG, WebP). Se l&apos;elenco è lungo, fanne più di uno.
+              </p>
               <input
                 ref={inputRef}
                 type="file"
@@ -142,6 +195,12 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
               <span className="animate-spin">⏳</span>
               Analisi in corso con AI...
             </div>
+          )}
+
+          {!rows && (
+            <p className="text-xs text-muted-foreground">
+              L&apos;immagine viene letta da un&apos;AI (Anthropic) e non viene conservata da Flusso. Prima di salvare controlli tu date e importi.
+            </p>
           )}
 
           {/* Tabella anteprima */}
@@ -167,7 +226,7 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
                 </div>
               </div>
 
-              <div className="rounded-lg border overflow-hidden">
+              <div className="rounded-lg border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/40 text-xs text-muted-foreground">
                     <tr>
@@ -193,20 +252,14 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
                           <input
                             type="checkbox"
                             checked={row.selected}
-                            onChange={(e) =>
-                              setRows((prev) =>
-                                prev!.map((r, j) => (j === i ? { ...r, selected: e.target.checked } : r)),
-                              )
-                            }
+                            onChange={(e) => patch(i, { selected: e.target.checked })}
                           />
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <input
                             type="date"
                             value={row.date}
-                            onChange={(e) =>
-                              setRows((prev) => prev!.map((r, j) => (j === i ? { ...r, date: e.target.value } : r)))
-                            }
+                            onChange={(e) => patch(i, { date: e.target.value })}
                             className="border rounded px-2 py-1 text-xs bg-background w-32"
                           />
                         </td>
@@ -214,32 +267,32 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
                           <input
                             type="text"
                             value={row.description}
-                            onChange={(e) =>
-                              setRows((prev) => prev!.map((r, j) => (j === i ? { ...r, description: e.target.value } : r)))
-                            }
+                            onChange={(e) => patch(i, { description: e.target.value })}
                             className="border rounded px-2 py-1 text-xs bg-background w-full"
                           />
+                          {row.status === "exact" && (
+                            <span className="text-[10px] text-red-500">già presente</span>
+                          )}
+                          {row.status === "possible" && (
+                            <span className="text-[10px] text-yellow-600">forse già presente (stessa data e importo)</span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right">
                           <input
                             type="text"
-                            value={row.amount}
-                            onChange={(e) =>
-                              setRows((prev) =>
-                                prev!.map((r, j) =>
-                                  j === i ? { ...r, amount: parseFloat(e.target.value) || 0 } : r,
-                                ),
-                              )
-                            }
+                            inputMode="decimal"
+                            value={row.amountText}
+                            onChange={(e) => {
+                              const n = parseAmount(e.target.value);
+                              patch(i, { amountText: e.target.value, ...(n !== null ? { amount: n } : {}) });
+                            }}
                             className={`border rounded px-2 py-1 text-xs bg-background w-24 text-right ${row.amount >= 0 ? "text-green-600" : "text-red-500"}`}
                           />
                         </td>
                         <td className="px-3 py-2">
                           <select
                             value={row.category_id}
-                            onChange={(e) =>
-                              setRows((prev) => prev!.map((r, j) => (j === i ? { ...r, category_id: e.target.value } : r)))
-                            }
+                            onChange={(e) => patch(i, { category_id: e.target.value })}
                             className="border rounded px-2 py-1 text-xs bg-background"
                           >
                             <option value="">—</option>
