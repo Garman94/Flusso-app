@@ -1,6 +1,6 @@
 "use client";
 
-import { todayISO } from "@/lib/dates";
+import { todayISO, toISODate } from "@/lib/dates";
 import { useEffect, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatEuro, findOverdueRecurring, type OverdueCheckItem, type OverdueResult } from "@/lib/calculations";
@@ -56,15 +56,32 @@ export function OverdueExpensesBanner({ userId }: Props) {
 
   useEffect(() => {
     const supabase = createClient();
+    // Le scadenze controllate sono del mese corrente (rate) o dell'anno corrente (voci
+    // annuali): bastano i movimenti da gennaio. Prima si caricavano TUTTI i movimenti,
+    // e oltre le 1000 righe Supabase ne restituiva una parte a caso → falsi "scaduta".
+    const now = new Date();
+    const since = toISODate(new Date(now.getFullYear(), Math.min(0, now.getMonth() - 1), 1));
     Promise.all([
+      // Solo le Rate: le vecchie spese ricorrenti generiche non fanno più parte delle
+      // previsioni (sono in Pianifica → "Da sistemare"), e avvisare per voci che l'utente
+      // non trova da nessuna parte confonde.
       supabase.from("recurring_expenses")
-        .select("id, name, tipologia, frequency, due_day, due_month, amount, amount_max, last_paid_date, next_due_date, match_keywords, category_id")
-        .eq("user_id", userId).eq("tipologia", "fissa"),
+        .select("id, name, secondary_name, tipologia, frequency, due_day, due_month, amount, amount_max, last_paid_date, next_due_date, match_keywords, category_id")
+        .eq("user_id", userId).eq("tipologia", "fissa").not("debt_type", "is", null),
       supabase.from("transactions")
         .select("amount, date, description, merchant, category_id")
-        .eq("user_id", userId),
+        .eq("user_id", userId).gte("date", since).lt("amount", 0),
     ]).then(([recRes, txRes]) => {
-      setItems((recRes.data ?? []) as OverdueCheckItem[]);
+      // Come in Pianifica (effectiveKws): anche la transazione collegata a mano
+      // ("Collega a transazione" → secondary_name) conta come parola chiave, altrimenti
+      // una rata già pagata e collegata continuerebbe a risultare scaduta.
+      type Row = OverdueCheckItem & { secondary_name: string | null };
+      setItems(((recRes.data ?? []) as Row[]).map(({ secondary_name, ...it }) => ({
+        ...it,
+        match_keywords: secondary_name && !it.match_keywords.some(k => k.toLowerCase() === secondary_name.toLowerCase())
+          ? [...it.match_keywords, secondary_name]
+          : it.match_keywords,
+      })));
       setTxs((txRes.data ?? []) as Tx[]);
       setLoading(false);
     });
@@ -86,7 +103,9 @@ export function OverdueExpensesBanner({ userId }: Props) {
         <span className="flex items-center gap-2">
           <span className="text-lg shrink-0">⚠️</span>
           <span className={isRed ? "text-red-600 dark:text-red-400" : "text-orange-700 dark:text-orange-400"}>
-            Hai <strong>{overdue.length}</strong> {overdue.length === 1 ? "spesa scaduta" : "spese scadute"} non ancora {overdue.length === 1 ? "segnata" : "segnate"} come pagat{overdue.length === 1 ? "a" : "e"}
+            {overdue.length === 1
+              ? <>La rata <strong>{overdue[0].item.name}</strong> risulta scaduta: l&apos;hai pagata?</>
+              : <><strong>{overdue.length} rate</strong> risultano scadute: le hai pagate?</>}
           </span>
         </span>
         <span className="text-muted-foreground text-xs shrink-0">{expanded ? "▲" : "▼"}</span>

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useDemoGuard } from "@/components/demo-context";
-import { guessCategoryName } from "@/lib/categorize";
+import { guessCategoryName, matchUserRule, type UserRule } from "@/lib/categorize";
 import {
   detectColumns,
   loadRememberedMap,
@@ -39,6 +39,8 @@ type Props = {
   userId: string;
   categories: Category[];
   familyMembers?: FamilyMember[];
+  /** regole "contiene X → categoria" dell'utente: si applicano prima di quelle predefinite */
+  userRules?: UserRule[];
   onClose: () => void;
   onImported: (count: number) => void;
 };
@@ -57,7 +59,7 @@ function formatEuro(n: number) {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export function ImportExcelModal({ userId, categories, familyMembers = [], onClose, onImported }: Props) {
+export function ImportExcelModal({ userId, categories, familyMembers = [], userRules = [], onClose, onImported }: Props) {
   const hasMembers = familyMembers.length > 0;
   const demoGuard = useDemoGuard();
 
@@ -98,6 +100,10 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], onClo
 
   function toParsedRows(raw: RawRow[]): ParsedRow[] {
     return raw.map(r => {
+      const byRule = matchUserRule(r.description, userRules);
+      if (byRule && categories.some(c => c.id === byRule)) {
+        return { date: r.date, amount: r.amount, description: r.description, category_id: byRule };
+      }
       const name = guessCategoryName(r.bankCategory, r.description);
       const cat = name ? categories.find(c => c.name === name) : undefined;
       return { date: r.date, amount: r.amount, description: r.description, category_id: cat?.id ?? null };

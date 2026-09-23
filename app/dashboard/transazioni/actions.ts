@@ -23,10 +23,12 @@ export async function categorizeTransaction(txId: string, categoryId: string) {
 }
 
 /**
- * Crea una regola keyword → categoria e la applica subito a TUTTE
- * le transazioni corrispondenti (sovrascrive anche le categorie esistenti).
+ * Crea una regola keyword → categoria e la applica subito alle transazioni corrispondenti.
+ * Di default a TUTTE (sovrascrive anche le categorie esistenti: pannello Regole);
+ * con `onlyUncategorized` solo a quelle ancora senza categoria ("Ricorda questa scelta").
+ * Le regole valgono anche per gli import futuri (Excel e screenshot).
  */
-export async function createCategoryRule(keyword: string, categoryId: string) {
+export async function createCategoryRule(keyword: string, categoryId: string, opts: { onlyUncategorized?: boolean } = {}) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims) return { error: "Non autenticato", count: 0, affectedIds: [] as string[] };
@@ -44,13 +46,13 @@ export async function createCategoryRule(keyword: string, categoryId: string) {
 
   if (ruleError) return { error: ruleError.message, count: 0, affectedIds: [] as string[] };
 
-  // Applica a TUTTE le transazioni corrispondenti, incluse quelle già categorizzate
-  const { data: affected, error: updateError } = await supabase
+  let update = supabase
     .from("transactions")
     .update({ category_id: categoryId })
     .eq("user_id", userId)
-    .ilike("description", `%${kw}%`)
-    .select("id");
+    .ilike("description", `%${kw}%`);
+  if (opts.onlyUncategorized) update = update.is("category_id", null);
+  const { data: affected, error: updateError } = await update.select("id");
 
   if (updateError) return { error: updateError.message, count: 0, affectedIds: [] as string[] };
 

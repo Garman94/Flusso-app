@@ -95,6 +95,7 @@ Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 | `020_feedback.sql` | Tabella `feedback_messages` (chat utente↔founder) |
 | `035_events.sql` | Tabella `events` (eventi d'uso first-party) |
 | `036_trial_and_billing.sql` | `trial_ends_at`, `premium_ends_at`, `usage_type` su `profiles`; il trigger anti-autopromozione le protegge |
+| `037_demo_pianifica.sql` | `reseed_demo` aggiornata: budget per categoria, accantonamenti, entrate di entrambi i componenti |
 
 **Via CLI:**
 ```bash

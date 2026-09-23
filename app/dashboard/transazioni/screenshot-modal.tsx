@@ -7,7 +7,7 @@ import { track } from "@/lib/track";
 import { useDemoGuard } from "@/components/demo-context";
 import { prepareImage } from "@/lib/image-prepare";
 import { classifyRows, type DedupStatus } from "@/lib/import-dedup";
-import { guessFromDescription } from "@/lib/categorize";
+import { guessFromDescription, matchUserRule, type UserRule } from "@/lib/categorize";
 import { parseAmount } from "@/lib/import-parse";
 import type { ExtractedTransaction } from "@/lib/screenshot-extract";
 import { extractTransactionsFromScreenshot } from "./screenshot-action";
@@ -17,6 +17,7 @@ type Category = { id: string; name: string; color: string; icon: string };
 type Props = {
   userId: string;
   categories: Category[];
+  userRules?: UserRule[];
   onClose: () => void;
   onImported: (transactions: ExtractedTransaction[]) => void;
 };
@@ -31,7 +32,7 @@ type Row = ExtractedTransaction & {
 
 const euroText = (n: number) => String(n).replace(".", ",");
 
-export function ScreenshotModal({ userId, categories, onClose, onImported }: Props) {
+export function ScreenshotModal({ userId, categories, userRules = [], onClose, onImported }: Props) {
   const demoGuard = useDemoGuard();
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -84,8 +85,9 @@ export function ScreenshotModal({ userId, categories, onClose, onImported }: Pro
 
       setRows(
         classified.map(({ row, status }) => {
-          const name = guessFromDescription(row.description);
-          const cat = name ? categories.find((c) => c.name === name) : undefined;
+          const byRule = matchUserRule(row.description, userRules);
+          const name = byRule ? null : guessFromDescription(row.description);
+          const cat = byRule ? categories.find((c) => c.id === byRule) : name ? categories.find((c) => c.name === name) : undefined;
           return {
             ...row,
             status,

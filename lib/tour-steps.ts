@@ -11,8 +11,8 @@ export type PageTourDef = {
 export const PAGE_TOURS: Record<string, PageTourDef> = {
 
   "/dashboard": {
-    version: "2.0",
-    whatIsNew: "giro di benvenuto più corto e checklist di partenza in dashboard",
+    version: "2.1",
+    whatIsNew: "la card del saldo è più semplice: saldo di oggi, stima di fine periodo e due barre (spese ed entrate); il saldo si aggiorna da solo a ogni nuovo periodo",
     steps: [
       {
         title: "Benvenuto in Flusso! 👋",
@@ -20,8 +20,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       },
       {
         target: "[data-tour='hero']",
-        title: "Saldo di oggi e di fine mese",
-        message: "In alto quello che hai davvero, sotto quello che ti aspetti a fine mese. Tocca una voce per vedere da dove nasce il numero.",
+        title: "Quanto hai e quanto avrai",
+        message: "In alto il saldo di oggi, sotto la stima di fine periodo e due barre: quanto hai speso rispetto alle previsioni e quanto hai incassato. Tocca un numero per vedere da dove viene.",
       },
       {
         target: "[data-tour='breakdown']",
@@ -35,15 +35,15 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       },
       {
         target: "[data-tour='nav-smart']",
-        title: "Smart",
-        message: "Budget, accantonamenti e rate: le spese che ti aspettano nei prossimi mesi.",
+        title: "Pianifica",
+        message: "Decidi quanto spendere per categoria, segui rate e spese annuali, crea obiettivi di risparmio.",
       },
     ],
   },
 
   "/dashboard/transazioni": {
-    version: "1.3",
-    whatIsNew: "se il file della banca non viene letto puoi indicare tu le colonne (e Flusso se le ricorda); supporta anche Entrate e Uscite separate",
+    version: "1.4",
+    whatIsNew: "quando scegli una categoria, Flusso ti propone di ricordarla per i movimenti simili (anche nei prossimi import)",
     steps: [
       {
         title: "Le tue transazioni 💸",
@@ -74,51 +74,45 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
         message: "Se hai dei Componenti, il primo passo dell'import chiede a chi appartengono i movimenti. Poi Flusso controlla i duplicati: segna in verde le righe nuove, in giallo i possibili doppioni e salta quelli identici già presenti.",
       },
       {
-        title: "Categorie e regole",
-        message: "Assegna le categorie alle transazioni. Se hai attivato la modalità smanettone in Account puoi creare regole automatiche.",
+        title: "Categorie che si ricordano",
+        message: "Quando cambi la categoria di un movimento, Flusso ti chiede se ricordarla: da lì in poi i movimenti simili, anche quelli dei prossimi import, vanno da soli nella categoria giusta.",
       },
     ],
   },
 
   "/dashboard/smart": {
-    version: "2.2",
-    whatIsNew: "ogni accantonamento può collegarsi a un salvadanaio specifico; le transazioni categorizzate \"Accantonamenti\" contano come spesa reale",
+    version: "3.0",
+    whatIsNew: "Smart ora si chiama Pianifica: tutte le sezioni sono in un'unica schermata e il tasto Indietro del telefono torna al passo precedente",
     freePreview: [
       {
-        title: "Benvenuto in Smart ⚡",
-        message: "Smart è il centro di analisi avanzata di Flusso. Qui organizzi ogni impegno fisso — rate, accantonamenti, budget — e tracci i tuoi obiettivi di risparmio.",
+        title: "Pianifica 🗓️",
+        message: "Qui decidi in anticipo dove vanno i tuoi soldi. Gli obiettivi di risparmio sono inclusi nel piano gratuito (uno).",
       },
       {
-        title: "Rate 📆",
-        message: "Mutui, rate d'acquisto, debiti con persone: importo mensile, quanto manca, quanto hai già pagato.",
+        target: "[data-tour='smart-budget']",
+        title: "Budget, rate e accantonamenti",
+        message: "Con Premium imposti quanto spendere per categoria, segui rate e spese annuali, e la dashboard ti dice quanto avrai a fine mese.",
       },
       {
-        title: "Accantonamenti e Budget 🏦",
-        message: "Accantonamenti calcola la quota mensile per le spese grandi e irregolari; Budget ti fa impostare quanto spendere per categoria, per le spese variabili.",
-      },
-      {
-        title: "Obiettivi di risparmio 🎯",
-        message: "Crea obiettivi con importo e scadenza. Flusso stima quando li raggiungerai in base al tuo ritmo di risparmio.",
-      },
-      {
-        title: "Sblocca Smart con Premium 🚀",
-        message: "Tutte queste funzioni sono disponibili con il piano Premium. Vai su Account → Piano per scoprire le opzioni — o riscatta un coupon se ne hai uno.",
+        target: "[data-tour='smart-obiettivi']",
+        title: "Obiettivi 🎯",
+        message: "Una cifra da raggiungere entro una data: Flusso ti dice quanto mettere da parte ogni mese.",
       },
     ],
     steps: [
       {
-        title: "Smart si è riorganizzato ⚡",
-        message: "Le spese ricorrenti generiche di prima (\"Aggiungi spesa ricorrente\", \"Le mie spese ricorrenti\", \"Previsioni\") hanno lasciato il posto a tre sezioni dedicate — Rate, Accantonamenti, Budget — pensate per prevedere le spese del mese con più precisione.",
+        title: "Pianifica 🗓️",
+        message: "Qui decidi in anticipo dove vanno i tuoi soldi. Quello che imposti qui diventa la previsione di fine mese in dashboard.",
       },
       {
-        target: "[data-tour='smart-impegni']",
-        title: "Rate, Accantonamenti, Budget",
-        message: "Tre modi di tenere sotto controllo i soldi già impegnati: le Rate (mutui, acquisti a rate, debiti — fisse e mensili) mostrano quanto manca e quanto hai già pagato; gli Accantonamenti calcolano la quota mensile per le spese grandi e irregolari; il Budget ti fa impostare quanto vuoi spendere per categoria. La somma dei tre è \"Spese previste\" in dashboard.",
+        target: "[data-tour='smart-budget']",
+        title: "Le spese del mese",
+        message: "Budget per le spese variabili (spesa, ristoranti…), Rate e mutui per i debiti, Accantonamenti per le spese annuali. Insieme fanno le \"spese previste\".",
       },
       {
         target: "[data-tour='smart-obiettivi']",
-        title: "Obiettivi di risparmio",
-        message: "Crea obiettivi con importo e scadenza: Flusso suggerisce la quota mensile, li collega a un salvadanaio e tiene lo storico dei contributi in una pagina di dettaglio.",
+        title: "I tuoi risparmi",
+        message: "Obiettivi con cifra e scadenza, e i salvadanai dove tieni i soldi già messi da parte.",
       },
     ],
   },
@@ -149,7 +143,7 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
     whatIsNew: "puoi esportare i tuoi movimenti in CSV",
     steps: [
       {
-        title: "Impostazioni account ⚙️",
+        title: "Il tuo account ⚙️",
         message: "Qui gestisci il profilo, il piano e le preferenze avanzate.",
       },
       {
@@ -165,7 +159,7 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       {
         target: "[data-tour='account-power-user']",
         title: "Modalità smanettone",
-        message: "Attivala per sbloccare le regole avanzate di rinomina e categorizzazione automatica delle transazioni.",
+        message: "Per chi vuole di più: mostra l'elenco completo delle regole di categoria e le regole per rinominare le descrizioni.",
       },
       {
         target: "[data-tour='account-feedback']",
@@ -186,6 +180,21 @@ export function hasUnseenTour(path: string): boolean {
   if (!def) return false;
   try {
     return localStorage.getItem(getTourStorageKey(path)) !== def.version;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * true = la guida di questa pagina è cambiata DOPO che l'utente ne aveva vista una.
+ * Per chi non l'ha mai vista non serve un segnale: parte da sola al primo accesso.
+ */
+export function hasTourUpdate(path: string): boolean {
+  const def = PAGE_TOURS[path];
+  if (!def) return false;
+  try {
+    const seen = localStorage.getItem(getTourStorageKey(path));
+    return seen !== null && seen !== def.version;
   } catch {
     return false;
   }

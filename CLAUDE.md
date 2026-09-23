@@ -4,6 +4,28 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Round 3 — usabilità (2026-09-23)
+
+Analisi su codice, dati reali e prova da telefono. Cambiamenti:
+
+- **Card saldo (`balance-hero-card.tsx`) riscritta**: Saldo di oggi → "A fine periodo avrai circa" → barre Spese (speso di previste) ed Entrate (ricevute di attese). Il vecchio "Saldo fine mese stimato" era entrate previste − spese previste (il risparmio del mese, non un saldo) e "Differenza saldo" lo confrontava col saldo reale: numero senza senso. Ora `projectPeriodEnd` (lib/calculations.ts): saldo di oggi + entrate ancora attese − spese ancora previste.
+- **Saldo riportato da solo**: se `period_starting_balance_date` ≠ inizio periodo, `rollBalance` somma/sottrae i movimenti nel mezzo (query paginata). Non si scrive nulla: l'ancora resta l'ultimo saldo inserito a mano, così import arretrati vengono inclusi. Prima la card tornava al form "inserisci il saldo" a ogni nuovo periodo (e nella demo sempre).
+- **Periodi**: `lib/period.ts` è l'unica fonte (`currentPeriod`, `previousPeriods`); dashboard, Budget e Pianifica non hanno più copie proprie. Corretto un bug dell'ora legale (`adjustBizDay` e la fine periodo usavano ±24h: per alcuni giorni di paga un giorno finiva in nessun periodo). Il Budget usa il periodo di paga, non più il mese solare.
+- **Smart → Pianifica** (URL invariato `/dashboard/smart`): copertina a un livello (Budget, Rate e mutui, Accantonamenti, Obiettivi, Salvadanai) con una riga "a cosa serve"; il sottomenu "impegni" non esiste più (`?v=impegni` → copertina). La vista è nell'URL (`?v=budget`): `setView` fa `history.pushState` (Next sincronizza `useSearchParams`), `goBack(parent)` fa `history.back()` se la vista l'abbiamo aperta noi (`history.state.flussoSmartFrom`), altrimenti `replaceState`. Così il tasto Indietro del telefono torna al livello precedente e dalla dashboard si apre direttamente una sezione. NON passare `...history.state` a pushState: contiene `__NA` e Next salterebbe la sincronizzazione.
+- **Piano gratuito**: entra in Pianifica; Budget/Rate/Accantonamenti mostrano il blocco (`PREMIUM_VIEWS`), Obiettivi (1) funziona. Prima tutta la sezione era bloccata e l'obiettivo "incluso" non era raggiungibile.
+- **Vecchie spese ricorrenti generiche** (né Rata né Accantonamento, create col wizard rimosso il 14/09): non contano nelle previsioni ed erano invisibili. Ora compaiono in Pianifica → "Spese fisse da sistemare" (vista `list-recurring`, filtrata a queste voci, con istruzioni). Non generano più avvisi "scaduta": il banner considera solo le Rate (e usa anche la transazione collegata a mano come parola chiave).
+- **Regole di categoria**: `matchUserRule` (lib/categorize.ts) le applica negli import Excel e screenshot, prima delle parole chiave predefinite. Prima valevano solo nel momento in cui venivano create. Quando si cambia categoria a un movimento compare "Vuoi che Flusso se lo ricordi?" con la parola proposta da `ruleKeyword` (modificabile); `createCategoryRule(..., { onlyUncategorized: true })` non sovrascrive categorie scelte a mano.
+- **Obiettivi in dashboard**: stima con `monthly_contribution` come nel dettaglio (prima: entrate − spese del periodo finora, diversa ogni giorno e uguale per tutti gli obiettivi).
+- **Accantonamenti**: confronto con i soli salvadanai non collegati a un obiettivo (`potsForSinkingFunds`); prima gli stessi euro contavano per obiettivi e accantonamenti.
+- **Navigazione**: "Account" ovunque (prima "Impostazioni" su computer e "Account" su telefono); pallini sulla barra solo per guide aggiornate dopo averne vista una (`hasTourUpdate`), non più rossi; periodo in dashboard toccabile ("cambia"); "Mesi passati" con etichetta; avviso rate scadute sotto la card del saldo.
+- **Budget**: categorie ordinate per spesa degli ultimi tre periodi, quelle mai usate nascoste dietro "Mostra altre".
+- **Demo (migration 037)**: `reseed_demo` crea budget per categoria, due accantonamenti e le entrate di entrambi i componenti; niente più voci generiche.
+- Test: `tests/ux-calcoli.test.ts` (saldo riportato, fine periodo, periodi e ora legale, salvadanai, regole).
+
+Da decidere (non fatto): unificare Obiettivi e Salvadanai (un salvadanaio ha già `target_amount`); dare una casa alle spese fisse non-debito (affitto, bollette, abbonamenti) invece di metterle nel Budget; unificare `profiles.pay_day` e `income_payday`; le rate pagate finiscono anche nella spesa della loro categoria (conteggio doppio nel Budget per categoria).
+
+---
+
 ## Round 1 sul feedback (2026-09-20)
 
 Dati reali (Supabase, 20/09): 12 tester oltre al titolare, 8 non hanno mai inserito una transazione → il muro è tra iscrizione e primo import. Da qui le modifiche:
