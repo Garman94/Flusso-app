@@ -22,6 +22,10 @@ Analisi su codice, dati reali e prova da telefono. Cambiamenti:
 - **Demo (migration 037)**: `reseed_demo` crea budget per categoria, due accantonamenti e le entrate di entrambi i componenti; niente più voci generiche.
 - Test: `tests/ux-calcoli.test.ts` (saldo riportato, fine periodo, periodi e ora legale, salvadanai, regole).
 
+**Come tornare indietro** (codice e dati sono indipendenti: il round 3 non modifica dati degli utenti, solo la demo):
+- Sito (e app Android, che carica www.flussoapp.it): Vercel → Deployments → deploy precedente → "Instant Rollback". In alternativa `git revert -m 1 <merge della PR #5>` e push. Il tag `prima-round-3` segna main prima del merge.
+- Demo: `npx --no-install supabase db query --linked -f supabase/rollback/037_demo_pianifica_down.sql` (rimette la `reseed_demo` precedente e ricarica i dati; provato in transazione annullata: torna identica).
+
 Da decidere (non fatto): unificare Obiettivi e Salvadanai (un salvadanaio ha già `target_amount`); dare una casa alle spese fisse non-debito (affitto, bollette, abbonamenti) invece di metterle nel Budget; unificare `profiles.pay_day` e `income_payday`; le rate pagate finiscono anche nella spesa della loro categoria (conteggio doppio nel Budget per categoria).
 
 ---
