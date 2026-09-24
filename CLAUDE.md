@@ -4,6 +4,20 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Anteprima delle novità (2026-09-24)
+
+L'admin vede le modifiche non ancora pubblicate con il proprio account, prima di dire "pubblica".
+
+- **Dove**: Admin → card "Anteprima delle novità" (`app/dashboard/admin/admin-anteprima.tsx`): elenco delle PR aperte (API pubblica di GitHub, `pendingChanges` in `lib/anteprima.ts`, nessuna chiave) e tasto "Apri anteprima".
+- **Cosa apre**: il deploy di Vercel del branch **`anteprima`**, indirizzo fisso `https://flusso-app-git-anteprima-garman94s-projects.vercel.app` (`PREVIEW_URL`, sovrascrivibile da env). Stesso database del sito: i dati sono quelli veri e quello che si fa lì resta salvato.
+- **Accesso**: la sessione del sito non vale su un altro indirizzo, e l'accesso con Google riporterebbe al sito pubblicato. Il tasto chiama `previewLoginUrl` (`app/actions/anteprima.ts`, solo admin): `auth.admin.generateLink({ type: "magiclink" })` per l'email dell'admin, senza inviare email, e apre `<anteprima>/auth/confirm?token_hash=…`, che fa `verifyOtp`. La scheda si apre dentro il clic (`window.open` prima dell'attesa) per non essere bloccata.
+- **Vercel**: le anteprime sono protette da Vercel Authentication. Senza altro, la prima volta Vercel chiede il login Vercel dell'admin. Se su Vercel si attiva "Protection Bypass for Automation", la variabile di sistema `VERCEL_AUTOMATION_BYPASS_SECRET` fa saltare anche quello (il link aggiunge `x-vercel-protection-bypass`).
+- **Striscia viola** in cima alle pagine quando `VERCEL_ENV === "preview"` (`components/anteprima-banner.tsx`), con "Torna al sito".
+- **Come si aggiorna (a ogni PR)**: il branch `anteprima` = `main` + tutti i branch delle PR aperte uniti; va rispinto dopo ogni modifica a una PR o dopo un merge in main. Una migration che aggiunge colonne va applicata prima di mandare il codice in anteprima, perché l'anteprima usa il database vero. Le migration che toccano solo la demo si applicano al "pubblica": nell'anteprima la demo resta quella vecchia.
+- Prova in locale: due `next start` (`ADMIN_EMAILS=demo@flussoapp.it PREVIEW_URL=http://localhost:3001` sulla 3000, `VERCEL_ENV=preview` sulla 3001), entrare in /demo sulla 3000, admin → "Apri anteprima".
+
+---
+
 ## Round 3 — usabilità (2026-09-23)
 
 Analisi su codice, dati reali e prova da telefono. Cambiamenti:

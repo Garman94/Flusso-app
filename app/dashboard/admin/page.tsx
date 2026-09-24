@@ -8,6 +8,8 @@ import { AdminPreviewMode } from "./admin-preview-mode";
 import { AdminUsersSection } from "./admin-users-section";
 import { AdminFeedback } from "./admin-feedback";
 import { getPreviewPlan } from "@/lib/preview-plan";
+import { pendingChanges } from "@/lib/anteprima";
+import { AdminAnteprima } from "./admin-anteprima";
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
@@ -34,7 +36,7 @@ async function AdminContent() {
 
   const service = getServiceClient();
 
-  const [{ data: profiles, error: profilesError }, { data: coupons }, previewPlan] = await Promise.all([
+  const [{ data: profiles, error: profilesError }, { data: coupons }, previewPlan, changes] = await Promise.all([
     service
       .from("profiles")
       .select("id, full_name, plan, created_at")
@@ -44,6 +46,7 @@ async function AdminContent() {
       .select("id, code, plan, used, used_by, used_at, notes, created_at")
       .order("created_at", { ascending: false }),
     getPreviewPlan(),
+    pendingChanges(),
   ]);
 
   if (profilesError) {
@@ -66,6 +69,9 @@ async function AdminContent() {
           Test primo utilizzo
         </Link>
       </div>
+
+      {/* Anteprima della prossima versione */}
+      <AdminAnteprima changes={changes} hasBypass={!!process.env.VERCEL_AUTOMATION_BYPASS_SECRET} />
 
       {/* Users table */}
       <AdminUsersSection profiles={profiles ?? []} />

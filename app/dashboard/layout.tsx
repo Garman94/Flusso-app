@@ -15,6 +15,7 @@ import { trialDaysLeft } from "@/lib/plans";
 import { startTrialIfNeeded } from "@/lib/trial";
 import { TrialBanner } from "@/components/trial-banner";
 import { ActivityPing } from "@/components/activity-ping";
+import { AnteprimaBanner } from "@/components/anteprima-banner";
 
 async function DashboardNav() {
   const supabase = await createClient();
@@ -71,6 +72,7 @@ export default async function DashboardLayout({
 
   return (
     <main className="min-h-screen flex flex-col items-center">
+      <AnteprimaBanner />
       {isDemo && <DemoBanner />}
       {trialLeft > 0 && <TrialBanner daysLeft={trialLeft} />}
       {!isDemo && <ActivityPing />}
