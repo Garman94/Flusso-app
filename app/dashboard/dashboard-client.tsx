@@ -13,7 +13,7 @@ import {
 import { SinkingFundsCard } from "./sinking-funds-card";
 import { BalanceHeroCard } from "./balance-hero-card";
 import { OverdueExpensesBanner } from "./overdue-expenses-banner";
-import { MonthReportModal } from "./month-report-modal";
+import { RecapBanner, type RecapTeaser } from "./recap-banner";
 import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
 import { PageTour } from "@/components/tour/page-tour";
@@ -36,6 +36,8 @@ type Props = {
   payDay: number;     // 0 = calendar month, 1-28 = custom pay day
   periodFrom: string; // ISO date, start of current period
   periodTo: string;   // ISO date, end of current period
+  /** periodo appena chiuso, nei primi giorni del nuovo: invito al riepilogo */
+  recapTeaser: RecapTeaser | null;
 };
 
 // ─── Settings Modal ───────────────────────────────────────────────────────────
@@ -159,10 +161,9 @@ function SettingsModal({ payDay, onClose }: { payDay: number; onClose: () => voi
 export function DashboardClient({
   userId, profile, currentTxs, goals,
   totalTxCount, uncategorizedCount, lastTxDate,
-  payDay, periodFrom, periodTo,
+  payDay, periodFrom, periodTo, recapTeaser,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
-  const [showMonthReport, setShowMonthReport] = useState(false);
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
 
 
@@ -196,11 +197,6 @@ export function DashboardClient({
         <SettingsModal payDay={payDay} onClose={() => setShowSettings(false)} />
       )}
 
-      {/* Month report modal */}
-      {showMonthReport && (
-        <MonthReportModal userId={userId} onClose={() => setShowMonthReport(false)} />
-      )}
-
       {/* ── Header ── */}
       <div className="flex items-start justify-between">
         <div>
@@ -217,12 +213,12 @@ export function DashboardClient({
           </button>
         </div>
 
-        {/* Report mesi precedenti */}
-        <button
+        {/* Riepiloghi dei mesi passati */}
+        <Link
+          href="/dashboard/riepilogo"
           data-tour="month-report-btn"
-          onClick={() => setShowMonthReport(true)}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border rounded-lg px-3 py-2 hover:bg-muted/50 transition-colors shrink-0"
-          title="Vedi report mesi precedenti"
+          title="Riepilogo dei mesi passati"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -231,8 +227,11 @@ export function DashboardClient({
             <line x1="3" y1="10" x2="21" y2="10" />
           </svg>
           <span>Mesi passati</span>
-        </button>
+        </Link>
       </div>
+
+      {/* ── Invito al riepilogo del periodo appena chiuso ── */}
+      {recapTeaser && <RecapBanner teaser={recapTeaser} />}
 
       {/* ── Primi passi: finché non c'è nessuna transazione ── */}
       {totalTxCount === 0 && <GettingStartedCard payDay={payDay} goalsCount={goals.length} onSetPayDay={() => setShowSettings(true)} />}
