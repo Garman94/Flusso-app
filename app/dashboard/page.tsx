@@ -3,10 +3,18 @@ import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectivePlan } from "@/lib/preview-plan";
 import { currentPeriod } from "@/lib/period";
+import { addDaysISO, todayISO } from "@/lib/dates";
+import { periodContaining, periodName, totals, type RecapTx } from "@/lib/recap";
+import type { RecapTeaser } from "./recap-banner";
 import { DashboardClient } from "./dashboard-client";
 import type { Transaction, Goal } from "@/lib/calculations";
 
 // ─── Server component ─────────────────────────────────────────────────────────
+
+/** Giorni dall'inizio del periodo in cui la dashboard invita al riepilogo di quello chiuso. */
+const RECAP_BANNER_DAYS = 10;
+/** Il periodo chiuso sembra completo se l'ultimo movimento è entro questi giorni dalla fine. */
+const RECAP_COMPLETE_DAYS = 5;
 
 async function DashboardContent() {
   const supabase = await createClient();
@@ -26,7 +34,16 @@ async function DashboardContent() {
   // Stesso periodo di Transazioni e Pianifica (lib/period.ts è l'unica fonte).
   const { from: mFrom, to: mTo } = currentPeriod(payDay);
 
-  const [currentTxsRes, goalsRes, totalCountRes, lastTxRes, uncategorizedCountRes] = await Promise.all([
+  // Riepilogo del periodo appena chiuso, solo nei primi giorni del nuovo.
+  const closed = todayISO() < addDaysISO(mFrom, RECAP_BANNER_DAYS)
+    ? periodContaining(payDay, addDaysISO(mFrom, -1))
+    : null;
+  const closedTxsQuery = closed
+    ? supabase.from("transactions").select("date, amount, categories(name)")
+        .eq("user_id", userId).gte("date", closed.from).lte("date", closed.to)
+    : null;
+
+  const [currentTxsRes, goalsRes, totalCountRes, lastTxRes, uncategorizedCountRes, closedTxsRes] = await Promise.all([
     supabase.from("transactions")
       .select("id, amount, date, description, category_id, categories(name, color, icon)")
       .eq("user_id", userId).gte("date", mFrom).lte("date", mTo).order("date", { ascending: true }),
@@ -39,7 +56,18 @@ async function DashboardContent() {
       .select("date").eq("user_id", userId).order("date", { ascending: false }).limit(1).single(),
     supabase.from("transactions")
       .select("id", { count: "exact", head: true }).eq("user_id", userId).is("category_id", null),
+    closedTxsQuery,
   ]);
+
+  const closedTxs = (closedTxsRes?.data ?? []) as unknown as RecapTx[];
+  const recapTeaser: RecapTeaser | null = closed && closedTxs.length >= 3
+    ? {
+        from: closed.from,
+        month: periodName(payDay, closed).month,
+        saved: totals(closedTxs).saved,
+        complete: closedTxs.some(t => t.date >= addDaysISO(closed.to, -RECAP_COMPLETE_DAYS)),
+      }
+    : null;
 
   return (
     <DashboardClient
@@ -57,6 +85,7 @@ async function DashboardContent() {
       payDay={payDay}
       periodFrom={mFrom}
       periodTo={mTo}
+      recapTeaser={recapTeaser}
     />
   );
 }

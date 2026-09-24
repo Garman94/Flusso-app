@@ -24,3 +24,8 @@ const ROME_DAY = new Intl.DateTimeFormat("en-CA", {
 export function todayISO(now: Date = new Date()): string {
   return ROME_DAY.format(now);
 }
+
+/** Data ISO spostata di `n` giorni sul calendario (senza sorprese col cambio dell'ora). */
+export function addDaysISO(iso: string, n: number): string {
+  return toISODate(new Date(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + n));
+}
