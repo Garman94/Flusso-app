@@ -117,7 +117,7 @@ export function matchUserRule(description: string, rules: UserRule[]): string | 
 // Parole che dicono COME è stato pagato, non A CHI: non servono a riconoscere un negozio.
 const NOT_A_MERCHANT = new Set([
   "pagamento", "pagam", "pag", "pos", "carta", "card", "debit", "debito", "credito", "credit",
-  "addebito", "addebiti", "accredito", "sdd", "sepa", "rid", "core", "bonifico", "bonif",
+  "addebito", "addebiti", "accredito", "diretto", "sdd", "sepa", "rid", "core", "dd", "bonifico", "bonif",
   "disposizione", "operazione", "op", "acquisto", "acquisti", "presso", "contactless", "nfc",
   "mastercard", "visa", "maestro", "vpay", "bancomat", "circuito", "online", "internet",
   "del", "della", "dello", "dei", "di", "da", "a", "al", "alla", "in", "il", "la", "lo", "le",

@@ -4,6 +4,21 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Spese fisse (2026-09-24)
+
+Nuova sezione Pianifica → **Spese fisse** (`?v=spese-fisse`, modulo `?v=spesa-fissa-form`, `app/dashboard/smart/fixed-expenses-panel.tsx`) per affitto, telefono, abbonamenti, bollette. Inclusa nel piano gratuito. Calcoli in `lib/fixed-expenses.ts`, test in `tests/spese-fisse.test.ts`.
+
+- **Cos'è**: riga di `recurring_expenses` senza `debt_type` (Rata) né `next_due_date` (Accantonamento), `tipologia` fissa/variabile (`isFixedExpense`). Sono le stesse righe che il vecchio wizard creava: tornano a contare da sole, senza doverle rifare. Le vecchie "entrate" dello stesso tipo sono elencate a parte con l'invito a eliminarle (il reddito sta in Account). La pagina "Spese fisse da sistemare" non esiste più (`?v=list-recurring` → Spese fisse).
+- **Quando cade** (`dueInPeriod`): le mensili una volta per periodo di paga (anche se il giorno di paga sposta i confini); ogni 2/3/6/12 mesi solo nei mesi indicati da `due_month` (il mese di una qualsiasi scadenza), per intero. Senza `due_month` si contano in media (importo/N) e la card invita a indicare il mese. Importo variabile = punto medio.
+- **Pagata?** (`findPayments`/`planStatus`): parola chiave (`match_keywords`, o la descrizione collegata in `secondary_name`; normalizzate, le corte solo intere) + importo tra metà e 1,5 volte il previsto, il più vicino. Stati: pagata, in arrivo, mancante (3 giorni di tolleranza, con "L'ho pagata" → `markRecurringAsPaid`), non verificabile (senza parola chiave), non in questo periodo. Collegando un movimento nel modulo la parola proposta è `ruleKeyword` (modificabile).
+- **Dashboard** (`balance-hero-card.tsx`): spese previste = spese fisse + rate + accantonamenti + budget. `splitPlan` divide spese fisse e rate in pagate (escluse da "puoi ancora spendere"), da pagare (`committedRemaining` in `projectPeriodEnd`: tolte a parte dalla stima) e non verificabili (sommate al resto come prima, per non togliere due volte il loro pagamento). Così a inizio mese "puoi ancora spendere" non comprende l'affitto non ancora partito, e sforare al supermercato non fa sparire dalla stima la bolletta in arrivo. I pagamenti in categorie di giroconto non si sottraggono (`splitPlan(..., isSpending)`).
+- **Budget** (`budget-panel.tsx`): i movimenti che pagano una spesa fissa o una rata (`planPayments`, periodo per periodo) non contano nella spesa per categoria né nello storico che suggerisce il budget. Risolve anche il conteggio doppio delle rate nel Budget. Nel dettaglio categoria sono elencate le spese fisse che non contano lì. Il modulo avvisa se la categoria scelta ha già un budget.
+- **Trovate nei movimenti** (`detectRecurring`): gruppi per `ruleKeyword`, una sola volta per mese, 20-40 giorni tra l'una e l'altra, ultima entro 40 giorni, importi entro ×1,6, giorno del mese entro ±6. Escluse le categorie Stipendio/Spostamenti/Salvadanaio/Accantonamenti e ciò che una voce di Pianifica riconosce già. "Aggiungi" crea la spesa con un tocco; ✕ la scarta (in `localStorage`, `flusso_spese_fisse_ignorate`). `NOT_A_MERCHANT` ora comprende "diretto" e "dd" ("ADDEBITO DIRETTO SDD FASTWEB" → "fastweb").
+- **Demo (migration 038)**: affitto, Netflix, Spotify, luce e gas, telefono come spese fisse; Budget solo per le spese che cambiano (640 €); benzina due volte al mese; Telepass lasciato fuori apposta come esempio di spesa trovata. Rollback: `supabase/rollback/038_demo_spese_fisse_down.sql`.
+- Tour Pianifica 3.1 (passo `smart-spese-fisse`), piano gratuito con "Spese fisse" tra le funzioni.
+
+---
+
 ## Round 3 — usabilità (2026-09-23)
 
 Analisi su codice, dati reali e prova da telefono. Cambiamenti:
@@ -26,7 +41,7 @@ Analisi su codice, dati reali e prova da telefono. Cambiamenti:
 - Sito (e app Android, che carica www.flussoapp.it): Vercel → Deployments → deploy precedente → "Instant Rollback". In alternativa `git revert -m 1 <merge della PR #5>` e push. Il tag `prima-round-3` segna main prima del merge.
 - Demo: `npx --no-install supabase db query --linked -f supabase/rollback/037_demo_pianifica_down.sql` (rimette la `reseed_demo` precedente e ricarica i dati; provato in transazione annullata: torna identica).
 
-Da decidere (non fatto): unificare Obiettivi e Salvadanai (un salvadanaio ha già `target_amount`); dare una casa alle spese fisse non-debito (affitto, bollette, abbonamenti) invece di metterle nel Budget; unificare `profiles.pay_day` e `income_payday`; le rate pagate finiscono anche nella spesa della loro categoria (conteggio doppio nel Budget per categoria).
+Da decidere (non fatto): unificare Obiettivi e Salvadanai (un salvadanaio ha già `target_amount`); unificare `profiles.pay_day` e `income_payday`. (Spese fisse e conteggio doppio delle rate nel Budget: risolti il 2026-09-24, vedi sopra.)
 
 ---
 

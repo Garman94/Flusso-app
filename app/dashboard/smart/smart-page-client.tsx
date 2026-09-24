@@ -13,12 +13,14 @@ import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations
 import { resetSavingStartDate, markSinkingFundPaid } from "./sinking-fund-actions";
 import { addGoalContribution } from "./goal-actions";
 import { BudgetPanel } from "./budget-panel";
+import { FixedExpensesPanel, fixedSuggestions, useDismissedSuggestions } from "./fixed-expenses-panel";
+import { isFixedExpense } from "@/lib/fixed-expenses";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Category = { id: string; name: string; color: string; icon: string };
 type Transaction = {
-  date: string; amount: number; category_id?: string | null;
+  id?: string; date: string; amount: number; category_id?: string | null;
   description?: string | null; merchant?: string | null;
 };
 type Goal = {
@@ -37,6 +39,7 @@ export type RecurringExpense = {
   matching_strategy: string; due_day: number | null; due_month: number | null;
   secondary_name: string | null;
   end_date: string | null;
+  last_paid_date: string | null;
   next_due_date: string | null;
   saving_start_date: string | null;
   debt_type: DebtType | null;
@@ -49,7 +52,8 @@ type DebtType = "mutuo" | "rata_acquisto" | "debito_persona" | "altro";
 type View =
   | "cover" | "add-recurring" | "edit-recurring" | "list-recurring"
   | "add-goal" | "list-goals" | "goal-detail" | "previsioni"
-  | "impegni" | "accantonamenti" | "accantonamento-form" | "budget" | "rate" | "rate-form";
+  | "impegni" | "accantonamenti" | "accantonamento-form" | "budget" | "rate" | "rate-form"
+  | "spese-fisse" | "spesa-fissa-form";
 
 type CategoryBudget = { category_id: string; monthly_budget: number };
 type CategoryBudgetNote = { category_id: string; year: number; month: number; note: string };
@@ -111,41 +115,6 @@ function pickTxCandidates(transactions: Transaction[], query: string): Transacti
   return transactions
     .filter(t => t.description?.toLowerCase().includes(q) || t.merchant?.toLowerCase().includes(q))
     .slice(0, 8);
-}
-
-function nextOccurrence(item: RecurringExpense, allTxs: Transaction[]): Date | null {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  if (item.end_date && new Date(item.end_date + "T00:00:00") < today) return null;
-
-  if (item.frequency === "mensile" && item.due_day) {
-    const c = new Date(today.getFullYear(), today.getMonth(), item.due_day);
-    return c >= today ? c : new Date(today.getFullYear(), today.getMonth() + 1, item.due_day);
-  }
-
-  if (item.frequency === "annuale") {
-    const mo = (item.due_month ?? 1) - 1;
-    const d = item.due_day ?? 1;
-    const c = new Date(today.getFullYear(), mo, d);
-    return c >= today ? c : new Date(today.getFullYear() + 1, mo, d);
-  }
-
-  // Per frequenze multi-mese: usa l'ultima transazione corrispondente come riferimento
-  if (item.due_day) {
-    const freqMonths = FREQ_MONTHS[item.frequency] ?? 2;
-    const kws = effectiveKws(item);
-    if (kws.length > 0) {
-      const last = [...allTxs]
-        .filter(t => Number(t.amount) < 0 && txMatchesKws(t, kws))
-        .sort((a, b) => b.date.localeCompare(a.date))[0];
-      if (last) {
-        const lastDate = new Date(last.date + "T00:00:00");
-        const next = new Date(lastDate.getFullYear(), lastDate.getMonth() + freqMonths, item.due_day);
-        if (next >= today) return next;
-      }
-    }
-  }
-
-  return null;
 }
 
 function freqLabel(exp: RecurringExpense): string {
@@ -300,17 +269,20 @@ const ACCANTONAMENTO_FREQ_OPTIONS: { value: Frequency; label: string }[] = [
 const VIEWS: readonly View[] = [
   "cover", "add-recurring", "edit-recurring", "list-recurring", "add-goal", "list-goals", "goal-detail",
   "previsioni", "impegni", "accantonamenti", "accantonamento-form", "budget", "rate", "rate-form",
+  "spese-fisse", "spesa-fissa-form",
 ];
 function parseView(v: string | null): View {
   if (!v || !(VIEWS as readonly string[]).includes(v)) return "cover";
-  return v === "impegni" ? "cover" : (v as View); // il vecchio sottomenu non esiste più
+  if (v === "impegni") return "cover";             // il vecchio sottomenu non esiste più
+  if (v === "list-recurring") return "spese-fisse"; // ex "Spese fisse da sistemare"
+  return v as View;
 }
 const viewHref = (v: View) => (v === "cover" ? "/dashboard/smart" : `/dashboard/smart?v=${v}`);
 
-/** Funzioni solo Premium: al piano gratuito resta Obiettivi (1). */
+/** Funzioni solo Premium: al piano gratuito restano Spese fisse e Obiettivi (1). */
 const PREMIUM_VIEWS: ReadonlySet<View> = new Set<View>([
   "budget", "rate", "rate-form", "accantonamenti", "accantonamento-form",
-  "list-recurring", "edit-recurring", "add-recurring", "previsioni",
+  "edit-recurring", "add-recurring", "previsioni",
 ]);
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -358,6 +330,10 @@ export function SmartPageClient({
   const [eEditId, setEEditId] = useState<string | null>(null);
   const [eSaving, setESaving] = useState(false);
   const [eTxSearch, setETxSearch] = useState("");
+
+  // Spesa fissa in modifica (null = nuova) e spese trovate nei movimenti scartate dall'utente
+  const [fEditId, setFEditId] = useState<string | null>(null);
+  const [dismissedSuggestions, dismissSuggestion] = useDismissedSuggestions();
 
   // Rata form (flat, single-page, add + modifica)
   const [dForm, setDForm] = useState(EMPTY_D);
@@ -416,7 +392,7 @@ export function SmartPageClient({
   // modifica) non ha più i dati: si torna alla lista corrispondente.
   useEffect(() => {
     if (view === "goal-detail" && !goals.some(g => g.id === gDetailId)) window.history.replaceState({}, "", viewHref("list-goals"));
-    if (view === "edit-recurring" && !eEditId) window.history.replaceState({}, "", viewHref("list-recurring"));
+    if (view === "edit-recurring" && !eEditId) window.history.replaceState({}, "", viewHref("accantonamenti"));
   }, [view, goals, gDetailId, eEditId]);
 
   // ── Navigation helpers ─────────────────────────────────────────────────────
@@ -619,7 +595,7 @@ export function SmartPageClient({
       if (error) toast.error(`Errore: ${error.message}`);
       else {
         setRecurringItems(prev => prev.map(it => it.id === rEditId ? data as RecurringExpense : it));
-        toast.success("Modificata!"); goBack("list-recurring");
+        toast.success("Modificata!"); goBack("spese-fisse");
       }
     } else {
       const { data, error } = await supabase
@@ -627,7 +603,7 @@ export function SmartPageClient({
       if (error) toast.error(`Errore: ${error.message}`);
       else {
         setRecurringItems(prev => [...prev, data as RecurringExpense]);
-        toast.success("Aggiunta!"); setView("list-recurring");
+        toast.success("Aggiunta!"); setView("spese-fisse");
       }
     }
     setRSaving(false);
@@ -678,7 +654,7 @@ export function SmartPageClient({
     if (error) toast.error(`Errore: ${error.message}`);
     else {
       setRecurringItems(prev => prev.map(it => it.id === eEditId ? data as RecurringExpense : it));
-      toast.success("Modificata!"); setView("list-recurring");
+      toast.success("Modificata!"); goBack("accantonamenti");
     }
     setESaving(false);
   }
@@ -742,9 +718,6 @@ export function SmartPageClient({
   // ═══════════════════════════════════════════════════════════════════════════
 
   const isFree = plan === "free";
-  // Voci create col vecchio "Aggiungi spesa ricorrente": né Rata né Accantonamento.
-  // Non entrano più nelle previsioni, quindi vanno mostrate da qualche parte.
-  const legacyItems = recurringItems.filter(it => !it.debt_type && !it.next_due_date);
 
   if (isFree && PREMIUM_VIEWS.has(view)) {
     return (
@@ -779,13 +752,17 @@ export function SmartPageClient({
       && computeDebtProgress({ totalAmount: it.debt_total_amount, monthlyAmount: it.amount, startDate: it.debt_start_date }).status === "active");
     const accantonamentiCount = recurringItems.filter(it => it.next_due_date).length;
     const potsTotal = pots.reduce((sum, p) => sum + Number(p.current_balance), 0);
+    const fixedCount = recurringItems.filter(isFixedExpense).length;
+    const foundCount = fixedSuggestions(recurringItems, transactions, categories, dismissedSuggestions).length;
 
     type Item = { icon: string; label: string; desc: string; badge?: string; premium: boolean; tour?: string; onClick?: () => void; href?: string };
     const SECTIONS: { title: string; items: Item[] }[] = [
       {
         title: "Le spese del mese",
         items: [
-          { icon: "🧮", label: "Budget", desc: "Quanto vuoi spendere ogni mese per categoria: spesa, ristoranti, svago…", premium: true, tour: "smart-budget", onClick: () => setView("budget") },
+          { icon: "📋", label: "Spese fisse", desc: "Affitto, bollette, telefono, abbonamenti: quelle che arrivano da sole", premium: false, tour: "smart-spese-fisse",
+            badge: fixedCount ? `${fixedCount}` : foundCount ? `${foundCount} ${foundCount === 1 ? "trovata" : "trovate"}` : undefined, onClick: () => setView("spese-fisse") },
+          { icon: "🧮", label: "Budget", desc: "Quanto vuoi spendere per le spese che cambiano: spesa, ristoranti, svago…", premium: true, tour: "smart-budget", onClick: () => setView("budget") },
           { icon: "📆", label: "Rate e mutui", desc: "Mutuo, finanziamenti, prestiti: quanto hai pagato e quanto manca", premium: true,
             badge: rateActive.length ? `${rateActive.length} in corso` : undefined, onClick: () => setView("rate") },
           { icon: "🏦", label: "Accantonamenti", desc: "Spese annuali (assicurazione, bollo…): quanto mettere da parte ogni mese per non trovarti scoperto", premium: true,
@@ -828,17 +805,6 @@ export function SmartPageClient({
             Decidi in anticipo dove vanno i tuoi soldi: Flusso usa queste scelte per dirti in dashboard quanto avrai a fine mese.
           </p>
         </div>
-
-        {!isFree && legacyItems.length > 0 && (
-          <button onClick={() => setView("list-recurring")} className="rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 py-3 text-left flex items-center gap-3 hover:bg-orange-500/15 transition-colors">
-            <span className="text-lg">🧹</span>
-            <span className="text-sm flex-1">
-              <strong>{legacyItems.length} {legacyItems.length === 1 ? "spesa fissa" : "spese fisse"} da sistemare</strong>
-              <span className="block text-xs text-muted-foreground">Inserite col vecchio sistema: oggi non contano nelle previsioni.</span>
-            </span>
-            <span className="text-muted-foreground">›</span>
-          </button>
-        )}
 
         {SECTIONS.map(section => (
           <div key={section.title} className="flex flex-col gap-2">
@@ -897,6 +863,33 @@ export function SmartPageClient({
   // BUDGET
   // ═══════════════════════════════════════════════════════════════════════════
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SPESE FISSE (elenco e modulo: fixed-expenses-panel.tsx)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (view === "spese-fisse" || view === "spesa-fissa-form") {
+    return (
+      <FixedExpensesPanel
+        mode={view === "spese-fisse" ? "list" : "form"}
+        userId={userId}
+        items={recurringItems}
+        setItems={fn => setRecurringItems(prev => fn(prev) as unknown as RecurringExpense[])}
+        transactions={transactions}
+        categories={categories}
+        categoryBudgets={initialCategoryBudgets}
+        periodFrom={pStart}
+        periodTo={pEnd ?? pStart}
+        editId={fEditId}
+        dismissed={dismissedSuggestions}
+        onDismiss={dismissSuggestion}
+        onOpenForm={id => { setFEditId(id); setView("spesa-fissa-form"); }}
+        onBack={() => goBack(view === "spese-fisse" ? "cover" : "spese-fisse")}
+        onOpenBudget={() => setView("budget")}
+        onOpenRate={() => setView("rate")}
+      />
+    );
+  }
+
   if (view === "budget") {
     return (
       <BudgetPanel
@@ -904,12 +897,14 @@ export function SmartPageClient({
         categories={categories}
         transactions={transactions}
         recurringItems={recurringItems}
+        planItems={recurringItems.filter(it => isFixedExpense(it) || it.debt_type)}
         piggyBalance={piggyBalance}
         payDay={payDay}
         initialBudgets={initialCategoryBudgets}
         initialNotes={initialBudgetNotes}
         onBack={() => goBack("cover")}
         onOpenAccantonamenti={() => setView("accantonamenti")}
+        onOpenFixed={() => setView("spese-fisse")}
       />
     );
   }
@@ -1837,7 +1832,7 @@ export function SmartPageClient({
     return (
       <div className="flex flex-col gap-6 max-w-md mx-auto w-full">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => goBack("list-recurring")} />
+          <BackButton onClick={() => goBack("accantonamenti")} />
           <h1 className="text-xl font-bold">Modifica voce</h1>
         </div>
 
@@ -2171,146 +2166,6 @@ export function SmartPageClient({
         >
           {eSaving ? "Salvataggio…" : "Salva modifiche"}
         </button>
-      </div>
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // RECURRING LIST
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  if (view === "list-recurring") {
-    const usciteFisse    = legacyItems.filter(it => it.tipologia === "fissa");
-    const usciteVariabili = legacyItems.filter(it => it.tipologia === "variabile");
-    const entrate        = legacyItems.filter(it => it.tipologia === "entrata");
-
-    return (
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center gap-3">
-          <BackButton onClick={() => goBack("cover")} />
-          <h1 className="text-xl font-bold flex-1">Spese fisse da sistemare</h1>
-        </div>
-        <div className="rounded-xl border bg-muted/30 p-4 text-sm flex flex-col gap-2">
-          <p>Queste voci sono state inserite con il vecchio sistema e <strong>oggi non vengono contate</strong> nelle spese previste. Per ognuna:</p>
-          <ul className="list-disc pl-5 text-muted-foreground flex flex-col gap-1">
-            <li>mutuo, finanziamento o prestito → ricreala in <button onClick={() => setView("rate")} className="text-primary hover:underline">Rate e mutui</button>, poi eliminala da qui;</li>
-            <li>bolletta, affitto o abbonamento → aggiungi l&apos;importo al <button onClick={() => setView("budget")} className="text-primary hover:underline">Budget</button> della sua categoria, poi eliminala;</li>
-            <li>spesa annuale (assicurazione, bollo) → crea un <button onClick={() => setView("accantonamenti")} className="text-primary hover:underline">Accantonamento</button>;</li>
-            <li>non la paghi più → eliminala con 🗑.</li>
-          </ul>
-        </div>
-
-        {recurringLoading ? (
-          <div className="animate-pulse flex flex-col gap-3">
-            {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl bg-muted" />)}
-          </div>
-        ) : legacyItems.length === 0 ? (
-          <div className="flex flex-col items-center gap-4 py-16 text-center">
-            <span className="text-5xl">✅</span>
-            <p className="text-muted-foreground">Niente da sistemare: tutte le spese fisse sono nel posto giusto.</p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-6">
-            {[
-              { label: "💸 Uscite fisse",    items: usciteFisse },
-              { label: "📊 Uscite variabili", items: usciteVariabili },
-              { label: "💰 Entrate",          items: entrate },
-            ]
-              .filter(g => g.items.length > 0)
-              .map(group => (
-                <div key={group.label} className="flex flex-col gap-2">
-                  <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    {group.label}
-                  </h2>
-                  {group.items.map(item => (
-                    <div key={item.id} className="rounded-xl border p-4 flex items-center gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">
-                          {item.name}
-                          {item.secondary_name && (
-                            <span className="text-muted-foreground font-normal"> ({item.secondary_name})</span>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {item.tipologia === "variabile" && item.amount_max
-                            ? `${fmt(item.amount)} – ${fmt(item.amount_max)}`
-                            : fmt(item.amount)}
-                          {" · "}{freqLabel(item)}
-                          {item.frequency === "annuale" && item.due_month
-                            ? ` · ${new Date(2000, item.due_month - 1).toLocaleString("it-IT", { month: "long" })}${item.due_day ? ` ${item.due_day}` : ""}`
-                            : item.due_day ? ` · giorno ${item.due_day}` : ""}
-                          {item.end_date ? ` · fino al ${new Date(item.end_date).toLocaleDateString("it-IT")}` : ""}
-                        </div>
-
-                        {/* Speso questo mese + prossima uscita */}
-                        {(() => {
-                          const kws = effectiveKws(item);
-                          const isUscita = item.tipologia !== "entrata";
-                          const periodTxs = transactions.filter(
-                            t => t.date >= pStart && (pEnd ? t.date <= pEnd : true)
-                          );
-                          const matchedTxs = kws.length > 0
-                            ? periodTxs.filter(t => isUscita ? Number(t.amount) < 0 : Number(t.amount) > 0)
-                                .filter(t => txMatchesKws(t, kws))
-                            : item.category_id
-                            ? periodTxs.filter(t => isUscita ? Number(t.amount) < 0 : Number(t.amount) > 0)
-                                .filter(t => t.category_id === item.category_id)
-                            : [];
-                          const spent = matchedTxs.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-                          const next = nextOccurrence(item, transactions);
-                          const hasData = spent > 0 || next !== null;
-                          if (!hasData) return null;
-                          return (
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 pt-2 border-t border-dashed">
-                              {spent > 0 && (
-                                <span className="text-xs flex items-center gap-1">
-                                  <span className="text-muted-foreground">{isUscita ? "Speso" : "Ricevuto"} questo mese:</span>
-                                  <span className="font-semibold text-foreground">{fmt(spent)}</span>
-                                </span>
-                              )}
-                              {spent === 0 && kws.length > 0 && (
-                                <span className="text-xs text-muted-foreground italic">Nessuna transazione questo mese</span>
-                              )}
-                              {next && (
-                                <span className="text-xs flex items-center gap-1">
-                                  <span className="text-muted-foreground">Prossima:</span>
-                                  <span className="font-semibold text-foreground">
-                                    {next.toLocaleDateString("it-IT", { day: "numeric", month: "short" })}
-                                  </span>
-                                  <span className="text-muted-foreground">·</span>
-                                  <span className="font-medium">
-                                    {item.tipologia === "variabile" && item.amount_max
-                                      ? `${fmt(item.amount)}–${fmt(item.amount_max)}`
-                                      : fmt(item.amount)}
-                                  </span>
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                      <div className="flex gap-2 shrink-0">
-                        <button
-                          onClick={() => goEditRecurring(item)}
-                          className="text-xs text-muted-foreground hover:text-foreground border rounded-lg px-2 py-1 transition-colors"
-                          title="Modifica"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={() => handleDeleteRecurring(item.id)}
-                          className="text-xs text-muted-foreground hover:text-destructive border rounded-lg px-2 py-1 transition-colors"
-                          title="Elimina"
-                        >
-                          🗑
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-          </div>
-        )}
       </div>
     );
   }

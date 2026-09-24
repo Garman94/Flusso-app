@@ -671,11 +671,13 @@ export function rollBalance(
 export type PeriodProjection = {
   /** entrate previste non ancora arrivate */
   remainingIncome: number;
-  /** spese previste non ancora fatte */
+  /** spese previste non ancora fatte (comprese le spese fisse e le rate ancora da pagare) */
   remainingExpenses: number;
+  /** di cui spese fisse e rate riconoscibili ancora da pagare */
+  committedRemaining: number;
   /** saldo stimato a fine periodo = saldo di oggi + entrate ancora attese − spese ancora previste */
   endBalance: number;
-  /** previste − già spese: negativo = previsioni superate */
+  /** previste − già spese, escluse spese fisse e rate riconoscibili: negativo = previsioni superate */
   leftToSpend: number;
 };
 
@@ -683,6 +685,12 @@ export type PeriodProjection = {
  * Stima di fine periodo. A differenza di "entrate previste − spese previste" (che è il
  * risparmio del mese, non un saldo) parte da quanto c'è davvero sul conto oggi e aggiunge
  * solo ciò che deve ancora succedere, quindi resta sensata anche a metà periodo.
+ *
+ * `committedRemaining` sono le spese fisse e le rate ancora da pagare che Flusso sa
+ * riconoscere (lib/fixed-expenses.ts → splitPlan): si tolgono a parte, e in quel caso
+ * `expectedExpenses`/`expensesSoFar` sono solo il resto. Così a inizio mese "puoi ancora
+ * spendere" non comprende l'affitto che deve ancora partire, e spendere troppo al
+ * supermercato non fa sparire dalla stima la bolletta non ancora arrivata.
  */
 export function projectPeriodEnd(p: {
   balanceToday: number;
@@ -690,12 +698,15 @@ export function projectPeriodEnd(p: {
   expensesSoFar: number;
   expectedIncome: number;
   expectedExpenses: number;
+  committedRemaining?: number;
 }): PeriodProjection {
   const remainingIncome = Math.max(0, p.expectedIncome - p.incomeSoFar);
-  const remainingExpenses = Math.max(0, p.expectedExpenses - p.expensesSoFar);
+  const committedRemaining = p.committedRemaining ?? 0;
+  const remainingExpenses = committedRemaining + Math.max(0, p.expectedExpenses - p.expensesSoFar);
   return {
     remainingIncome,
     remainingExpenses,
+    committedRemaining,
     endBalance: p.balanceToday + remainingIncome - remainingExpenses,
     leftToSpend: p.expectedExpenses - p.expensesSoFar,
   };
