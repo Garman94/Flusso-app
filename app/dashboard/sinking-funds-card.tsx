@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { aggregateSinkingFunds } from "@/lib/calculations";
+import { aggregateSinkingFunds, potsForSinkingFunds } from "@/lib/calculations";
 import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
 
 type RecurringRow = {
@@ -50,14 +50,13 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
         .select("id, name, tipologia, amount, amount_max, next_due_date, saving_start_date, categories(icon)")
         .eq("user_id", userId)
         .not("next_due_date", "is", null),
-      supabase
-        .from("profiles")
-        .select("piggy_balance")
-        .eq("id", userId)
-        .single(),
-    ]).then(([recurringRes, profileRes]) => {
+      supabase.from("savings_pots").select("id, current_balance").eq("user_id", userId),
+      supabase.from("goals").select("savings_pot_id").eq("user_id", userId),
+    ]).then(([recurringRes, potsRes, goalsRes]) => {
       setItems((recurringRes.data ?? []) as RecurringRow[]);
-      setPiggyBalance(Number(profileRes.data?.piggy_balance ?? 0));
+      // Solo i salvadanai non collegati a un obiettivo: quei soldi sono già "per l'obiettivo"
+      // e contarli anche qui dava un "in anticipo" finto (stessi euro contati due volte).
+      setPiggyBalance(potsForSinkingFunds(potsRes.data ?? [], (goalsRes.data ?? []).map(g => g.savings_pot_id)));
       setLoading(false);
     });
   }, [userId]);
@@ -102,7 +101,7 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
 
   return (
     <a
-      href="/dashboard/smart"
+      href="/dashboard/smart?v=accantonamenti"
       className="block rounded-2xl border-2 border-border hover:border-primary/50 transition-colors p-5"
     >
       {/* Header */}
@@ -128,11 +127,11 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
 
       {/* Piggy vs expected */}
       <div className="flex items-center justify-between text-sm mb-1">
-        <span className="text-muted-foreground">Salvadanaio attuale</span>
+        <span className="text-muted-foreground">Nei salvadanai (esclusi quelli degli obiettivi)</span>
         <span className="font-semibold tabular-nums">{fmt(summary.piggy_balance)}</span>
       </div>
       <div className="flex items-center justify-between text-sm pb-4 border-b">
-        <span className="text-muted-foreground">Delta</span>
+        <span className="text-muted-foreground">Differenza</span>
         <span className={`font-bold tabular-nums ${summary.delta >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
           {summary.delta >= 0 ? "+" : ""}{fmt(summary.delta)}
         </span>

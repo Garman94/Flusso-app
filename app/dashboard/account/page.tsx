@@ -41,7 +41,7 @@ async function AccountContent() {
     <div className="flex flex-col gap-8 max-w-2xl">
       <Suspense><PageTour path="/dashboard/account" /></Suspense>
       <div>
-        <h1 className="text-2xl font-bold">Impostazioni account</h1>
+        <h1 className="text-2xl font-bold">Il tuo account</h1>
         <p className="text-muted-foreground mt-1">Gestisci il tuo profilo e l&apos;abbonamento.</p>
       </div>
 

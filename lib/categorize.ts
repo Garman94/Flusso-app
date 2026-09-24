@@ -92,3 +92,48 @@ export function guessCategoryName(bankCategory: string, description: string): st
   if (mapped) return mapped;
   return guessFromDescription(description);
 }
+
+// ── Regole dell'utente ──────────────────────────────────────────────────────
+
+export type UserRule = { value: string; category_id: string };
+
+/**
+ * Categoria (id) data da una regola dell'utente, o null. Le regole vincono sulle parole
+ * chiave predefinite: rappresentano una scelta esplicita. A parità vince la più lunga.
+ */
+export function matchUserRule(description: string, rules: UserRule[]): string | null {
+  const text = ` ${normalizeText(description)} `;
+  let best: { id: string; len: number } | null = null;
+  for (const r of rules) {
+    const v = normalizeText(r.value);
+    if (!v) continue;
+    if (text.includes(` ${v} `) || (v.length >= SHORT && text.includes(v))) {
+      if (!best || v.length > best.len) best = { id: r.category_id, len: v.length };
+    }
+  }
+  return best?.id ?? null;
+}
+
+// Parole che dicono COME è stato pagato, non A CHI: non servono a riconoscere un negozio.
+const NOT_A_MERCHANT = new Set([
+  "pagamento", "pagam", "pag", "pos", "carta", "card", "debit", "debito", "credito", "credit",
+  "addebito", "addebiti", "accredito", "sdd", "sepa", "rid", "core", "bonifico", "bonif",
+  "disposizione", "operazione", "op", "acquisto", "acquisti", "presso", "contactless", "nfc",
+  "mastercard", "visa", "maestro", "vpay", "bancomat", "circuito", "online", "internet",
+  "del", "della", "dello", "dei", "di", "da", "a", "al", "alla", "in", "il", "la", "lo", "le",
+  "e", "per", "favore", "ordinante", "beneficiario", "eur", "euro", "data", "ora", "ore",
+  "www", "n", "nr", "num", "rif", "tran", "trx", "cod", "id",
+]);
+
+/**
+ * Parola chiave da proporre per ricordare una categoria:
+ * "PAGAMENTO POS ESSELUNGA MILANO 12/09 CARTA 1234" → "esselunga".
+ * Se la prima parola utile è corta (≤ 3 lettere, es. "bar") si aggiunge la successiva.
+ */
+export function ruleKeyword(description: string): string | null {
+  const text = normalizeText(description.replace(/\b(google|apple|samsung)\s+pay\b/gi, " "));
+  const words = text.split(" ").filter(w => w.length > 1 && !/^\d+$/.test(w) && !NOT_A_MERCHANT.has(w));
+  if (words.length === 0) return null;
+  if (words[0].length >= 4 || words.length === 1) return words[0];
+  return `${words[0]} ${words[1]}`;
+}

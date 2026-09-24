@@ -18,18 +18,18 @@ import { updatePayDay } from "./pay-day-action";
 import { toast } from "sonner";
 import { PageTour } from "@/components/tour/page-tour";
 import { GettingStartedCard } from "./getting-started-card";
+import { currentPeriod } from "@/lib/period";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Profile = { full_name: string | null; plan: string; piggy_balance: number };
+
+type DashboardGoal = Goal & { monthly_contribution: number | null };
 
 type Props = {
   userId: string;
   profile: Profile;
   currentTxs: Transaction[];
-  prevTxsAmounts: number[];
-  goals: Goal[];
-  year: number;
-  month: number;
+  goals: DashboardGoal[];
   totalTxCount: number;
   uncategorizedCount: number;
   lastTxDate: string | null;
@@ -39,26 +39,13 @@ type Props = {
 };
 
 // ─── Settings Modal ───────────────────────────────────────────────────────────
-function adjustBizDay(date: Date): Date {
-  const dow = date.getDay();
-  if (dow === 6) return new Date(date.getTime() - 86_400_000);
-  if (dow === 0) return new Date(date.getTime() + 86_400_000);
-  return date;
-}
-
 function computePayPeriodPreview(day: number): { from: string; to: string } {
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = today.getMonth();
-  let start = adjustBizDay(new Date(y, m, day));
-  if (today < start) start = adjustBizDay(new Date(y, m - 1, day));
-  const nextStart = adjustBizDay(new Date(start.getFullYear(), start.getMonth() + 1, day));
-  const end = new Date(nextStart.getTime() - 86_400_000);
+  const { from, to } = currentPeriod(day);
   const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "long" };
   const optsYear: Intl.DateTimeFormatOptions = { day: "numeric", month: "long", year: "numeric" };
   return {
-    from: start.toLocaleDateString("it-IT", opts),
-    to:   end.toLocaleDateString("it-IT", optsYear),
+    from: new Date(from + "T00:00:00").toLocaleDateString("it-IT", opts),
+    to:   new Date(to + "T00:00:00").toLocaleDateString("it-IT", optsYear),
   };
 }
 
@@ -86,12 +73,14 @@ function SettingsModal({ payDay, onClose }: { payDay: number; onClose: () => voi
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-background border rounded-xl p-6 max-w-sm w-full mx-4 flex flex-col gap-5 shadow-xl">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-lg">Impostazioni dashboard</h2>
+          <h2 className="font-semibold text-lg">Quando inizia il tuo mese?</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors text-xl leading-none">✕</button>
         </div>
 
         <div className="flex flex-col gap-4">
-          <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide text-xs">Periodo mensile</p>
+          <p className="text-sm text-muted-foreground">
+            Se ti pagano il 27, è più utile vedere le spese dal 27 al 26: così lo stipendio e le spese che copre stanno nello stesso periodo.
+          </p>
 
           <label className="flex items-start gap-3 cursor-pointer group">
             <input
@@ -168,8 +157,8 @@ function SettingsModal({ payDay, onClose }: { payDay: number; onClose: () => voi
 
 // ─── Main Dashboard Client ────────────────────────────────────────────────────
 export function DashboardClient({
-  userId, profile, currentTxs, prevTxsAmounts: _prevTxsAmounts, goals,
-  year: _year, month: _month, totalTxCount, uncategorizedCount, lastTxDate,
+  userId, profile, currentTxs, goals,
+  totalTxCount, uncategorizedCount, lastTxDate,
   payDay, periodFrom, periodTo,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
@@ -178,15 +167,8 @@ export function DashboardClient({
 
 
   const now = new Date();
-
-  // ── Period-aware day calculations ──────────────────────────────────────────
   const periodStart = new Date(periodFrom + "T00:00:00");
   const periodEnd   = new Date(periodTo   + "T00:00:00");
-  const totalDays   = Math.round((periodEnd.getTime() - periodStart.getTime()) / 86_400_000) + 1;
-  const daysPassed  = Math.max(1, Math.min(totalDays,
-    Math.floor((now.getTime() - periodStart.getTime()) / 86_400_000) + 1
-  ));
-  const _daysRemaining = Math.max(0, totalDays - daysPassed);
 
   // ── Period label ─────────────────────────────────────────────────────────
   const periodLabel = payDay > 0
@@ -194,15 +176,11 @@ export function DashboardClient({
     : now.toLocaleString("it-IT", { month: "long", year: "numeric" });
 
   // ── Aggregates ────────────────────────────────────────────────────────────
-  // Spostamenti, Salvadanaio e Accantonamenti sono trasferimenti interni: esclusi da entrate/uscite/score
+  // Spostamenti e Salvadanaio sono trasferimenti interni: esclusi da entrate/uscite
   const isTransfer = (t: typeof currentTxs[number]) => isTransferCategory(t.categories?.name);
 
   const spendableTxs = currentTxs.filter(t => !isTransfer(t));
-  const income      = spendableTxs.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
-  const expensesAbs = spendableTxs.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-  // ── Calculations ─────────────────────────────────────────────────────────
-  const macro     = calculateCategoryBreakdown(spendableTxs);
-  const monthlySavings = income - expensesAbs;
+  const macro = calculateCategoryBreakdown(spendableTxs);
 
   const hasTransactions    = currentTxs.length > 0;
   const hasAnyTransactions = totalTxCount > 0;
@@ -226,22 +204,17 @@ export function DashboardClient({
       {/* ── Header ── */}
       <div className="flex items-start justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold">
-              Ciao{profile.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}!
-            </h1>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted/50"
-              title="Impostazioni dashboard"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </button>
-          </div>
-          <p className="text-muted-foreground text-sm mt-0.5">{periodLabel}</p>
+          <h1 className="text-2xl font-bold">
+            Ciao{profile.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}!
+          </h1>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="text-muted-foreground text-sm mt-0.5 hover:text-foreground transition-colors inline-flex items-center gap-1"
+            title="Cambia quando inizia il tuo mese"
+          >
+            {periodLabel}
+            <span className="text-xs underline">cambia</span>
+          </button>
         </div>
 
         {/* Report mesi precedenti */}
@@ -257,15 +230,12 @@ export function DashboardClient({
             <line x1="8" y1="2" x2="8" y2="6" />
             <line x1="3" y1="10" x2="21" y2="10" />
           </svg>
-          <span className="hidden sm:inline">Mesi precedenti</span>
+          <span>Mesi passati</span>
         </button>
       </div>
 
       {/* ── Primi passi: finché non c'è nessuna transazione ── */}
-      {totalTxCount === 0 && <GettingStartedCard payDay={payDay} goalsCount={goals.length} />}
-
-      {/* ── Banner: spese scadute non pagate ── */}
-      <OverdueExpensesBanner userId={userId} />
+      {totalTxCount === 0 && <GettingStartedCard payDay={payDay} goalsCount={goals.length} onSetPayDay={() => setShowSettings(true)} />}
 
       {/* ── Banner: nessun movimento questo periodo ── */}
       {hasAnyTransactions && !hasTransactions && lastTxDate && (
@@ -302,7 +272,7 @@ export function DashboardClient({
         </Link>
       )}
 
-      {/* ── Saldo attuale + spese/entrate effettive e previste + salvadanai ── */}
+      {/* ── Saldo di oggi, stima di fine periodo, spese/entrate rispetto alle previsioni ── */}
       <BalanceHeroCard
         userId={userId}
         periodFrom={periodFrom}
@@ -310,19 +280,8 @@ export function DashboardClient({
         piggyBalance={profile.piggy_balance}
       />
 
-      {/* ── Empty state ── */}
-      {!hasAnyTransactions && (
-        <div className="rounded-xl border border-dashed p-8 sm:p-12 flex flex-col items-center gap-4 text-center">
-          <span className="text-5xl">💸</span>
-          <h2 className="font-semibold text-lg">Nessuna transazione ancora</h2>
-          <p className="text-muted-foreground text-sm max-w-xs">
-            Vai alla pagina Transazioni per aggiungere i tuoi movimenti manualmente o caricare un file Excel della tua banca.
-          </p>
-          <Link href="/dashboard/transazioni" className="text-sm text-primary hover:underline">
-            Vai alle transazioni →
-          </Link>
-        </div>
-      )}
+      {/* ── Rate scadute non ancora segnate come pagate ── */}
+      <OverdueExpensesBanner userId={userId} />
 
       {/* ── Bottom 2 columns ── */}
       {hasTransactions && (
@@ -424,14 +383,14 @@ export function DashboardClient({
           <div className="rounded-xl border p-5 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Obiettivi finanziari</h2>
-              <Link href="/dashboard/obiettivi" className="text-xs text-primary hover:underline">Gestisci →</Link>
+              <Link href="/dashboard/smart?v=list-goals" className="text-xs text-primary hover:underline">Gestisci →</Link>
             </div>
 
             {goals.length === 0 ? (
               <div className="flex flex-col items-center gap-3 py-6 text-center">
                 <span className="text-4xl">🎯</span>
                 <p className="text-sm text-muted-foreground">Nessun obiettivo ancora.</p>
-                <Link href="/dashboard/obiettivi" className="text-xs text-primary hover:underline">
+                <Link href="/dashboard/smart?v=add-goal" className="text-xs text-primary hover:underline">
                   Crea il primo obiettivo
                 </Link>
               </div>
@@ -440,7 +399,10 @@ export function DashboardClient({
                 {goals.map(g => {
                   const pct = Math.min(100, (Number(g.current_amount) / Number(g.target_amount)) * 100);
                   const completed = pct >= 100;
-                  const eta = estimateGoalCompletion(g, monthlySavings);
+                  // Stessa stima del dettaglio obiettivo: la quota mensile che l'utente ha deciso.
+                  // Prima si usava "entrate − spese del periodo finora", che cambia ogni giorno e
+                  // assegnava tutto il risparmio a ciascun obiettivo contemporaneamente.
+                  const eta = estimateGoalCompletion(g, Number(g.monthly_contribution) || 0);
                   return (
                     <div key={g.id} className="flex flex-col gap-2">
                       <div className="flex items-center justify-between">

@@ -1,6 +1,6 @@
 "use client";
 
-import { toISODate } from "@/lib/dates";
+import { computePeriodRange, currentPeriod, previousPeriods } from "@/lib/period";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -22,6 +22,8 @@ type Props = {
   transactions: Tx[];
   recurringItems: RecurringItem[];
   piggyBalance: number;
+  /** giorno di paga (0 = mese solare): il "mese" del budget è lo stesso periodo della dashboard */
+  payDay: number;
   initialBudgets: BudgetRow[];
   initialNotes: NoteRow[];
   onBack: () => void;
@@ -33,14 +35,14 @@ const ACCANTONAMENTI_NAME = "accantonamenti";
 // Categorie di trasferimento interno e reddito: non hanno senso come voce di budget.
 const EXCLUDED_CATEGORY_NAMES = new Set(["stipendio", "spostamenti", "salvadanaio"]);
 
-function monthBounds(year: number, month: number) {
-  const from = toISODate(new Date(year, month, 1));
-  const to = toISODate(new Date(year, month + 1, 0));
-  return { from, to };
-}
-
-function monthLabel(year: number, month: number) {
-  return new Date(year, month - 1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+/** Etichetta di un periodo dello storico (month 1-12): il mese, o l'intervallo se si parte dal giorno di paga. */
+function periodLabel(payDay: number, year: number, month: number) {
+  if (payDay === 0) {
+    return new Date(year, month - 1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+  }
+  const { from, to } = computePeriodRange(payDay, year, month - 1);
+  const d = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+  return `${d(from)} – ${d(to)} ${year}`;
 }
 
 function noteKey(categoryId: string, year: number, month: number) {
@@ -48,7 +50,7 @@ function noteKey(categoryId: string, year: number, month: number) {
 }
 
 export function BudgetPanel({
-  userId, categories, transactions, recurringItems, piggyBalance,
+  userId, categories, transactions, recurringItems, piggyBalance, payDay,
   initialBudgets, initialNotes, onBack, onOpenAccantonamenti,
 }: Props) {
   const budgetCategories = useMemo(
@@ -104,9 +106,10 @@ export function BudgetPanel({
   const [noteInput, setNoteInput] = useState("");
   const [savingNoteKey, setSavingNoteKey] = useState<string | null>(null);
 
-  const now = new Date();
-  const calYear = now.getFullYear(), calMonth = now.getMonth();
-  const { from: curFrom, to: curTo } = monthBounds(calYear, calMonth);
+  // Stesso periodo della dashboard: prima qui si usava il mese solare, così chi imposta
+  // il giorno di paga vedeva due "speso questo mese" diversi tra Dashboard e Budget.
+  const cur = currentPeriod(payDay);
+  const curFrom = cur.from, curTo = cur.to;
 
   const currentSpend = useMemo(() => {
     const map: Record<string, number> = {};
@@ -132,19 +135,37 @@ export function BudgetPanel({
 
   const category = budgetCategories.find(c => c.id === detailId) ?? null;
 
+  // Ordine dell'elenco: prima le categorie con un budget o con spese negli ultimi tre
+  // periodi (le più pesanti in cima), poi le altre. In ordine alfabetico le 20 categorie
+  // "Da impostare" nascondevano quelle che contano.
+  const { usedCategories, unusedCategories } = useMemo(() => {
+    const recent = previousPeriods(payDay, cur.year, cur.month, 3);
+    const since = recent.length ? recent[recent.length - 1].from : curFrom;
+    const weight: Record<string, number> = {};
+    for (const t of transactions) {
+      if (!t.category_id || Number(t.amount) >= 0 || t.date < since || t.date > curTo) continue;
+      weight[t.category_id] = (weight[t.category_id] ?? 0) + Math.abs(Number(t.amount));
+    }
+    const used = budgetCategories
+      .filter(c => (weight[c.id] ?? 0) > 0 || effectiveBudget(c.id) > 0)
+      .sort((a, b) => Math.max(weight[b.id] ?? 0, effectiveBudget(b.id)) - Math.max(weight[a.id] ?? 0, effectiveBudget(a.id)));
+    const usedIds = new Set(used.map(c => c.id));
+    return { usedCategories: used, unusedCategories: budgetCategories.filter(c => !usedIds.has(c.id)) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetCategories, transactions, payDay, cur.year, cur.month, curFrom, curTo, budgets, sinkingSummary.this_month_total]);
+  const [showUnused, setShowUnused] = useState(false);
+
   const analysis = useMemo(() => {
     if (!category) return null;
     const months: MonthSpend[] = [];
-    for (let i = 1; i <= HISTORY_MONTHS; i++) {
-      const d = new Date(calYear, calMonth - i, 1);
-      const { from, to } = monthBounds(d.getFullYear(), d.getMonth());
+    for (const p of previousPeriods(payDay, cur.year, cur.month, HISTORY_MONTHS)) {
       const total = transactions
-        .filter(t => t.category_id === category.id && t.date >= from && t.date <= to && Number(t.amount) < 0)
+        .filter(t => t.category_id === category.id && t.date >= p.from && t.date <= p.to && Number(t.amount) < 0)
         .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-      months.push({ year: d.getFullYear(), month: d.getMonth() + 1, total });
+      months.push({ year: p.year, month: p.month, total });
     }
     return classifyCategoryMonths(months);
-  }, [category, transactions, calYear, calMonth]);
+  }, [category, transactions, payDay, cur.year, cur.month]);
 
   function openDetail(catId: string) {
     setDetailId(catId);
@@ -275,7 +296,7 @@ export function BudgetPanel({
             <span className="text-2xl font-bold tabular-nums">{formatEuro(budget)}</span>
           )}
           <span className="text-xs text-muted-foreground">
-            Speso questo mese: {formatEuro(currentSpend[category.id] ?? 0)}
+            Speso in questo periodo: {formatEuro(currentSpend[category.id] ?? 0)}
             {analysis.average > 0 && ` · Media mesi normali: ${formatEuro(analysis.average)}`}
           </span>
         </div>
@@ -290,7 +311,7 @@ export function BudgetPanel({
               return (
                 <div key={key} className="py-3 flex flex-col gap-1.5">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm capitalize">{monthLabel(m.year, m.month)}</span>
+                    <span className="text-sm capitalize">{periodLabel(payDay, m.year, m.month)}</span>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium tabular-nums">{formatEuro(m.total)}</span>
                       {m.isSpecial && (
@@ -367,13 +388,18 @@ export function BudgetPanel({
       </div>
 
       <div className="rounded-2xl border-2 p-5 flex flex-col gap-1">
-        <span className="text-xs text-muted-foreground uppercase tracking-wide">Budget del mese</span>
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">Budget del periodo</span>
         <span className="text-2xl font-bold tabular-nums">{formatEuro(totalBudget)}</span>
-        <span className="text-xs text-muted-foreground">Speso finora questo mese: {formatEuro(totalSpent)}</span>
+        <span className="text-xs text-muted-foreground">Speso finora in questo periodo: {formatEuro(totalSpent)}</span>
       </div>
 
       <div className="rounded-xl border p-2 flex flex-col divide-y">
-        {budgetCategories.map(c => {
+        {usedCategories.length === 0 && (
+          <p className="text-sm text-muted-foreground px-3 py-3">
+            Non ci sono ancora spese categorizzate: importa l&apos;estratto conto e qui compariranno le categorie in cui spendi di più.
+          </p>
+        )}
+        {[...usedCategories, ...(showUnused ? unusedCategories : [])].map(c => {
           const budget = effectiveBudget(c.id);
           const isLocked = c.id === accantonamentiId;
           const spent = currentSpend[c.id] ?? 0;
@@ -409,6 +435,14 @@ export function BudgetPanel({
             </button>
           );
         })}
+        {unusedCategories.length > 0 && (
+          <button
+            onClick={() => setShowUnused(v => !v)}
+            className="text-sm text-muted-foreground hover:text-foreground px-3 py-3 text-left"
+          >
+            {showUnused ? "Nascondi le categorie senza spese" : `Mostra altre ${unusedCategories.length} categorie senza spese`}
+          </button>
+        )}
       </div>
     </div>
   );

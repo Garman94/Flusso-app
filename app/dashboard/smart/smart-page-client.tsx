@@ -1,11 +1,14 @@
 "use client";
 
 import { toISODate, todayISO } from "@/lib/dates";
-import { useEffect, useState, Suspense } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { TrackOnMount } from "@/components/track-on-mount";
 import { PageTour } from "@/components/tour/page-tour";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estimateGoalCompletion, computeDebtProgress } from "@/lib/calculations";
+import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estimateGoalCompletion, computeDebtProgress, potsForSinkingFunds } from "@/lib/calculations";
 import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
 import { resetSavingStartDate, markSinkingFundPaid } from "./sinking-fund-actions";
 import { addGoalContribution } from "./goal-actions";
@@ -53,6 +56,8 @@ type CategoryBudgetNote = { category_id: string; year: number; month: number; no
 
 type Props = {
   userId: string; plan: string; initialGoals: Goal[];
+  /** piano gratuito con prova Premium già usata: cambia il testo del blocco */
+  trialExpired?: boolean;
   transactions: Transaction[]; categories: Category[];
   initialRecurring?: RecurringExpense[];
   initialPots?: PotLite[];
@@ -288,15 +293,56 @@ const ACCANTONAMENTO_FREQ_OPTIONS: { value: Frequency; label: string }[] = [
   { value: "personalizzata", label: "Personalizzato" },
 ];
 
+// ─── Navigazione ─────────────────────────────────────────────────────────────
+// La vista corrente sta nell'URL (?v=budget): così il tasto Indietro del telefono e del
+// browser torna al livello precedente invece di uscire dalla sezione, e dalla dashboard
+// si può aprire direttamente il Budget o gli Obiettivi.
+const VIEWS: readonly View[] = [
+  "cover", "add-recurring", "edit-recurring", "list-recurring", "add-goal", "list-goals", "goal-detail",
+  "previsioni", "impegni", "accantonamenti", "accantonamento-form", "budget", "rate", "rate-form",
+];
+function parseView(v: string | null): View {
+  if (!v || !(VIEWS as readonly string[]).includes(v)) return "cover";
+  return v === "impegni" ? "cover" : (v as View); // il vecchio sottomenu non esiste più
+}
+const viewHref = (v: View) => (v === "cover" ? "/dashboard/smart" : `/dashboard/smart?v=${v}`);
+
+/** Funzioni solo Premium: al piano gratuito resta Obiettivi (1). */
+const PREMIUM_VIEWS: ReadonlySet<View> = new Set<View>([
+  "budget", "rate", "rate-form", "accantonamenti", "accantonamento-form",
+  "list-recurring", "edit-recurring", "add-recurring", "previsioni",
+]);
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function SmartPageClient({
-  userId, plan, initialGoals, transactions, categories,
+  userId, plan, trialExpired = false, initialGoals, transactions, categories,
   initialRecurring, initialPots = [], initialContributions = [], piggyBalance = 0,
-  payDay: _payDay = 0, periodFrom, periodTo,
+  payDay = 0, periodFrom, periodTo,
   initialCategoryBudgets = [], initialBudgetNotes = [],
 }: Props) {
-  const [view, setView] = useState<View>("cover");
+  const searchParams = useSearchParams();
+  const view = parseView(searchParams.get("v"));
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
+  /** Apre una vista aggiungendo un passo alla cronologia (Next sincronizza useSearchParams). */
+  const setView = useCallback((v: View) => {
+    const href = viewHref(v);
+    if (href === window.location.pathname + window.location.search) return;
+    window.history.pushState({ flussoSmartFrom: viewRef.current }, "", href);
+  }, []);
+
+  /**
+   * Torna indietro: se la vista corrente l'abbiamo aperta noi, è un vero "indietro"
+   * (come il tasto del telefono); se ci si è arrivati da un link esterno (es. dalla
+   * dashboard), si sostituisce con la vista `parent` senza allungare la cronologia.
+   */
+  const goBack = useCallback((parent: View) => {
+    const from = (window.history.state as { flussoSmartFrom?: View } | null)?.flussoSmartFrom;
+    if (from !== undefined) { window.history.back(); return; }
+    window.history.replaceState({}, "", viewHref(parent));
+  }, []);
   const [recurringItems, setRecurringItems] = useState<RecurringExpense[]>(initialRecurring ?? []);
   const [recurringLoading, setRecurringLoading] = useState(!initialRecurring);
   const [goals, setGoals] = useState(initialGoals);
@@ -365,6 +411,13 @@ export function SmartPageClient({
   const monthTxs = transactions.filter(
     t => Number(t.amount) < 0 && t.date >= pStart && (pEnd ? t.date <= pEnd : true)
   );
+
+  // Dopo un ricaricamento, una vista che dipende da cosa si stava guardando (dettaglio,
+  // modifica) non ha più i dati: si torna alla lista corrispondente.
+  useEffect(() => {
+    if (view === "goal-detail" && !goals.some(g => g.id === gDetailId)) window.history.replaceState({}, "", viewHref("list-goals"));
+    if (view === "edit-recurring" && !eEditId) window.history.replaceState({}, "", viewHref("list-recurring"));
+  }, [view, goals, gDetailId, eEditId]);
 
   // ── Navigation helpers ─────────────────────────────────────────────────────
 
@@ -438,7 +491,7 @@ export function SmartPageClient({
       if (error) toast.error(`Errore: ${error.message}`);
       else {
         setRecurringItems(prev => prev.map(it => it.id === dEditId ? data as RecurringExpense : it));
-        toast.success("Rata modificata!"); setView("rate");
+        toast.success("Rata modificata!"); goBack("rate");
       }
     } else {
       const { data, error } = await supabase
@@ -446,7 +499,7 @@ export function SmartPageClient({
       if (error) toast.error(`Errore: ${error.message}`);
       else {
         setRecurringItems(prev => [...prev, data as RecurringExpense]);
-        toast.success("Rata aggiunta!"); setView("rate");
+        toast.success("Rata aggiunta!"); goBack("rate");
       }
     }
     setDSaving(false);
@@ -486,7 +539,7 @@ export function SmartPageClient({
     if (error) toast.error(`Errore: ${error.message}`);
     else {
       setRecurringItems(prev => [...prev, data as RecurringExpense]);
-      toast.success("Accantonamento aggiunto!"); setView("accantonamenti");
+      toast.success("Accantonamento aggiunto!"); goBack("accantonamenti");
     }
     setASaving(false);
   }
@@ -566,7 +619,7 @@ export function SmartPageClient({
       if (error) toast.error(`Errore: ${error.message}`);
       else {
         setRecurringItems(prev => prev.map(it => it.id === rEditId ? data as RecurringExpense : it));
-        toast.success("Modificata!"); setView("list-recurring");
+        toast.success("Modificata!"); goBack("list-recurring");
       }
     } else {
       const { data, error } = await supabase
@@ -654,7 +707,7 @@ export function SmartPageClient({
       if (error) toast.error("Errore.");
       else {
         setGoals(prev => prev.map(g => g.id === gEditId ? data as Goal : g));
-        toast.success("Obiettivo aggiornato!"); setView("list-goals");
+        toast.success("Obiettivo aggiornato!"); goBack("list-goals");
       }
     } else {
       const { data, error } = await supabase
@@ -662,7 +715,7 @@ export function SmartPageClient({
       if (error) toast.error("Errore.");
       else {
         setGoals(prev => [data as Goal, ...prev]);
-        toast.success("Obiettivo creato!"); setView("list-goals");
+        toast.success("Obiettivo creato!"); goBack("list-goals");
       }
     }
     setGSaving(false);
@@ -688,32 +741,114 @@ export function SmartPageClient({
   // COVER
   // ═══════════════════════════════════════════════════════════════════════════
 
+  const isFree = plan === "free";
+  // Voci create col vecchio "Aggiungi spesa ricorrente": né Rata né Accantonamento.
+  // Non entrano più nelle previsioni, quindi vanno mostrate da qualche parte.
+  const legacyItems = recurringItems.filter(it => !it.debt_type && !it.next_due_date);
+
+  if (isFree && PREMIUM_VIEWS.has(view)) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-6 py-16 text-center max-w-md mx-auto">
+        <TrackOnMount name="smart_locked_viewed" props={{ trial_expired: trialExpired, view }} />
+        <div className="self-start"><BackButton onClick={() => goBack("cover")} /></div>
+        <span className="text-6xl">🔒</span>
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl font-bold">{trialExpired ? "La prova Premium è finita" : "Funzione Premium"}</h1>
+          <p className="text-muted-foreground">
+            Budget per categoria, rate e accantonamenti servono a Flusso per dirti quanto avrai a fine mese.
+            {trialExpired ? " I tuoi dati restano tutti qui." : ""}
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 w-full">
+          <Link
+            href="/dashboard/account"
+            className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-6 py-3 text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            Passa a Premium
+          </Link>
+          <Link href="/dashboard/account" className="text-sm text-muted-foreground hover:text-foreground underline">
+            Hai un codice coupon? Riscattalo qui
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (view === "cover") {
-    const COVER_ITEMS = [
-      { icon: "🎯", label: "I miei obiettivi",             action: () => setView("list-goals"), tourAttr: "smart-obiettivi" },
-      { icon: "💳", label: "Rate, Accantonamenti, Budget", action: () => setView("impegni"),     tourAttr: "smart-impegni" },
-    ] as const;
+    const rateActive = recurringItems.filter(it => it.debt_type && it.debt_start_date && it.debt_total_amount
+      && computeDebtProgress({ totalAmount: it.debt_total_amount, monthlyAmount: it.amount, startDate: it.debt_start_date }).status === "active");
+    const accantonamentiCount = recurringItems.filter(it => it.next_due_date).length;
+    const potsTotal = pots.reduce((sum, p) => sum + Number(p.current_balance), 0);
+
+    type Item = { icon: string; label: string; desc: string; badge?: string; premium: boolean; tour?: string; onClick?: () => void; href?: string };
+    const SECTIONS: { title: string; items: Item[] }[] = [
+      {
+        title: "Le spese del mese",
+        items: [
+          { icon: "🧮", label: "Budget", desc: "Quanto vuoi spendere ogni mese per categoria: spesa, ristoranti, svago…", premium: true, tour: "smart-budget", onClick: () => setView("budget") },
+          { icon: "📆", label: "Rate e mutui", desc: "Mutuo, finanziamenti, prestiti: quanto hai pagato e quanto manca", premium: true,
+            badge: rateActive.length ? `${rateActive.length} in corso` : undefined, onClick: () => setView("rate") },
+          { icon: "🏦", label: "Accantonamenti", desc: "Spese annuali (assicurazione, bollo…): quanto mettere da parte ogni mese per non trovarti scoperto", premium: true,
+            badge: accantonamentiCount ? `${accantonamentiCount}` : undefined, onClick: () => setView("accantonamenti") },
+        ],
+      },
+      {
+        title: "I tuoi risparmi",
+        items: [
+          { icon: "🎯", label: "Obiettivi", desc: "Una cifra da raggiungere entro una data: vacanza, fondo emergenza, un acquisto", premium: false, tour: "smart-obiettivi",
+            badge: goals.length ? `${goals.length}` : undefined, onClick: () => setView("list-goals") },
+          { icon: "🐷", label: "Salvadanai", desc: "I soldi che hai già messo da parte, anche in comune con la famiglia", premium: false,
+            badge: potsTotal > 0 ? fmt(potsTotal) : undefined, href: "/dashboard/salvadanai" },
+        ],
+      },
+    ];
+
+    const cardClass = "flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 px-4 py-3.5 text-left transition-all active:scale-[0.98] w-full";
+    const cardBody = (it: Item) => (
+      <>
+        <span className="text-2xl shrink-0">{it.icon}</span>
+        <span className="flex flex-col min-w-0 flex-1">
+          <span className="text-base font-medium flex items-center gap-2">
+            {it.label}
+            {it.premium && isFree && <span className="text-[10px] font-semibold uppercase tracking-wide rounded bg-muted px-1.5 py-0.5 text-muted-foreground">🔒 Premium</span>}
+          </span>
+          <span className="text-xs text-muted-foreground">{it.desc}</span>
+        </span>
+        {it.badge && <span className="text-xs text-muted-foreground tabular-nums shrink-0">{it.badge}</span>}
+        <span className="text-muted-foreground shrink-0">›</span>
+      </>
+    );
 
     return (
-      <div className="flex flex-col gap-4">
-        <Suspense><PageTour path="/dashboard/smart" /></Suspense>
-        <h1 className="text-2xl font-bold">Smart</h1>
-        <p className="text-sm text-muted-foreground -mt-2">
-          Le spese ricorrenti sono state riorganizzate per prevedere meglio il mese: ogni impegno fisso ora vive in
-          Rate (mutui, rate d&apos;acquisto, debiti), Accantonamenti (spese future grandi) o Budget (spese variabili
-          per categoria) — non più in un elenco generico.
-        </p>
-        {COVER_ITEMS.map(({ icon, label, action, tourAttr }) => (
-          <button
-            key={label}
-            onClick={action}
-            data-tour={tourAttr}
-            className="flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 px-5 py-4 text-left transition-all active:scale-[0.98]"
-          >
-            <span className="text-2xl">{icon}</span>
-            <span className="text-base font-medium">{label}</span>
-            <span className="ml-auto text-muted-foreground">›</span>
+      <div className="flex flex-col gap-5">
+        <Suspense><PageTour path="/dashboard/smart" plan={plan} /></Suspense>
+        <div>
+          <h1 className="text-2xl font-bold">Pianifica</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Decidi in anticipo dove vanno i tuoi soldi: Flusso usa queste scelte per dirti in dashboard quanto avrai a fine mese.
+          </p>
+        </div>
+
+        {!isFree && legacyItems.length > 0 && (
+          <button onClick={() => setView("list-recurring")} className="rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 py-3 text-left flex items-center gap-3 hover:bg-orange-500/15 transition-colors">
+            <span className="text-lg">🧹</span>
+            <span className="text-sm flex-1">
+              <strong>{legacyItems.length} {legacyItems.length === 1 ? "spesa fissa" : "spese fisse"} da sistemare</strong>
+              <span className="block text-xs text-muted-foreground">Inserite col vecchio sistema: oggi non contano nelle previsioni.</span>
+            </span>
+            <span className="text-muted-foreground">›</span>
           </button>
+        )}
+
+        {SECTIONS.map(section => (
+          <div key={section.title} className="flex flex-col gap-2">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{section.title}</h2>
+            {section.items.map(it => it.href ? (
+              <Link key={it.label} href={it.href} data-tour={it.tour} className={cardClass}>{cardBody(it)}</Link>
+            ) : (
+              <button key={it.label} onClick={it.onClick} data-tour={it.tour} className={cardClass}>{cardBody(it)}</button>
+            ))}
+          </div>
         ))}
       </div>
     );
@@ -733,7 +868,7 @@ export function SmartPageClient({
     return (
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setView("cover")} />
+          <BackButton onClick={() => goBack("cover")} />
           <h1 className="text-xl font-bold">Rate, Accantonamenti, Budget</h1>
         </div>
         <p className="text-sm text-muted-foreground -mt-2">
@@ -770,9 +905,10 @@ export function SmartPageClient({
         transactions={transactions}
         recurringItems={recurringItems}
         piggyBalance={piggyBalance}
+        payDay={payDay}
         initialBudgets={initialCategoryBudgets}
         initialNotes={initialBudgetNotes}
-        onBack={() => setView("impegni")}
+        onBack={() => goBack("cover")}
         onOpenAccantonamenti={() => setView("accantonamenti")}
       />
     );
@@ -816,7 +952,7 @@ export function SmartPageClient({
     return (
       <div className="flex flex-col gap-6">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setView("impegni")} />
+          <BackButton onClick={() => goBack("cover")} />
           <h1 className="text-xl font-bold flex-1">Rate</h1>
           <button
             onClick={goAddRate}
@@ -937,7 +1073,7 @@ export function SmartPageClient({
     return (
       <div className="flex flex-col gap-6 max-w-md mx-auto w-full">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setView("rate")} />
+          <BackButton onClick={() => goBack("rate")} />
           <h1 className="text-xl font-bold">{dEditId ? "Modifica rata" : "Nuova rata"}</h1>
         </div>
 
@@ -1107,7 +1243,7 @@ export function SmartPageClient({
     return (
       <div className="flex flex-col gap-6 max-w-md mx-auto w-full">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setView("accantonamenti")} />
+          <BackButton onClick={() => goBack("accantonamenti")} />
           <h1 className="text-xl font-bold">Nuovo accantonamento</h1>
         </div>
 
@@ -1337,7 +1473,7 @@ export function SmartPageClient({
     ];
 
     function rBack() {
-      if (rStep === 1) { setView("cover"); return; }
+      if (rStep === 1) { goBack("cover"); return; }
       setRStep(s => s - 1);
     }
 
@@ -1701,7 +1837,7 @@ export function SmartPageClient({
     return (
       <div className="flex flex-col gap-6 max-w-md mx-auto w-full">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setView("list-recurring")} />
+          <BackButton onClick={() => goBack("list-recurring")} />
           <h1 className="text-xl font-bold">Modifica voce</h1>
         </div>
 
@@ -2044,37 +2180,34 @@ export function SmartPageClient({
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (view === "list-recurring") {
-    const usciteFisse    = recurringItems.filter(it => it.tipologia === "fissa");
-    const usciteVariabili = recurringItems.filter(it => it.tipologia === "variabile");
-    const entrate        = recurringItems.filter(it => it.tipologia === "entrata");
+    const usciteFisse    = legacyItems.filter(it => it.tipologia === "fissa");
+    const usciteVariabili = legacyItems.filter(it => it.tipologia === "variabile");
+    const entrate        = legacyItems.filter(it => it.tipologia === "entrata");
 
     return (
       <div className="flex flex-col gap-6">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setView("cover")} />
-          <h1 className="text-xl font-bold flex-1">Le mie spese ricorrenti</h1>
-          <button
-            onClick={goAddRecurring}
-            className="text-sm bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 transition-colors"
-          >
-            + Aggiungi
-          </button>
+          <BackButton onClick={() => goBack("cover")} />
+          <h1 className="text-xl font-bold flex-1">Spese fisse da sistemare</h1>
+        </div>
+        <div className="rounded-xl border bg-muted/30 p-4 text-sm flex flex-col gap-2">
+          <p>Queste voci sono state inserite con il vecchio sistema e <strong>oggi non vengono contate</strong> nelle spese previste. Per ognuna:</p>
+          <ul className="list-disc pl-5 text-muted-foreground flex flex-col gap-1">
+            <li>mutuo, finanziamento o prestito → ricreala in <button onClick={() => setView("rate")} className="text-primary hover:underline">Rate e mutui</button>, poi eliminala da qui;</li>
+            <li>bolletta, affitto o abbonamento → aggiungi l&apos;importo al <button onClick={() => setView("budget")} className="text-primary hover:underline">Budget</button> della sua categoria, poi eliminala;</li>
+            <li>spesa annuale (assicurazione, bollo) → crea un <button onClick={() => setView("accantonamenti")} className="text-primary hover:underline">Accantonamento</button>;</li>
+            <li>non la paghi più → eliminala con 🗑.</li>
+          </ul>
         </div>
 
         {recurringLoading ? (
           <div className="animate-pulse flex flex-col gap-3">
             {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl bg-muted" />)}
           </div>
-        ) : recurringItems.length === 0 ? (
+        ) : legacyItems.length === 0 ? (
           <div className="flex flex-col items-center gap-4 py-16 text-center">
-            <span className="text-5xl">📋</span>
-            <p className="text-muted-foreground">Nessuna spesa ricorrente ancora.</p>
-            <button
-              onClick={goAddRecurring}
-              className="bg-primary text-primary-foreground rounded-xl px-5 py-2.5 text-sm font-medium hover:bg-primary/90 transition-colors"
-            >
-              Aggiungi la prima
-            </button>
+            <span className="text-5xl">✅</span>
+            <p className="text-muted-foreground">Niente da sistemare: tutte le spese fisse sono nel posto giusto.</p>
           </div>
         ) : (
           <div className="flex flex-col gap-6">
@@ -2199,14 +2332,14 @@ export function SmartPageClient({
     const gSuggestedMonthly = gMonthsLeft > 0 ? Math.max(0, (gTarget - gCurrent) / gMonthsLeft) : 0;
 
     function gBack() {
-      if (gStep === 1) { setView("cover"); return; }
+      if (gStep === 1) { goBack("list-goals"); return; }
       setGStep(s => s - 1);
     }
 
     if (atLimit) {
       return (
         <div className="flex flex-col gap-6">
-          <BackButton onClick={() => setView("cover")} />
+          <BackButton onClick={() => goBack("cover")} />
           <div className="flex flex-col items-center gap-4 py-16 text-center">
             <span className="text-5xl">🔒</span>
             <h2 className="text-lg font-bold">Limite raggiunto</h2>
@@ -2503,7 +2636,7 @@ export function SmartPageClient({
     return (
       <div className="flex flex-col gap-6">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setView("cover")} />
+          <BackButton onClick={() => goBack("cover")} />
           <h1 className="text-xl font-bold flex-1">I miei obiettivi</h1>
           <button
             onClick={goAddGoal}
@@ -2626,7 +2759,7 @@ export function SmartPageClient({
 
   if (view === "goal-detail") {
     const g = goals.find(x => x.id === gDetailId);
-    if (!g) { setView("list-goals"); return null; }
+    if (!g) return null; // l'effetto qui sotto riporta alla lista
     const cur = Number(g.current_amount), tgt = Number(g.target_amount);
     const pct = Math.min(100, tgt > 0 ? (cur / tgt) * 100 : 0);
     const remaining = Math.max(0, tgt - cur);
@@ -2645,10 +2778,10 @@ export function SmartPageClient({
     return (
       <div className="flex flex-col gap-5 max-w-lg mx-auto w-full">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setView("list-goals")} />
+          <BackButton onClick={() => goBack("list-goals")} />
           <h1 className="text-xl font-bold flex-1">{g.icon} {g.name}</h1>
           <button onClick={() => goEditGoal(g)} className="text-xs border rounded-lg px-2 py-1 hover:bg-muted/50">✏️</button>
-          <button onClick={() => { handleDeleteGoal(g.id); setView("list-goals"); }} className="text-xs border rounded-lg px-2 py-1 hover:text-destructive">🗑</button>
+          <button onClick={() => { handleDeleteGoal(g.id); goBack("list-goals"); }} className="text-xs border rounded-lg px-2 py-1 hover:text-destructive">🗑</button>
         </div>
 
         <div className="rounded-2xl border-2 p-5 flex flex-col gap-3">
@@ -2745,7 +2878,7 @@ export function SmartPageClient({
     return (
       <div className="flex flex-col gap-6">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setView("cover")} />
+          <BackButton onClick={() => goBack("cover")} />
           <h1 className="text-xl font-bold">Previsioni questo mese</h1>
         </div>
 
@@ -2889,7 +3022,8 @@ export function SmartPageClient({
         next_due_date: it.next_due_date!,
       }));
 
-    const summary = aggregateSinkingFunds(sinkingInputs, piggyBalance);
+    // Confronto con i soli salvadanai non collegati a un obiettivo (vedi potsForSinkingFunds).
+    const summary = aggregateSinkingFunds(sinkingInputs, potsForSinkingFunds(pots, goals.map(g => g.savings_pot_id)));
 
     // Catch-up: per ogni voce calcola la quota "a regime" (= importo ÷ mesi del ciclo completo)
     // Se total_months < cycle_months significa che la saving_start_date è più vicina
@@ -2921,7 +3055,7 @@ export function SmartPageClient({
         : piggyBalance;
 
     // Notifica: quanto è stato accantonato davvero questo mese, dalle transazioni
-    // categorizzate "Accantonamenti" (escluse da entrate/spese perché trasferimenti).
+    // categorizzate "Accantonamenti" (che contano come spesa, vedi CLAUDE.md).
     const accCategoryId = categories.find(c => c.name.toLowerCase() === "accantonamenti")?.id ?? null;
     const accTxThisMonth = accCategoryId
       ? transactions
@@ -3105,7 +3239,7 @@ export function SmartPageClient({
 
         <div className="flex flex-col gap-6">
           <div className="flex items-center gap-3">
-            <BackButton onClick={() => setView("impegni")} />
+            <BackButton onClick={() => goBack("cover")} />
             <h1 className="text-xl font-bold flex-1">Accantonamenti</h1>
             <button
               onClick={goAddAccantonamento}

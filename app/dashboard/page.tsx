@@ -1,73 +1,10 @@
-import { toISODate } from "@/lib/dates";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectivePlan } from "@/lib/preview-plan";
+import { currentPeriod } from "@/lib/period";
 import { DashboardClient } from "./dashboard-client";
 import type { Transaction, Goal } from "@/lib/calculations";
-
-// ─── Date helpers ─────────────────────────────────────────────────────────────
-
-/** Saturday → Friday, Sunday → Monday, otherwise unchanged */
-function adjustBizDay(date: Date): Date {
-  const dow = date.getDay();
-  if (dow === 6) return new Date(date.getTime() - 86_400_000); // Sat → Fri
-  if (dow === 0) return new Date(date.getTime() + 86_400_000); // Sun → Mon
-  return date;
-}
-
-function fmt(d: Date) {
-  return toISODate(d);
-}
-
-/**
- * Returns the current period range based on payDay.
- *   payDay = 0  → standard calendar month
- *   payDay 1–28 → pay-period starting on that day (adjusted for weekends)
- */
-function getDateRanges(payDay: number) {
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = today.getMonth(); // 0-indexed
-
-  // Previous calendar month (always used for trend comparison)
-  const prevFrom = fmt(new Date(y, m - 1, 1));
-  const prevTo   = fmt(new Date(y, m, 0));
-
-  if (payDay === 0) {
-    return {
-      from: fmt(new Date(y, m, 1)),
-      to:   fmt(new Date(y, m + 1, 0)),
-      year: y,
-      month: m,
-      prevFrom,
-      prevTo,
-    };
-  }
-
-  // Custom pay period
-  let start = adjustBizDay(new Date(y, m, payDay));
-  // If today is before this month's adjusted pay day, roll back one month
-  if (today < start) {
-    start = adjustBizDay(new Date(y, m - 1, payDay));
-  }
-
-  // Next period start = same payDay next month (adjusted)
-  const nextStart = adjustBizDay(
-    new Date(start.getFullYear(), start.getMonth() + 1, payDay)
-  );
-  // Period end = day before next start
-  const end = new Date(nextStart.getTime() - 86_400_000);
-
-  return {
-    from:  fmt(start),
-    to:    fmt(end),
-    year:  start.getFullYear(),
-    month: start.getMonth(),
-    prevFrom,
-    prevTo,
-  };
-}
 
 // ─── Server component ─────────────────────────────────────────────────────────
 
@@ -86,16 +23,15 @@ async function DashboardContent() {
     .single();
 
   const payDay: number = profileRes.data?.pay_day ?? 0;
-  const { from: mFrom, to: mTo, year, month, prevFrom, prevTo } = getDateRanges(payDay);
+  // Stesso periodo di Transazioni e Pianifica (lib/period.ts è l'unica fonte).
+  const { from: mFrom, to: mTo } = currentPeriod(payDay);
 
-  const [currentTxsRes, prevTxsRes, goalsRes, totalCountRes, lastTxRes, uncategorizedCountRes] = await Promise.all([
+  const [currentTxsRes, goalsRes, totalCountRes, lastTxRes, uncategorizedCountRes] = await Promise.all([
     supabase.from("transactions")
       .select("id, amount, date, description, category_id, categories(name, color, icon)")
       .eq("user_id", userId).gte("date", mFrom).lte("date", mTo).order("date", { ascending: true }),
-    supabase.from("transactions")
-      .select("amount").eq("user_id", userId).gte("date", prevFrom).lte("date", prevTo),
     supabase.from("goals")
-      .select("id, name, target_amount, current_amount, deadline, icon")
+      .select("id, name, target_amount, current_amount, deadline, icon, monthly_contribution")
       .eq("user_id", userId).order("created_at", { ascending: false }).limit(3),
     supabase.from("transactions")
       .select("id", { count: "exact", head: true }).eq("user_id", userId),
@@ -114,10 +50,7 @@ async function DashboardContent() {
         piggy_balance: Number(profileRes.data?.piggy_balance ?? 0),
       }}
       currentTxs={(currentTxsRes.data ?? []) as unknown as Transaction[]}
-      prevTxsAmounts={(prevTxsRes.data ?? []).map(t => Number(t.amount))}
-      goals={(goalsRes.data ?? []) as unknown as Goal[]}
-      year={year}
-      month={month}
+      goals={(goalsRes.data ?? []) as unknown as (Goal & { monthly_contribution: number | null })[]}
       totalTxCount={totalCountRes.count ?? 0}
       uncategorizedCount={uncategorizedCountRes.count ?? 0}
       lastTxDate={lastTxRes.data?.date ?? null}

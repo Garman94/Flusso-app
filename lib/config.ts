@@ -40,7 +40,7 @@ export const siteConfig = {
         "Tutto del piano Gratuito",
         "Import illimitati dell'estratto conto",
         "Import da screenshot (AI)",
-        "Smart: Budget per categoria, Accantonamenti, Rate",
+        "Pianifica: budget per categoria, rate e accantonamenti",
         "Obiettivi e salvadanai illimitati",
         "30 giorni soddisfatti o rimborsati",
       ],

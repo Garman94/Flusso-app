@@ -1,13 +1,11 @@
 import { toISODate } from "@/lib/dates";
-import { TrackOnMount } from "@/components/track-on-mount";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getEffectivePlan } from "@/lib/preview-plan";
-import { PageTour } from "@/components/tour/page-tour";
 import { SmartPageClient } from "./smart-page-client";
 import type { RecurringExpense as SmartRecurringExpense } from "./smart-page-client";
-import { getCurrentPeriodAnchor, computePeriodRange } from "@/lib/period";
+import { currentPeriod } from "@/lib/period";
 
 async function SmartContent() {
   const supabase = await createClient();
@@ -24,39 +22,8 @@ async function SmartContent() {
 
   const plan = await getEffectivePlan(profile?.plan ?? "free", profile?.trial_ends_at);
 
-  if (plan === "free") {
-    // trial_ends_at valorizzata + piano ancora free = prova terminata
-    const trialExpired = !!profile?.trial_ends_at;
-    return (
-      <div className="flex flex-col items-center justify-center gap-6 py-20 text-center max-w-md mx-auto">
-        <Suspense><PageTour path="/dashboard/smart" plan="free" /></Suspense>
-        <TrackOnMount name="smart_locked_viewed" props={{ trial_expired: trialExpired }} />
-        <span className="text-6xl">🔒</span>
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold">{trialExpired ? "La prova Premium è finita" : "Sezione Budget"}</h1>
-          <p className="text-muted-foreground">
-            {trialExpired
-              ? "Budget per categoria, accantonamenti, rate e obiettivi illimitati sono inclusi in Premium. I tuoi dati restano tutti qui."
-              : "Budget per categoria, accantonamenti, rate e obiettivi illimitati sono disponibili con il piano Premium o Founder."}
-          </p>
-        </div>
-        <div className="flex flex-col gap-3 w-full">
-          <a
-            href="/dashboard/account"
-            className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-6 py-3 text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
-            Passa a Premium
-          </a>
-          <a
-            href="/dashboard/account"
-            className="text-sm text-muted-foreground hover:text-foreground underline"
-          >
-            Hai già un codice coupon? Riscattalo qui
-          </a>
-        </div>
-      </div>
-    );
-  }
+  // trial_ends_at valorizzata + piano ancora free = prova terminata (cambia solo il testo del blocco)
+  const trialExpired = plan === "free" && !!profile?.trial_ends_at;
 
   // Bound esplicito a 1 anno: senza filtro data si rischia il limite di default di 1000
   // righe di Supabase, che senza un ordinamento esplicito puo' tagliare fuori dati recenti.
@@ -77,13 +44,13 @@ async function SmartContent() {
   ]);
 
   const payDay: number = profile?.pay_day ?? 0;
-  const anchor = getCurrentPeriodAnchor(payDay);
-  const { from: periodFrom, to: periodTo } = computePeriodRange(payDay, anchor.year, anchor.month);
+  const { from: periodFrom, to: periodTo, year: periodYear, month: periodMonth } = currentPeriod(payDay);
 
   return (
     <SmartPageClient
       userId={userId}
       plan={plan}
+      trialExpired={trialExpired}
       initialGoals={goalsRes.data ?? []}
       transactions={transactionsRes.data ?? []}
       categories={categoriesRes.data ?? []}
@@ -96,8 +63,8 @@ async function SmartContent() {
       payDay={payDay}
       periodFrom={periodFrom}
       periodTo={periodTo}
-      periodYear={anchor.year}
-      periodMonth={anchor.month}
+      periodYear={periodYear}
+      periodMonth={periodMonth}
     />
   );
 }

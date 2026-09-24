@@ -10,6 +10,7 @@ import { createCategoryRule, deleteCategoryRule } from "./actions";
 import { computePeriodRange, getCurrentPeriodAnchor } from "@/lib/period";
 import { PageTour } from "@/components/tour/page-tour";
 import { useDemoGuard } from "@/components/demo-context";
+import { normalizeText, ruleKeyword } from "@/lib/categorize";
 
 export type Category = { id: string; name: string; color: string; icon: string };
 export type FamilyMember = { id: string; name: string; color: string };
@@ -112,6 +113,10 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
   const [savingRule, setSavingRule] = useState(false);
 
   const [categoryRules, setCategoryRules] = useState<CategoryRule[]>(initialCategoryRules);
+  // Dopo aver scelto una categoria a mano: proposta di ricordarla per i movimenti simili
+  // (prima serviva la "modalità smanettone" e le regole non valevano per gli import futuri).
+  const [rememberPrompt, setRememberPrompt] = useState<{ keyword: string; categoryId: string; similar: number } | null>(null);
+  const [savingRemember, setSavingRemember] = useState(false);
   const [newCatKeyword, setNewCatKeyword] = useState("");
   const [newCatId, setNewCatId] = useState("");
   const [savingCatRule, setSavingCatRule] = useState(false);
@@ -260,6 +265,38 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
         t.id === txId ? { ...t, category_id: newCategoryId || null, categories: category } : t,
       ),
     );
+
+    if (newCategoryId) {
+      const tx = transactions.find(t => t.id === txId);
+      const kw = tx ? ruleKeyword(tx.description ?? "") : null;
+      const known = kw && categoryRules.some(r => normalizeText(r.value) === normalizeText(kw));
+      if (kw && !known) {
+        const nkw = normalizeText(kw);
+        const similar = transactions.filter(t => t.id !== txId && !t.category_id && normalizeText(t.description ?? "").includes(nkw)).length;
+        setRememberPrompt({ keyword: kw, categoryId: newCategoryId, similar });
+      }
+    }
+  }
+
+  async function handleRemember() {
+    if (!rememberPrompt) return;
+    if (demoGuard()) { setRememberPrompt(null); return; }
+    const kw = rememberPrompt.keyword.trim();
+    if (kw.length < 2) { toast.error("Scrivi almeno due lettere."); return; }
+    setSavingRemember(true);
+    const res = await createCategoryRule(kw, rememberPrompt.categoryId, { onlyUncategorized: true });
+    setSavingRemember(false);
+    if (res.error) { toast.error(res.error); return; }
+    const cat = categories.find(c => c.id === rememberPrompt.categoryId) ?? null;
+    setCategoryRules(prev => [...prev, { id: crypto.randomUUID(), value: kw.toLowerCase(), category_id: rememberPrompt.categoryId, categories: cat }]);
+    const ids = res.affectedIds ?? [];
+    if (ids.length) {
+      setTransactions(prev => prev.map(t => ids.includes(t.id) ? { ...t, category_id: rememberPrompt.categoryId, categories: cat } : t));
+    }
+    toast.success(ids.length
+      ? `Fatto: ${ids.length} ${ids.length === 1 ? "movimento categorizzato" : "movimenti categorizzati"}, e varrà per i prossimi import.`
+      : "Fatto: varrà per i prossimi import.");
+    setRememberPrompt(null);
 
   }
 
@@ -476,6 +513,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           userId={userId}
           categories={categories}
           familyMembers={familyMembers}
+          userRules={categoryRules}
           onClose={() => setShowImport(false)}
           onImported={handleExcelImported}
         />
@@ -486,10 +524,41 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
         <ScreenshotModal
           userId={userId}
           categories={categories}
+          userRules={categoryRules}
           onClose={() => setShowScreenshot(false)}
           onImported={handleImported}
         />
       )}
+
+      {/* Ricorda la categoria per i movimenti simili */}
+      {rememberPrompt && (() => {
+        const cat = categories.find(c => c.id === rememberPrompt.categoryId);
+        return (
+          <div className="fixed bottom-20 md:bottom-6 left-4 right-4 md:left-auto md:right-6 md:w-96 z-40 rounded-xl border bg-background shadow-xl p-4 flex flex-col gap-3 animate-in slide-in-from-bottom-4 duration-200">
+            <p className="text-sm font-semibold">Vuoi che Flusso se lo ricordi?</p>
+            <p className="text-xs text-muted-foreground">
+              I movimenti che contengono questa parola andranno in <strong className="text-foreground">{cat?.icon} {cat?.name}</strong>, anche nei prossimi import.
+              {rememberPrompt.similar > 0 && <> Vale subito anche per <strong className="text-foreground">{rememberPrompt.similar}</strong> {rememberPrompt.similar === 1 ? "movimento" : "movimenti"} ancora senza categoria.</>}
+            </p>
+            <input
+              value={rememberPrompt.keyword}
+              onChange={e => setRememberPrompt(p => p && { ...p, keyword: e.target.value })}
+              className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              aria-label="Parola da riconoscere"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setRememberPrompt(null)} className="text-sm text-muted-foreground px-3 py-2 hover:text-foreground">No, grazie</button>
+              <button
+                onClick={handleRemember}
+                disabled={savingRemember}
+                className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50"
+              >
+                {savingRemember ? "..." : "Sì, ricorda"}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Form nuova categoria */}
       {showCatForm && (

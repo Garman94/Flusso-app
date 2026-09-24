@@ -549,7 +549,7 @@ export const INCOME_VARIABILITY_PCT: Record<"low" | "medium" | "high", number> =
 };
 
 // ============================================================
-// FEATURE — Rate/debiti (Smart > Impegni > Rate)
+// FEATURE — Rate/debiti (Pianifica > Rate e mutui)
 // ============================================================
 
 export type DebtInput = {
@@ -600,7 +600,7 @@ export function computeDebtProgress(input: DebtInput, today: Date = new Date()):
 }
 
 // ============================================================
-// FEATURE — Budget per categoria (Smart > Budget)
+// FEATURE — Budget per categoria (Pianifica > Budget)
 // ============================================================
 
 export type MonthSpend = { year: number; month: number; total: number };
@@ -643,4 +643,73 @@ export function classifyCategoryMonths(months: MonthSpend[]): CategoryBudgetAnal
     : normalAvg;
 
   return { months: classified, average, normalCount: finalNormal.length };
+}
+
+// ============================================================
+// Saldo: riporto automatico tra periodi e stima di fine periodo
+// ============================================================
+
+/**
+ * Saldo a `targetDate` partendo da un saldo noto a `knownDate` e dai movimenti registrati
+ * nel mezzo. Serve a non far reinserire il saldo a mano a ogni nuovo periodo: basta
+ * l'ultimo valore inserito dall'utente. `txs` può contenere anche movimenti fuori intervallo.
+ */
+export function rollBalance(
+  knownBalance: number,
+  knownDate: string,
+  targetDate: string,
+  txs: { date: string; amount: number }[],
+): number {
+  if (knownDate === targetDate) return knownBalance;
+  const [from, to, sign] = knownDate < targetDate ? [knownDate, targetDate, 1] : [targetDate, knownDate, -1];
+  const moved = txs
+    .filter(t => t.date >= from && t.date < to)
+    .reduce((s, t) => s + Number(t.amount), 0);
+  return knownBalance + sign * moved;
+}
+
+export type PeriodProjection = {
+  /** entrate previste non ancora arrivate */
+  remainingIncome: number;
+  /** spese previste non ancora fatte */
+  remainingExpenses: number;
+  /** saldo stimato a fine periodo = saldo di oggi + entrate ancora attese − spese ancora previste */
+  endBalance: number;
+  /** previste − già spese: negativo = previsioni superate */
+  leftToSpend: number;
+};
+
+/**
+ * Stima di fine periodo. A differenza di "entrate previste − spese previste" (che è il
+ * risparmio del mese, non un saldo) parte da quanto c'è davvero sul conto oggi e aggiunge
+ * solo ciò che deve ancora succedere, quindi resta sensata anche a metà periodo.
+ */
+export function projectPeriodEnd(p: {
+  balanceToday: number;
+  incomeSoFar: number;
+  expensesSoFar: number;
+  expectedIncome: number;
+  expectedExpenses: number;
+}): PeriodProjection {
+  const remainingIncome = Math.max(0, p.expectedIncome - p.incomeSoFar);
+  const remainingExpenses = Math.max(0, p.expectedExpenses - p.expensesSoFar);
+  return {
+    remainingIncome,
+    remainingExpenses,
+    endBalance: p.balanceToday + remainingIncome - remainingExpenses,
+    leftToSpend: p.expectedExpenses - p.expensesSoFar,
+  };
+}
+
+/**
+ * Soldi nei salvadanai confrontabili con gli accantonamenti: quelli nei salvadanai
+ * collegati a un obiettivo sono già "impegnati" per l'obiettivo e contarli anche qui
+ * farebbe risultare in anticipo sugli accantonamenti con gli stessi euro due volte.
+ */
+export function potsForSinkingFunds(
+  pots: { id: string; current_balance: number }[],
+  goalPotIds: (string | null | undefined)[],
+): number {
+  const reserved = new Set(goalPotIds.filter((x): x is string => !!x));
+  return pots.filter(p => !reserved.has(p.id)).reduce((s, p) => s + Number(p.current_balance), 0);
 }
