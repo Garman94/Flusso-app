@@ -4,6 +4,17 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Riepilogo del mese (2026-09-24)
+
+"Mesi passati" in dashboard apre la pagina **`/dashboard/riepilogo`** (prima: finestra `month-report-modal.tsx`, rimossa, a mesi solari e senza confronti). Calcoli in `lib/recap.ts` (`buildRecap`), test in `tests/riepilogo.test.ts`.
+
+- **Periodi**: quelli di paga, come la dashboard. `?da=YYYY-MM-DD` sceglie il periodo che contiene la data (`periodContaining`); senza, l'ultimo chiuso. Solo periodi chiusi; frecce fino al periodo del primo movimento. Nome "da persona" (`periodName`): il mese con più giorni del periodo ("agosto" per 27 lug – 26 ago), con l'intervallo sotto.
+- **Contenuto**: quanto hai risparmiato (entrate − uscite, senza giroconti) e che parte delle entrate, confronto col periodo prima; categorie con quota, "rispetto al solito" (media dei 3 periodi prima, esclusi quelli senza movimenti: vuol dire estratto conto non caricato) e budget di oggi (senza i pagamenti di spese fisse e rate, `planPayments`); "Da ricordare": spese fisse pagate, budget rispettati, spesa più grande e giorno più caro (senza spese fisse e rate), numero di movimenti; tutti i movimenti a scomparsa; avviso se l'ultimo movimento è più di 5 giorni prima della fine; nell'ultimo periodo, invito a Pianifica.
+- **Banner in dashboard** (`recap-banner.tsx`): nei primi 10 giorni del periodo nuovo (`RECAP_BANNER_DAYS` in `app/dashboard/page.tsx`), se il periodo chiuso ha almeno 3 movimenti: "Com'è andato agosto? Hai risparmiato X". Se mancano gli ultimi giorni (nessun movimento negli ultimi 5) invita invece a caricare l'estratto conto. Sparisce aperto il riepilogo o con ✕ (`localStorage` `flusso_riepilogo_visto` = inizio del periodo). Inizio e non fine mese: solo allora il mese è finito ed è il momento di pianificare il nuovo.
+- Eventi: `recap_banner_shown`, `recap_banner_clicked`, `recap_banner_closed`, `recap_viewed` (`latest`).
+
+---
+
 ## Spese fisse (2026-09-24)
 
 Nuova sezione Pianifica → **Spese fisse** (`?v=spese-fisse`, modulo `?v=spesa-fissa-form`, `app/dashboard/smart/fixed-expenses-panel.tsx`) per affitto, telefono, abbonamenti, bollette. Inclusa nel piano gratuito. Calcoli in `lib/fixed-expenses.ts`, test in `tests/spese-fisse.test.ts`.

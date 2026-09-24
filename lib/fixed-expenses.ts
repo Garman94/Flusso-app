@@ -8,6 +8,7 @@
 
 import { monthsPerCycle } from "./calculations";
 import { normalizeText, ruleKeyword } from "./categorize";
+import { addDaysISO } from "./dates";
 
 export type PlanItem = {
   id: string;
@@ -72,11 +73,6 @@ const pad = (n: number) => String(n).padStart(2, "0");
 function dateIn(y: number, m0: number, day: number): string {
   const last = new Date(y, m0 + 1, 0).getDate();
   return `${y}-${pad(m0 + 1)}-${pad(Math.min(day, last))}`;
-}
-
-function addDaysISO(iso: string, n: number): string {
-  const d = new Date(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + n);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function daysBetween(a: string, b: string): number {
