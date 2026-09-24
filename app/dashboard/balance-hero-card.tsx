@@ -18,12 +18,14 @@ import {
   type SinkingFundInput,
 } from "@/lib/calculations";
 import { parseAmount } from "@/lib/import-parse";
+import { isFixedExpense, planStatus, splitPlan, type PlanItem } from "@/lib/fixed-expenses";
 import { updateStartingBalance } from "./saldo-action";
 import { toast } from "sonner";
 
 // Card principale della dashboard. Tre domande, in quest'ordine:
 //   1. quanto ho oggi?            → Saldo di oggi
 //   2. quanto avrò a fine periodo? → saldo di oggi + entrate ancora attese − spese ancora previste
+//      (le spese fisse e le rate ancora da pagare si tolgono a parte: vedi splitPlan)
 //   3. come sto andando?          → barre "speso X di Y" e "ricevuto X di Y"
 // Prima c'erano 9 numeri in tre righe, e "Saldo fine mese stimato" era in realtà
 // entrate previste − spese previste (il risparmio del mese, non un saldo): confrontato col
@@ -45,6 +47,12 @@ type RecurringRow = {
   debt_type: string | null;
   debt_total_amount: number | null;
   debt_start_date: string | null;
+  due_day: number | null;
+  due_month: number | null;
+  match_keywords: string[] | null;
+  secondary_name: string | null;
+  end_date: string | null;
+  last_paid_date: string | null;
 };
 
 type Tx = {
@@ -276,7 +284,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       const [profileRes, recRes, periodTxRes, memRes, budgetRes] = await Promise.all([
         supabase.from("profiles").select(`period_starting_balance, period_starting_balance_date, ${INCOME_COLS}`).eq("id", userId).single(),
         supabase.from("recurring_expenses")
-          .select("id, name, tipologia, frequency, custom_days, amount, amount_max, next_due_date, saving_start_date, debt_type, debt_total_amount, debt_start_date")
+          .select("id, name, tipologia, frequency, custom_days, amount, amount_max, next_due_date, saving_start_date, debt_type, debt_total_amount, debt_start_date, due_day, due_month, match_keywords, secondary_name, end_date, last_paid_date")
           .eq("user_id", userId),
         // Filtro per data: senza, il limite di default di 1000 righe potrebbe tagliare il periodo corrente.
         supabase.from("transactions")
@@ -366,9 +374,18 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       .filter(r => r.progress.status === "active");
     const rateMonthly = rateItems.reduce((s, r) => s + r.item.amount, 0);
 
-    // Spese previste = rate in corso + quota mensile accantonamenti + budget per categoria
-    // (Pianifica). Le vecchie spese ricorrenti generiche non contano: sono elencate in
-    // Pianifica → "Da sistemare" perché l'utente le trasformi o le elimini.
+    // Spese fisse (affitto, abbonamenti, bollette) e rate: per ognuna si sa se in questo
+    // periodo è già stata pagata. Quelle ancora da pagare si tolgono a parte dalla stima, così
+    // "puoi ancora spendere" non comprende l'affitto che deve ancora partire.
+    const fixedStatuses = items.filter(isFixedExpense)
+      .map(it => planStatus(it as PlanItem, periodTxs, periodFrom, periodTo, iso))
+      .filter(st => st.state !== "not-due");
+    const rateStatuses = rateItems.map(r => planStatus(r.item as PlanItem, periodTxs, periodFrom, periodTo, iso));
+    const plan = splitPlan([...fixedStatuses, ...rateStatuses], t => !isTransfer(t));
+    const fixedMonthly = fixedStatuses.reduce((s, st) => s + st.expected, 0);
+
+    // Spese previste = spese fisse + rate in corso + quota mensile accantonamenti + budget
+    // per categoria (Pianifica).
     const sinkingInputs: SinkingFundInput[] = items
       .filter(it => it.next_due_date && it.saving_start_date)
       .map(it => ({
@@ -381,7 +398,10 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
         next_due_date: it.next_due_date!,
       }));
     const sinkingMonthly = aggregateSinkingFunds(sinkingInputs, piggyBalance).this_month_total;
-    const spesePreviste = rateMonthly + sinkingMonthly + budgetTotal;
+    const spesePreviste = fixedMonthly + rateMonthly + sinkingMonthly + budgetTotal;
+    // Il resto delle spese previste, quelle "da spendere": budget, accantonamenti e le voci
+    // di cui Flusso non può verificare il pagamento.
+    const flexiblePlanned = budgetTotal + sinkingMonthly + plan.flexible;
 
     // Se il titolare si e' identificato come Componente, il suo reddito e' li' (evita di sommarlo due volte).
     const hasOwnerMember = membersIncome.some(m => m.is_owner);
@@ -390,17 +410,19 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     const projection = projectPeriodEnd({
       balanceToday: actualToday,
       incomeSoFar: income,
-      expensesSoFar: expensesAbs,
+      expensesSoFar: expensesAbs - plan.paidSpent,
       expectedIncome: entratePreviste,
-      expectedExpenses: spesePreviste,
+      expectedExpenses: flexiblePlanned,
+      committedRemaining: plan.remaining,
     });
 
     return {
       income, expensesAbs, incomeTxs, expenseTxs, memberBreakdown, actualToday,
       rateMonthly, rateItems, sinkingMonthly, spesePreviste, entratePreviste,
+      fixedMonthly, fixedStatuses, flexiblePlanned,
       projection, periodMonth, hasOwnerMember,
     };
-  }, [startingBalance, items, periodTxs, budgetTotal, ownerIncome, membersIncome, piggyBalance, txSumToToday, periodFrom]);
+  }, [startingBalance, items, periodTxs, budgetTotal, ownerIncome, membersIncome, piggyBalance, txSumToToday, periodFrom, periodTo, iso]);
 
   if (loading) {
     return (
@@ -424,6 +446,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   const {
     income, expensesAbs, incomeTxs, expenseTxs, memberBreakdown, actualToday,
     rateMonthly, rateItems, sinkingMonthly, spesePreviste, entratePreviste,
+    fixedMonthly, fixedStatuses, flexiblePlanned,
     projection, periodMonth, hasOwnerMember,
   } = result;
 
@@ -448,11 +471,23 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       .map(m => ({ name: m.is_owner ? `${m.name} (tu)` : m.name, amount: normalizeMonthlyIncome(m, periodMonth) })),
   ].filter(s => s.amount > 0);
 
+  const committed = projection.committedRemaining;
   const spendHint = !hasPlan
-    ? <Link href="/dashboard/smart?v=budget" onClick={e => e.stopPropagation()} className="text-primary hover:underline">Imposta quanto vuoi spendere, per avere una previsione →</Link>
-    : projection.leftToSpend >= 0
-      ? <>Puoi ancora spendere <strong className="text-foreground">{formatEuro(projection.leftToSpend)}</strong> senza uscire dalle previsioni</>
-      : <span className="text-red-500">Hai superato le spese previste di <strong>{formatEuro(-projection.leftToSpend)}</strong></span>;
+    ? <Link href="/dashboard/smart?v=spese-fisse" onClick={e => e.stopPropagation()} className="text-primary hover:underline">Aggiungi le spese fisse (affitto, bollette, abbonamenti) per avere una previsione →</Link>
+    : flexiblePlanned <= 0
+      // solo spese fisse e rate: senza un budget non si sa quanto si vuole spendere per il resto
+      ? <>
+          {committed > 0
+            ? <>Spese fisse e rate ancora da pagare: <strong className="text-foreground">{formatEuro(committed)}</strong>.</>
+            : <>Spese fisse e rate pagate ✓</>}{" "}
+          <Link href="/dashboard/smart?v=budget" onClick={e => e.stopPropagation()} className="text-primary hover:underline">Imposta un budget per sapere quanto puoi spendere per il resto →</Link>
+        </>
+      : projection.leftToSpend >= 0
+        ? <>
+            Puoi ancora spendere <strong className="text-foreground">{formatEuro(projection.leftToSpend)}</strong> senza uscire dalle previsioni
+            {committed > 0 && <> (le spese fisse ancora da pagare, {formatEuro(committed)}, sono già tolte)</>}
+          </>
+        : <span className="text-red-500">Hai superato le spese previste di <strong>{formatEuro(-projection.leftToSpend)}</strong></span>;
 
   const incomeHint = !hasIncome
     ? <Link href="/dashboard/account" onClick={e => e.stopPropagation()} className="text-primary hover:underline">Indica il tuo stipendio per la previsione →</Link>
@@ -536,15 +571,22 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
           <p className="text-sm text-muted-foreground">
             Per sapere quanto avrai a fine periodo, indica il tuo{" "}
             <Link href="/dashboard/account" className="text-primary hover:underline">stipendio</Link>{" "}
-            e quanto vuoi{" "}
-            <Link href="/dashboard/smart?v=budget" className="text-primary hover:underline">spendere per categoria</Link>.
+            e{" "}
+            <Link href="/dashboard/smart?v=spese-fisse" className="text-primary hover:underline">le spese fisse</Link>.
           </p>
         )}
         {expanded === "fine" && (
           <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs">
             <Line label="Saldo di oggi" value={formatEuro(actualToday)} />
             <Line label="+ entrate ancora attese" value={formatEuro(projection.remainingIncome)} />
-            <Line label="− spese ancora previste" value={formatEuro(projection.remainingExpenses)} />
+            {committed > 0 ? (
+              <>
+                <Line label="− spese fisse e rate da pagare" value={formatEuro(committed)} />
+                <Line label="− altre spese previste" value={formatEuro(projection.remainingExpenses - committed)} />
+              </>
+            ) : (
+              <Line label="− spese ancora previste" value={formatEuro(projection.remainingExpenses)} />
+            )}
             <Line label="= Stima a fine periodo" value={formatEuro(projection.endBalance)} strong className="pt-1 border-t" />
             {hasPlan && hasIncome && (
               <p className="text-muted-foreground pt-1">
@@ -566,7 +608,15 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
             {hasPlan && (
               <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs">
                 <span className="text-muted-foreground uppercase tracking-wide text-[10px]">Da dove vengono le spese previste</span>
-                <Line label="Rate in corso" value={formatEuro(rateMonthly)} />
+                {fixedMonthly > 0 && (
+                  <>
+                    <Line label="Spese fisse" value={formatEuro(fixedMonthly)} />
+                    {fixedStatuses.map(st => (
+                      <Line key={st.item.id} label={`· ${st.item.name}${st.state === "paid" ? " ✓" : ""}`} value={formatEuro(st.expected)} className="pl-2" />
+                    ))}
+                  </>
+                )}
+                <Line label="Rate in corso" value={formatEuro(rateMonthly)} className={fixedMonthly > 0 ? "pt-1 border-t" : ""} />
                 {rateItems.map(({ item }) => (
                   <Line key={item.id} label={`· ${item.name}`} value={formatEuro(item.amount)} className="pl-2" />
                 ))}

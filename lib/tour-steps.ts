@@ -81,12 +81,17 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/smart": {
-    version: "3.0",
-    whatIsNew: "Smart ora si chiama Pianifica: tutte le sezioni sono in un'unica schermata e il tasto Indietro del telefono torna al passo precedente",
+    version: "3.1",
+    whatIsNew: "Nuova sezione Spese fisse: affitto, bollette, telefono e abbonamenti, contati nel mese in cui arrivano. Flusso trova da solo quelle che si ripetono nei tuoi movimenti",
     freePreview: [
       {
         title: "Pianifica 🗓️",
-        message: "Qui decidi in anticipo dove vanno i tuoi soldi. Gli obiettivi di risparmio sono inclusi nel piano gratuito (uno).",
+        message: "Qui decidi in anticipo dove vanno i tuoi soldi. Spese fisse e un obiettivo di risparmio sono inclusi nel piano gratuito.",
+      },
+      {
+        target: "[data-tour='smart-spese-fisse']",
+        title: "Spese fisse 📋",
+        message: "Affitto, bollette, telefono, abbonamenti. Flusso trova da solo quelle che si ripetono nei tuoi movimenti e ti dice quando sono pagate.",
       },
       {
         target: "[data-tour='smart-budget']",
@@ -105,9 +110,14 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
         message: "Qui decidi in anticipo dove vanno i tuoi soldi. Quello che imposti qui diventa la previsione di fine mese in dashboard.",
       },
       {
+        target: "[data-tour='smart-spese-fisse']",
+        title: "Spese fisse 📋",
+        message: "Affitto, bollette, telefono, abbonamenti: quelle che arrivano da sole. Flusso trova da solo quelle che si ripetono nei tuoi movimenti e ti dice quando sono pagate.",
+      },
+      {
         target: "[data-tour='smart-budget']",
-        title: "Le spese del mese",
-        message: "Budget per le spese variabili (spesa, ristoranti…), Rate e mutui per i debiti, Accantonamenti per le spese annuali. Insieme fanno le \"spese previste\".",
+        title: "Il resto delle spese",
+        message: "Budget per le spese che cambiano (spesa, ristoranti…), Rate e mutui per i debiti, Accantonamenti per le spese annuali. Insieme alle spese fisse fanno le \"spese previste\".",
       },
       {
         target: "[data-tour='smart-obiettivi']",

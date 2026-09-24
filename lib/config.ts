@@ -24,6 +24,7 @@ export const siteConfig = {
         "Transazioni manuali illimitate",
         "Import dell'estratto conto (3 file al mese)",
         "Dashboard con saldo, entrate e uscite",
+        "Spese fisse: affitto, bollette, abbonamenti",
         "Categorie e regole personalizzate",
         "1 obiettivo di risparmio",
         "Esporta i tuoi movimenti in CSV",

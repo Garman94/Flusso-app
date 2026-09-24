@@ -5,9 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { formatEuro, classifyCategoryMonths, aggregateSinkingFunds, type MonthSpend, type SinkingFundInput } from "@/lib/calculations";
+import { expectedAmount, isFixedExpense, planPayments, type PlanItem } from "@/lib/fixed-expenses";
 
 type Category = { id: string; name: string; color: string; icon: string };
-type Tx = { date: string; amount: number; category_id?: string | null };
+type Tx = { date: string; amount: number; category_id?: string | null; description?: string | null; merchant?: string | null };
 type BudgetRow = { category_id: string; monthly_budget: number };
 type NoteRow = { category_id: string; year: number; month: number; note: string };
 type RecurringItem = {
@@ -21,6 +22,8 @@ type Props = {
   categories: Category[];
   transactions: Tx[];
   recurringItems: RecurringItem[];
+  /** spese fisse e rate: i loro pagamenti non contano nella spesa per categoria */
+  planItems?: PlanItem[];
   piggyBalance: number;
   /** giorno di paga (0 = mese solare): il "mese" del budget è lo stesso periodo della dashboard */
   payDay: number;
@@ -28,6 +31,7 @@ type Props = {
   initialNotes: NoteRow[];
   onBack: () => void;
   onOpenAccantonamenti?: () => void;
+  onOpenFixed?: () => void;
 };
 
 const HISTORY_MONTHS = 12;
@@ -50,8 +54,8 @@ function noteKey(categoryId: string, year: number, month: number) {
 }
 
 export function BudgetPanel({
-  userId, categories, transactions, recurringItems, piggyBalance, payDay,
-  initialBudgets, initialNotes, onBack, onOpenAccantonamenti,
+  userId, categories, transactions, recurringItems, planItems = [], piggyBalance, payDay,
+  initialBudgets, initialNotes, onBack, onOpenAccantonamenti, onOpenFixed,
 }: Props) {
   const budgetCategories = useMemo(
     () => categories.filter(c => !EXCLUDED_CATEGORY_NAMES.has(c.name.toLowerCase())),
@@ -111,15 +115,34 @@ export function BudgetPanel({
   const cur = currentPeriod(payDay);
   const curFrom = cur.from, curTo = cur.to;
 
+  // Affitto, abbonamenti, bollette e rate hanno la loro sezione: i movimenti che le pagano
+  // non contano qui, né nel periodo né nello storico (che suggerisce il budget). Senza,
+  // l'affitto finiva sia nelle Spese fisse sia nella spesa di "Casa".
+  const planPaid = useMemo(
+    () => planPayments(planItems, transactions, [
+      { from: curFrom, to: curTo },
+      ...previousPeriods(payDay, cur.year, cur.month, HISTORY_MONTHS),
+    ]),
+    [planItems, transactions, payDay, cur.year, cur.month, curFrom, curTo],
+  );
+  const fixedByCategory = useMemo(() => {
+    const map: Record<string, PlanItem[]> = {};
+    for (const it of planItems) {
+      if (!isFixedExpense(it) || !it.category_id) continue;
+      (map[it.category_id] ??= []).push(it);
+    }
+    return map;
+  }, [planItems]);
+
   const currentSpend = useMemo(() => {
     const map: Record<string, number> = {};
     for (const c of budgetCategories) {
       map[c.id] = transactions
-        .filter(t => t.category_id === c.id && t.date >= curFrom && t.date <= curTo && Number(t.amount) < 0)
+        .filter(t => t.category_id === c.id && t.date >= curFrom && t.date <= curTo && Number(t.amount) < 0 && !planPaid.has(t))
         .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
     }
     return map;
-  }, [budgetCategories, transactions, curFrom, curTo]);
+  }, [budgetCategories, transactions, curFrom, curTo, planPaid]);
 
   const totalBudget = useMemo(
     () => budgetCategories.reduce((s, c) => {
@@ -143,7 +166,7 @@ export function BudgetPanel({
     const since = recent.length ? recent[recent.length - 1].from : curFrom;
     const weight: Record<string, number> = {};
     for (const t of transactions) {
-      if (!t.category_id || Number(t.amount) >= 0 || t.date < since || t.date > curTo) continue;
+      if (!t.category_id || Number(t.amount) >= 0 || t.date < since || t.date > curTo || planPaid.has(t)) continue;
       weight[t.category_id] = (weight[t.category_id] ?? 0) + Math.abs(Number(t.amount));
     }
     const used = budgetCategories
@@ -152,7 +175,7 @@ export function BudgetPanel({
     const usedIds = new Set(used.map(c => c.id));
     return { usedCategories: used, unusedCategories: budgetCategories.filter(c => !usedIds.has(c.id)) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budgetCategories, transactions, payDay, cur.year, cur.month, curFrom, curTo, budgets, sinkingSummary.this_month_total]);
+  }, [budgetCategories, transactions, payDay, cur.year, cur.month, curFrom, curTo, budgets, sinkingSummary.this_month_total, planPaid]);
   const [showUnused, setShowUnused] = useState(false);
 
   const analysis = useMemo(() => {
@@ -160,12 +183,12 @@ export function BudgetPanel({
     const months: MonthSpend[] = [];
     for (const p of previousPeriods(payDay, cur.year, cur.month, HISTORY_MONTHS)) {
       const total = transactions
-        .filter(t => t.category_id === category.id && t.date >= p.from && t.date <= p.to && Number(t.amount) < 0)
+        .filter(t => t.category_id === category.id && t.date >= p.from && t.date <= p.to && Number(t.amount) < 0 && !planPaid.has(t))
         .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
       months.push({ year: p.year, month: p.month, total });
     }
     return classifyCategoryMonths(months);
-  }, [category, transactions, payDay, cur.year, cur.month]);
+  }, [category, transactions, payDay, cur.year, cur.month, planPaid]);
 
   function openDetail(catId: string) {
     setDetailId(catId);
@@ -299,6 +322,15 @@ export function BudgetPanel({
             Speso in questo periodo: {formatEuro(currentSpend[category.id] ?? 0)}
             {analysis.average > 0 && ` · Media mesi normali: ${formatEuro(analysis.average)}`}
           </span>
+          {(fixedByCategory[category.id]?.length ?? 0) > 0 && (
+            <p className="text-xs text-muted-foreground border-t pt-2">
+              Non contano qui, perché sono tra le{" "}
+              {onOpenFixed
+                ? <button type="button" onClick={onOpenFixed} className="text-primary underline hover:no-underline">spese fisse</button>
+                : "spese fisse"}
+              : {fixedByCategory[category.id].map(it => `${it.name} ${formatEuro(expectedAmount(it))}`).join(" · ")}.
+            </p>
+          )}
         </div>
 
         <div className="rounded-xl border p-5 flex flex-col gap-1">
@@ -383,7 +415,13 @@ export function BudgetPanel({
       <div>
         <h1 className="text-xl font-bold">Budget</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Imposta un budget mensile per categoria. Apri una categoria per vedere lo storico e la media.
+          Quanto vuoi spendere ogni mese per le spese che cambiano: spesa, benzina, ristoranti, svago. Apri una categoria per vedere lo storico e la media.
+        </p>
+        <p className="text-xs text-muted-foreground mt-2">
+          Affitto, bollette, abbonamenti e rate non contano qui: stanno nelle loro sezioni.
+          {onOpenFixed && (
+            <>{" "}<button type="button" onClick={onOpenFixed} className="text-primary underline hover:no-underline">Vai alle spese fisse →</button></>
+          )}
         </p>
       </div>
 

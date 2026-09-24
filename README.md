@@ -96,6 +96,7 @@ Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 | `035_events.sql` | Tabella `events` (eventi d'uso first-party) |
 | `036_trial_and_billing.sql` | `trial_ends_at`, `premium_ends_at`, `usage_type` su `profiles`; il trigger anti-autopromozione le protegge |
 | `037_demo_pianifica.sql` | `reseed_demo` aggiornata: budget per categoria, accantonamenti, entrate di entrambi i componenti |
+| `038_demo_spese_fisse.sql` | `reseed_demo` con le spese fisse (affitto, abbonamenti, bollette, telefono) e il Budget solo per le spese che cambiano; ricarica la demo. Rollback in `supabase/rollback/` |
 
 **Via CLI:**
 ```bash

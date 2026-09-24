@@ -34,7 +34,7 @@ async function SmartContent() {
 
   const [goalsRes, transactionsRes, categoriesRes, recurringRes, potsRes, contribRes, categoryBudgetsRes, budgetNotesRes] = await Promise.all([
     supabase.from("goals").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-    supabase.from("transactions").select("date, amount, category_id, description, merchant").eq("user_id", userId).gte("date", transactionsFrom).order("date", { ascending: false }),
+    supabase.from("transactions").select("id, date, amount, category_id, description, merchant").eq("user_id", userId).gte("date", transactionsFrom).order("date", { ascending: false }),
     supabase.from("categories").select("id, name, color, icon").or(`user_id.eq.${userId},user_id.is.null`).order("name"),
     supabase.from("recurring_expenses").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
     supabase.from("savings_pots").select("id, name, emoji, current_balance").eq("user_id", userId).order("created_at"),
