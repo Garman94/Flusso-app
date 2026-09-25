@@ -98,6 +98,7 @@ Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 | `037_demo_pianifica.sql` | `reseed_demo` aggiornata: budget per categoria, accantonamenti, entrate di entrambi i componenti |
 | `038_demo_spese_fisse.sql` | `reseed_demo` con le spese fisse (affitto, abbonamenti, bollette, telefono) e il Budget solo per le spese che cambiano; ricarica la demo. Rollback in `supabase/rollback/` |
 | `039_fixed_group.sql` | `recurring_expenses.fixed_group`: tipo della spesa fissa (casa, utenze, abbonamenti, trasporti, assicurazioni, altro); vuoto = dedotto. Rollback in `supabase/rollback/` |
+| `040_utenze.sql` | Luce e gas: `utility_tariffs` (tariffa del fornitore) e `utility_readings` (consumi mensili), RLS e blocco demo; `reseed_demo_utenze()` per la demo. Rollback in `supabase/rollback/` |
 
 **Via CLI:**
 ```bash

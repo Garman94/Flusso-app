@@ -108,6 +108,7 @@ type Props = {
   onBack: () => void;
   onOpenBudget: () => void;
   onOpenRate: () => void;
+  onOpenUtenze: () => void;
 };
 
 export function FixedExpensesPanel(props: Props) {
@@ -120,7 +121,7 @@ export function FixedExpensesPanel(props: Props) {
 
 function FixedList({
   userId, items, setItems, transactions, categories, periodFrom, periodTo,
-  dismissed, onDismiss, onOpenForm, onBack, onOpenBudget, onOpenRate,
+  dismissed, onDismiss, onOpenForm, onBack, onOpenBudget, onOpenRate, onOpenUtenze,
 }: Props) {
   const today = todayISO();
   const fixed = useMemo(() => items.filter(isFixedExpense), [items]);
@@ -306,6 +307,11 @@ function FixedList({
                   <span>{g.icon} {g.label}</span>
                   {subtotal > 0 && <span className="normal-case tracking-normal font-medium tabular-nums">{formatEuro(subtotal)} in questo periodo</span>}
                 </h2>
+                {g.key === "utenze" && (
+                  <button onClick={onOpenUtenze} className="text-sm text-primary hover:underline self-start -mt-1">
+                    ⚡ Calcola luce e gas: stima la bolletta di questo mese →
+                  </button>
+                )}
                 {g.list.map(st => {
                   const it = st.item;
                   const cat = it.category_id ? catById.get(it.category_id) : undefined;
@@ -351,6 +357,15 @@ function FixedList({
           ))}
         </div>
       )}
+
+      <button onClick={onOpenUtenze} className="rounded-xl border px-4 py-3 text-left flex items-center gap-3 hover:bg-muted/40 transition-colors">
+        <span className="text-xl">⚡🔥</span>
+        <span className="flex flex-col flex-1">
+          <span className="text-sm font-medium">Calcolatore luce e gas</span>
+          <span className="text-xs text-muted-foreground">Quanto pagherai questo mese, dai consumi degli anni passati e dai prezzi del tuo fornitore.</span>
+        </span>
+        <span className="text-muted-foreground">›</span>
+      </button>
 
       <p className="text-xs text-muted-foreground">
         Le spese fisse non contano nel{" "}
