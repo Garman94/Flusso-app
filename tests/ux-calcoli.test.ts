@@ -61,6 +61,14 @@ test("accantonamenti: i salvadanai degli obiettivi non contano due volte", () =>
   assert.equal(potsForSinkingFunds(pots, []), 1950);
 });
 
+test("accantonamenti: se sono collegati a un salvadanaio, conta solo quello", () => {
+  // "Emergenza" (a) e "Accantonamenti" (b): gli accantonamenti stanno tutti in b
+  const pots = [{ id: "a", current_balance: 572 }, { id: "b", current_balance: 562.8 }];
+  assert.equal(potsForSinkingFunds(pots, [], ["b", "b", "b"]), 562.8);
+  assert.equal(potsForSinkingFunds(pots, [], [null, "b"]), 562.8);   // basta una voce collegata
+  assert.equal(potsForSinkingFunds(pots, [], [null, null]), 1134.8); // nessuna: tutti
+});
+
 // ── periodi: ora legale e storico ───────────────────────────────────────────
 test("periodo: domenica del cambio d'ora (25/10/2026) → lunedì 26, non resta domenica", () => {
   inZone("Europe/Rome", () => {
