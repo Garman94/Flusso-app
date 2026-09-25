@@ -27,6 +27,10 @@ export type PlanItem = {
   debt_type: string | null;
   next_due_date: string | null;
   category_id?: string | null;
+  /** rate: primo mese di pagamento */
+  debt_start_date?: string | null;
+  /** tipo di spesa fissa scelto dall'utente (migration 039); null = dedotto da nome e categoria */
+  fixed_group?: string | null;
 };
 
 export type PlanTx = {
@@ -40,6 +44,55 @@ export type PlanTx = {
 /** Né Rata né Accantonamento, e non un'entrata (il reddito si imposta in Account). */
 export function isFixedExpense(it: Pick<PlanItem, "debt_type" | "next_due_date" | "tipologia">): boolean {
   return !it.debt_type && !it.next_due_date && it.tipologia !== "entrata";
+}
+
+// ── Tipi di spesa fissa ─────────────────────────────────────────────────────
+
+export const FIXED_GROUPS = [
+  { key: "casa", label: "Casa", icon: "🏠", hint: "affitto, condominio" },
+  { key: "utenze", label: "Utenze", icon: "💡", hint: "luce, gas, acqua, internet, telefono" },
+  { key: "abbonamenti", label: "Abbonamenti", icon: "📺", hint: "streaming, palestra, app" },
+  { key: "trasporti", label: "Trasporti", icon: "🚗", hint: "Telepass, abbonamento a bus o treno" },
+  { key: "assicurazioni", label: "Assicurazioni", icon: "🛡️", hint: "polizze pagate ogni mese" },
+  { key: "altro", label: "Altro", icon: "📌", hint: "" },
+] as const;
+export type FixedGroup = (typeof FIXED_GROUPS)[number]["key"];
+const GROUP_KEYS = new Set<string>(FIXED_GROUPS.map(g => g.key));
+
+// Parole del nome che dicono il tipo. L'ordine conta: "abbonamento bus" è un trasporto,
+// "assicurazione casa" un'assicurazione.
+const GROUP_WORDS: [FixedGroup, string[]][] = [
+  ["assicurazioni", ["assicurazione", "assicurazioni", "polizza", "unipol", "allianz", "axa", "generali", "genertel", "prima assicurazioni"]],
+  ["trasporti", ["telepass", "treno", "trenitalia", "italo", "bus", "metro", "atm", "atac", "gtt", "parcheggio", "garage", "box auto", "car sharing", "mezzi"]],
+  ["casa", ["affitto", "condominio", "condominiali", "condominiale", "pigione", "locazione", "mutuo"]],
+  ["utenze", ["luce", "gas", "acqua", "energia", "elettricita", "bolletta", "bollette", "enel", "plenitude", "edison", "a2a", "hera", "iren", "acea", "sorgenia",
+    "telefono", "cellulare", "cell", "tim", "vodafone", "wind", "windtre", "iliad", "fastweb", "ho mobile", "kena", "very mobile", "internet", "fibra", "adsl", "wifi", "tari", "rifiuti"]],
+  ["abbonamenti", ["netflix", "spotify", "disney", "prime", "dazn", "sky", "now tv", "youtube", "apple", "icloud", "google one", "amazon", "audible", "chatgpt",
+    "microsoft", "office", "xbox", "playstation", "nintendo", "palestra", "gym", "abbonamento", "abbonamenti", "streaming"]],
+];
+
+// Se il nome non dice niente, la categoria dell'app.
+const GROUP_BY_CATEGORY: Record<string, FixedGroup> = {
+  casa: "casa", bollette: "utenze", intrattenimento: "abbonamenti", palestra: "abbonamenti",
+  tecnologia: "abbonamenti", hobby: "abbonamenti", trasporti: "trasporti", assicurazioni: "assicurazioni",
+};
+
+/** Tipo proposto per una spesa fissa dal nome (e, se non basta, dalla categoria). */
+export function guessFixedGroup(name: string, categoryName?: string | null): FixedGroup {
+  const text = ` ${normalizeText(name)} `;
+  for (const [group, words] of GROUP_WORDS) {
+    if (words.some(w => text.includes(` ${w} `))) return group;
+  }
+  return GROUP_BY_CATEGORY[(categoryName ?? "").toLowerCase()] ?? "altro";
+}
+
+/** Tipo di una spesa fissa: quello scelto, altrimenti quello dedotto. */
+export function fixedGroupOf(it: Pick<PlanItem, "name" | "fixed_group">, categoryName?: string | null): FixedGroup {
+  return it.fixed_group && GROUP_KEYS.has(it.fixed_group) ? it.fixed_group as FixedGroup : guessFixedGroup(it.name, categoryName);
+}
+
+export function fixedGroupMeta(key: FixedGroup) {
+  return FIXED_GROUPS.find(g => g.key === key) ?? FIXED_GROUPS[FIXED_GROUPS.length - 1];
 }
 
 /** Importo previsto per una volta: il punto medio se l'importo cambia (es. bollette). */

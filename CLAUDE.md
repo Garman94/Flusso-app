@@ -4,6 +4,20 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Luce e gas (2026-09-25)
+
+Pianifica → Spese fisse → "⚡ Calcola luce e gas" (`?v=utenze`, `app/dashboard/smart/utenze-panel.tsx`), dal gruppo Utenze e in fondo alla pagina. Gratis; la lettura di bollette e contratti con l'AI è Premium. Calcoli in `lib/utilities.ts`, test in `tests/utenze.test.ts`, tabelle nella migration 040.
+
+- **Tariffa** (`utility_tariffs`, una per tipo e utente): prezzo €/kWh o €/Smc, quote fisse €/mese, "altri costi" €/unità (trasporto, oneri di sistema, accise: tanti e variabili, per questo si tarano), IVA %, canone RAI €/mese (solo luce, addebitato gennaio-ottobre). Tutti IVA esclusa.
+- **Stima** (`estimateBill`): consumo × (prezzo + altri costi) + quote fisse, più IVA, più canone. **Taratura** (`calibrateOtherCosts`): dagli altri dati e da totale e consumo di una bolletta vera ricava gli altri costi; se vengono negativi prezzo o quote fisse sono troppo alti (avviso).
+- **Consumi** (`utility_readings`, uno per mese): griglia per anno; una bolletta di più mesi si divide in parti uguali (`splitConsumption`). **Previsione** (`forecastConsumption`): il dato del mese se c'è; altrimenti la media dello stesso mese negli ultimi 3 anni, corretta per la tendenza di quest'anno (mesi già passati contro gli stessi dell'anno prima, almeno 2, tra −30% e +30%); altrimenti la media degli ultimi 3 mesi.
+- **Lettura AI** (`utenze-actions.ts` → `readUtilityDocument`): PDF (fino a 3 MB, blocco `document`) o foto (ridotta dal browser), Claude Haiku 4.5, 10 letture al giorno (eventi `bill_extract`). Il prompt chiede per ogni fornitura prezzo, quote fisse, IVA, canone, dati della bolletta e storico consumi; `parseBillExtraction` scarta valori fuori misura. "Usa questi dati" salva la tariffa, tara gli altri costi se c'è la bolletta e salva lo storico più i mesi della bolletta.
+- **Nelle previsioni**: "Aggiorna la spesa fissa" mette la stima del mese come importo di una spesa fissa di tipo Utenze ("Luce e gas" = somma delle due). Non è automatico: da rifare quando cambia la stagione.
+- **Demo**: `reseed_demo_utenze()` (chiamata da `/api/demo/reset` dopo `reseed_demo`, errori ignorati) crea le due tariffe e i consumi di due anni pieni più quest'anno fino al mese scorso col 5% in meno. La sessione demo non scrive (trigger `block_demo_writes`).
+- Rollback: prima il codice, poi `supabase/rollback/040_utenze_down.sql` (cancella anche i dati degli utenti).
+
+---
+
 ## Accantonamenti in un salvadanaio (2026-09-25)
 
 Accantonamenti → "🐷 Dove tieni questi soldi?": un salvadanaio per tutti gli accantonamenti. Scrive lo stesso `recurring_expenses.savings_pot_id` che prima si impostava voce per voce (e che serviva solo a "Segna come pagata"), su tutte le voci con `next_due_date`; i nuovi accantonamenti lo ricevono già scelto. `potsForSinkingFunds(pots, goalPotIds, sinkingPotIds)`: se almeno una voce è collegata conta solo il saldo dei salvadanai collegati, altrimenti tutti tranne quelli degli obiettivi (come prima). Stesso confronto nella card in dashboard (`sinking-funds-card.tsx`), con l'etichetta "Nel salvadanaio …". Il caso che l'ha fatto nascere: salvadanai "Accantonamenti" ed "Emergenza", e il confronto contava anche Emergenza.
@@ -18,6 +32,7 @@ Accantonamenti → "🐷 Dove tieni questi soldi?": un salvadanaio per tutti gli
 - **Contenuto**: quanto hai risparmiato (entrate − uscite, senza giroconti) e che parte delle entrate, confronto col periodo prima; categorie con quota, "rispetto al solito" (media dei 3 periodi prima, esclusi quelli senza movimenti: vuol dire estratto conto non caricato) e budget di oggi (senza i pagamenti di spese fisse e rate, `planPayments`); "Da ricordare": spese fisse pagate, budget rispettati, spesa più grande e giorno più caro (senza spese fisse e rate), numero di movimenti; tutti i movimenti a scomparsa; avviso se l'ultimo movimento è più di 5 giorni prima della fine; nell'ultimo periodo, invito a Pianifica.
 - **Banner in dashboard** (`recap-banner.tsx`): nei primi 10 giorni del periodo nuovo (`RECAP_BANNER_DAYS` in `app/dashboard/page.tsx`), se il periodo chiuso ha almeno 3 movimenti: "Com'è andato agosto? Hai risparmiato X". Se mancano gli ultimi giorni (nessun movimento negli ultimi 5) invita invece a caricare l'estratto conto. Sparisce aperto il riepilogo o con ✕ (`localStorage` `flusso_riepilogo_visto` = inizio del periodo). Inizio e non fine mese: solo allora il mese è finito ed è il momento di pianificare il nuovo.
 - Eventi: `recap_banner_shown`, `recap_banner_clicked`, `recap_banner_closed`, `recap_viewed` (`latest`).
+- **Le uscite per gruppi** (2026-09-25, `recap-groups.tsx`, `SpendingGroups` in `lib/recap.ts`): ogni uscita del periodo finisce in un solo gruppo e i gruppi sommano al totale: spese fisse (per tipo, speso trovato nei movimenti / previsto) → rate → accantonamenti (categoria "Accantonamenti") → budget (categorie con un budget, speso / budget di oggi, categoria per categoria) → altre spese (categorie senza budget). I pagamenti di spese fisse e rate si cercano solo tra i movimenti di spesa (senza giroconti), così i conti tornano. Striscia con le proporzioni, ogni gruppo si apre. Ha preso il posto dell'elenco per categoria: in "Da ricordare" restano solo le categorie cambiate di più rispetto al solito (`changes`: almeno 10 € e 15%, o nuove da almeno 20 €, al massimo 4).
 
 ---
 
@@ -33,6 +48,7 @@ Nuova sezione Pianifica → **Spese fisse** (`?v=spese-fisse`, modulo `?v=spesa-
 - **Trovate nei movimenti** (`detectRecurring`): gruppi per `ruleKeyword`, una sola volta per mese, 20-40 giorni tra l'una e l'altra, ultima entro 40 giorni, importi entro ×1,6, giorno del mese entro ±6. Escluse le categorie Stipendio/Spostamenti/Salvadanaio/Accantonamenti e ciò che una voce di Pianifica riconosce già. "Aggiungi" crea la spesa con un tocco; ✕ la scarta (in `localStorage`, `flusso_spese_fisse_ignorate`). `NOT_A_MERCHANT` ora comprende "diretto" e "dd" ("ADDEBITO DIRETTO SDD FASTWEB" → "fastweb").
 - **Demo (migration 038)**: affitto, Netflix, Spotify, luce e gas, telefono come spese fisse; Budget solo per le spese che cambiano (640 €); benzina due volte al mese; Telepass lasciato fuori apposta come esempio di spesa trovata. Rollback: `supabase/rollback/038_demo_spese_fisse_down.sql`.
 - Tour Pianifica 3.1 (passo `smart-spese-fisse`), piano gratuito con "Spese fisse" tra le funzioni.
+- **Tipi** (2026-09-25, migration 039, colonna `recurring_expenses.fixed_group`): Casa, Utenze, Abbonamenti, Trasporti, Assicurazioni, Altro (`FIXED_GROUPS`). Vuoto = dedotto (`fixedGroupOf`): prima le parole del nome (`GROUP_WORDS`, in ordine: "abbonamento bus" è un trasporto), poi la categoria dell'app. Il modulo lo propone dal nome mentre si scrive e lo salva; l'elenco è diviso per tipo con il totale del periodo; "Aggiungi" delle spese trovate salva il tipo dedotto. Le voci vecchie non vanno toccate. Rollback: prima il codice, poi `supabase/rollback/039_fixed_group_down.sql`.
 
 ---
 

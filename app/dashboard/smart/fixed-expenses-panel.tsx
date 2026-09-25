@@ -9,7 +9,8 @@ import { parseAmount } from "@/lib/import-parse";
 import { normalizeText, ruleKeyword } from "@/lib/categorize";
 import {
   detectRecurring, expectedAmount, isFixedExpense, nextDueDate, planStatus,
-  type PlanItem, type PlanStatus, type RecurringSuggestion,
+  FIXED_GROUPS, fixedGroupOf, guessFixedGroup,
+  type FixedGroup, type PlanItem, type PlanStatus, type RecurringSuggestion,
 } from "@/lib/fixed-expenses";
 import { markRecurringAsPaid } from "../recurring-payment-actions";
 
@@ -107,6 +108,7 @@ type Props = {
   onBack: () => void;
   onOpenBudget: () => void;
   onOpenRate: () => void;
+  onOpenUtenze: () => void;
 };
 
 export function FixedExpensesPanel(props: Props) {
@@ -119,7 +121,7 @@ export function FixedExpensesPanel(props: Props) {
 
 function FixedList({
   userId, items, setItems, transactions, categories, periodFrom, periodTo,
-  dismissed, onDismiss, onOpenForm, onBack, onOpenBudget, onOpenRate,
+  dismissed, onDismiss, onOpenForm, onBack, onOpenBudget, onOpenRate, onOpenUtenze,
 }: Props) {
   const today = todayISO();
   const fixed = useMemo(() => items.filter(isFixedExpense), [items]);
@@ -133,6 +135,10 @@ function FixedList({
         || (a.due.dates[0] ?? nextDueDate(a.item, today) ?? "9").localeCompare(b.due.dates[0] ?? nextDueDate(b.item, today) ?? "9")),
     [fixed, transactions, periodFrom, periodTo, today],
   );
+  const catName = (id?: string | null) => (id ? catById.get(id)?.name : undefined);
+  const grouped = FIXED_GROUPS
+    .map(g => ({ ...g, list: statuses.filter(st => fixedGroupOf(st.item, catName(st.item.category_id)) === g.key) }))
+    .filter(g => g.list.length > 0);
   const inPeriod = statuses.filter(s => s.state !== "not-due");
   const total = inPeriod.reduce((s, x) => s + x.expected, 0);
   const paid = inPeriod.filter(s => s.state === "paid").reduce((s, x) => s + (x.paidAmount || x.expected), 0);
@@ -152,6 +158,7 @@ function FixedList({
       tipologia: s.amountMax != null ? "variabile" : "fissa", frequency: "mensile",
       custom_days: null, amount: s.amount, amount_max: s.amountMax,
       due_day: s.dueDay, due_month: null, category_id: s.categoryId,
+      fixed_group: guessFixedGroup(s.name, catName(s.categoryId)),
       match_keywords: [s.keyword], matching_strategy: "keyword", secondary_name: null, notes: null,
       next_due_date: null, saving_start_date: null,
     }).select("*").single();
@@ -291,29 +298,45 @@ function FixedList({
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {statuses.map(st => {
-            const it = st.item;
-            const cat = it.category_id ? catById.get(it.category_id) : undefined;
+        <div className="flex flex-col gap-5">
+          {grouped.map(g => {
+            const subtotal = g.list.filter(st => st.state !== "not-due").reduce((sum, st) => sum + st.expected, 0);
             return (
-              <div key={it.id} className={`rounded-xl border p-4 flex items-start gap-3 ${st.state === "not-due" ? "opacity-70" : ""}`}>
-                <span className="text-xl leading-none mt-0.5">{cat?.icon ?? "📌"}</span>
-                <div className="flex-1 min-w-0 flex flex-col gap-1">
-                  <span className="font-medium truncate">{it.name}</span>
-                  <span className="text-xs text-muted-foreground">{amountLabel(it)} · {whenLabel(it)}</span>
-                  <span className="text-xs">{statusLine(st)}</span>
-                  {DEBT_WORDS.test(it.name) && (
-                    <span className="text-xs text-muted-foreground">
-                      Sembra una rata:{" "}
-                      <button onClick={onOpenRate} className="text-primary underline hover:no-underline">in Rate e mutui</button>{" "}
-                      vedi anche quanto manca alla fine.
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <button onClick={() => onOpenForm(it.id)} className="text-xs text-muted-foreground hover:text-foreground border rounded-lg px-2 py-1 transition-colors" title="Modifica">✏️</button>
-                  <button onClick={() => remove(it)} className="text-xs text-muted-foreground hover:text-destructive border rounded-lg px-2 py-1 transition-colors" title="Elimina">🗑</button>
-                </div>
+              <div key={g.key} className="flex flex-col gap-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-baseline justify-between gap-2">
+                  <span>{g.icon} {g.label}</span>
+                  {subtotal > 0 && <span className="normal-case tracking-normal font-medium tabular-nums">{formatEuro(subtotal)} in questo periodo</span>}
+                </h2>
+                {g.key === "utenze" && (
+                  <button onClick={onOpenUtenze} className="text-sm text-primary hover:underline self-start -mt-1">
+                    ⚡ Calcola luce e gas: stima la bolletta di questo mese →
+                  </button>
+                )}
+                {g.list.map(st => {
+                  const it = st.item;
+                  const cat = it.category_id ? catById.get(it.category_id) : undefined;
+                  return (
+                    <div key={it.id} className={`rounded-xl border p-4 flex items-start gap-3 ${st.state === "not-due" ? "opacity-70" : ""}`}>
+                      <span className="text-xl leading-none mt-0.5">{cat?.icon ?? g.icon}</span>
+                      <div className="flex-1 min-w-0 flex flex-col gap-1">
+                        <span className="font-medium truncate">{it.name}</span>
+                        <span className="text-xs text-muted-foreground">{amountLabel(it)} · {whenLabel(it)}</span>
+                        <span className="text-xs">{statusLine(st)}</span>
+                        {DEBT_WORDS.test(it.name) && (
+                          <span className="text-xs text-muted-foreground">
+                            Sembra una rata:{" "}
+                            <button onClick={onOpenRate} className="text-primary underline hover:no-underline">in Rate e mutui</button>{" "}
+                            vedi anche quanto manca alla fine.
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button onClick={() => onOpenForm(it.id)} className="text-xs text-muted-foreground hover:text-foreground border rounded-lg px-2 py-1 transition-colors" title="Modifica">✏️</button>
+                        <button onClick={() => remove(it)} className="text-xs text-muted-foreground hover:text-destructive border rounded-lg px-2 py-1 transition-colors" title="Elimina">🗑</button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
@@ -334,6 +357,15 @@ function FixedList({
           ))}
         </div>
       )}
+
+      <button onClick={onOpenUtenze} className="rounded-xl border px-4 py-3 text-left flex items-center gap-3 hover:bg-muted/40 transition-colors">
+        <span className="text-xl">⚡🔥</span>
+        <span className="flex flex-col flex-1">
+          <span className="text-sm font-medium">Calcolatore luce e gas</span>
+          <span className="text-xs text-muted-foreground">Quanto pagherai questo mese, dai consumi degli anni passati e dai prezzi del tuo fornitore.</span>
+        </span>
+        <span className="text-muted-foreground">›</span>
+      </button>
 
       <p className="text-xs text-muted-foreground">
         Le spese fisse non contano nel{" "}
@@ -376,6 +408,13 @@ function FixedForm({ userId, items, setItems, transactions, categories, category
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<typeof f>) => setF(prev => ({ ...prev, ...patch }));
 
+  // Tipo: quello scelto a mano, altrimenti dedotto dal nome mentre lo si scrive.
+  const catNameOf = (id: string) => categories.find(c => c.id === id)?.name;
+  const [groupChoice, setGroupChoice] = useState<FixedGroup | null>(() =>
+    editing?.fixed_group && FIXED_GROUPS.some(g => g.key === editing.fixed_group) ? editing.fixed_group as FixedGroup : null);
+  const group: FixedGroup = groupChoice ?? guessFixedGroup(f.name, catNameOf(f.categoryId));
+  const groupMeta = FIXED_GROUPS.find(g => g.key === group)!;
+
   const expenseCategories = categories.filter(c => !NOT_EXPENSE_CATEGORIES.has(c.name.toLowerCase()));
   const budget = f.categoryId ? Number(categoryBudgets.find(b => b.category_id === f.categoryId)?.monthly_budget ?? 0) : 0;
   const budgetCat = categories.find(c => c.id === f.categoryId);
@@ -417,6 +456,7 @@ function FixedForm({ userId, items, setItems, transactions, categories, category
       amount, amount_max: f.varies ? amountMax : null,
       due_day: dueDay, due_month: f.frequency === "mensile" ? null : f.dueMonth,
       category_id: f.categoryId || null,
+      fixed_group: group,
       match_keywords: f.keyword.trim() ? [f.keyword.trim().toLowerCase()] : [],
       matching_strategy: "keyword",
       secondary_name: f.secondaryName || null,
@@ -448,6 +488,23 @@ function FixedForm({ userId, items, setItems, transactions, categories, category
           <label className="text-sm font-medium">Nome</label>
           <input type="text" value={f.name} onChange={e => set({ name: e.target.value })}
             placeholder="es. Affitto, Telefono, Netflix, Luce" className={inputClass} />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium">Tipo</label>
+          <div className="grid grid-cols-3 gap-2">
+            {FIXED_GROUPS.map(g => (
+              <button key={g.key} type="button" onClick={() => setGroupChoice(g.key)}
+                className={`rounded-xl border-2 px-2 py-2 text-sm flex flex-col items-center gap-0.5 transition-all ${group === g.key ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
+                <span className="text-lg leading-none">{g.icon}</span>
+                {g.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {!groupChoice && f.name.trim() ? "Scelto dal nome, tocca per cambiarlo. " : ""}
+            {groupMeta.hint && `${groupMeta.label}: ${groupMeta.hint}.`}
+          </p>
         </div>
 
         <div className="flex flex-col gap-1.5">

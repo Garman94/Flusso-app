@@ -14,6 +14,7 @@ import { resetSavingStartDate, markSinkingFundPaid } from "./sinking-fund-action
 import { addGoalContribution } from "./goal-actions";
 import { BudgetPanel } from "./budget-panel";
 import { FixedExpensesPanel, fixedSuggestions, useDismissedSuggestions } from "./fixed-expenses-panel";
+import { UtenzePanel } from "./utenze-panel";
 import { isFixedExpense } from "@/lib/fixed-expenses";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,7 +54,7 @@ type View =
   | "cover" | "add-recurring" | "edit-recurring" | "list-recurring"
   | "add-goal" | "list-goals" | "goal-detail" | "previsioni"
   | "impegni" | "accantonamenti" | "accantonamento-form" | "budget" | "rate" | "rate-form"
-  | "spese-fisse" | "spesa-fissa-form";
+  | "spese-fisse" | "spesa-fissa-form" | "utenze";
 
 type CategoryBudget = { category_id: string; monthly_budget: number };
 type CategoryBudgetNote = { category_id: string; year: number; month: number; note: string };
@@ -269,7 +270,7 @@ const ACCANTONAMENTO_FREQ_OPTIONS: { value: Frequency; label: string }[] = [
 const VIEWS: readonly View[] = [
   "cover", "add-recurring", "edit-recurring", "list-recurring", "add-goal", "list-goals", "goal-detail",
   "previsioni", "impegni", "accantonamenti", "accantonamento-form", "budget", "rate", "rate-form",
-  "spese-fisse", "spesa-fissa-form",
+  "spese-fisse", "spesa-fissa-form", "utenze",
 ];
 function parseView(v: string | null): View {
   if (!v || !(VIEWS as readonly string[]).includes(v)) return "cover";
@@ -908,6 +909,21 @@ export function SmartPageClient({
         onBack={() => goBack(view === "spese-fisse" ? "cover" : "spese-fisse")}
         onOpenBudget={() => setView("budget")}
         onOpenRate={() => setView("rate")}
+        onOpenUtenze={() => setView("utenze")}
+      />
+    );
+  }
+
+  // Calcolatore luce e gas (utenze-panel.tsx): gratis; la lettura delle bollette con l'AI è Premium.
+  if (view === "utenze") {
+    return (
+      <UtenzePanel
+        userId={userId}
+        premium={!isFree}
+        items={recurringItems}
+        setItems={fn => setRecurringItems(prev => fn(prev) as unknown as RecurringExpense[])}
+        categories={categories}
+        onBack={() => goBack("spese-fisse")}
       />
     );
   }

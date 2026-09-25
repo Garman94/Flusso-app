@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   dueInPeriod, nextDueDate, findPayments, planStatus, splitPlan, planPayments, detectRecurring,
-  isFixedExpense, expectedAmount, type PlanItem,
+  isFixedExpense, expectedAmount, guessFixedGroup, fixedGroupOf, type PlanItem,
 } from "../lib/fixed-expenses";
 import { projectPeriodEnd } from "../lib/calculations";
 import { ruleKeyword } from "../lib/categorize";
@@ -212,4 +212,17 @@ test("ricerca automatica: non ripropone quello che c'è già", () => {
 
 test("parola chiave: 'addebito diretto' non è un negozio", () => {
   assert.equal(ruleKeyword("ADDEBITO DIRETTO SDD FASTWEB SPA"), "fastweb");
+});
+
+test("tipi di spesa fissa: dal nome, poi dalla categoria, e quello scelto vince", () => {
+  assert.equal(guessFixedGroup("Affitto"), "casa");
+  assert.equal(guessFixedGroup("Luce e gas"), "utenze");
+  assert.equal(guessFixedGroup("Offerta telefono"), "utenze");
+  assert.equal(guessFixedGroup("Netflix"), "abbonamenti");
+  assert.equal(guessFixedGroup("Abbonamento bus"), "trasporti");
+  assert.equal(guessFixedGroup("Assicurazione casa"), "assicurazioni");
+  assert.equal(guessFixedGroup("Pagamento Mario", "Bollette"), "utenze");
+  assert.equal(guessFixedGroup("Retta"), "altro");
+  assert.equal(fixedGroupOf({ name: "Netflix", fixed_group: "altro" }), "altro");
+  assert.equal(fixedGroupOf({ name: "Netflix", fixed_group: "sbagliato" }), "abbonamenti");
 });
