@@ -19,5 +19,9 @@ export async function POST() {
     return NextResponse.json({ error: "reset_failed" }, { status: 500 });
   }
 
+  // Luce e gas (migration 040): se manca, la demo funziona lo stesso senza il calcolatore.
+  const { error: utenzeError } = await service.rpc("reseed_demo_utenze");
+  if (utenzeError) console.error("[demo/reset] reseed_demo_utenze failed:", utenzeError.message);
+
   return NextResponse.json({ ok: true });
 }
