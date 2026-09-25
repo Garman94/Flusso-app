@@ -6,8 +6,9 @@ import { addDaysISO, todayISO } from "@/lib/dates";
 import { currentPeriod, previousPeriods } from "@/lib/period";
 import { formatEuro } from "@/lib/calculations";
 import { isFixedExpense, type PlanItem } from "@/lib/fixed-expenses";
-import { buildRecap, periodContaining, periodName, RECAP_HISTORY, type CategoryLine, type Recap, type RecapTx } from "@/lib/recap";
+import { buildRecap, periodContaining, periodName, RECAP_HISTORY, type Recap, type RecapTx } from "@/lib/recap";
 import { RecapSeen, RecapTransactions } from "./recap-client";
+import { RecapGroups } from "./recap-groups";
 
 // Riepilogo di un periodo chiuso (prima: una finestra "Mesi passati" per mese solare, senza
 // confronti). ?da=YYYY-MM-DD sceglie il periodo che contiene quella data; senza, l'ultimo
@@ -49,41 +50,17 @@ function Delta({ diff, goodWhenUp }: { diff: number; goodWhenUp: boolean }) {
   );
 }
 
-/** Rispetto al solito: conta solo se la differenza è di almeno 10 € e del 15%. */
-function usualNote(c: CategoryLine) {
-  if (c.usual === null) return null;
-  const diff = c.total - c.usual;
-  if (c.usual < 1) return <span className="text-muted-foreground">di solito niente</span>;
-  if (Math.abs(diff) < Math.max(10, c.usual * 0.15)) return <span className="text-muted-foreground">come al solito</span>;
-  return diff > 0
-    ? <span className="text-red-500">{formatEuro(diff)} più del solito</span>
-    : <span className="text-green-600 dark:text-green-400">{formatEuro(-diff)} meno del solito</span>;
-}
-
-function budgetNote(c: CategoryLine) {
-  if (!c.budget) return null;
-  const over = c.budgetSpent - c.budget;
-  return over > 0.005
-    ? <span className="text-red-500">budget {formatEuro(c.budget)}, superato di {formatEuro(over)}</span>
-    : <span className="text-green-600 dark:text-green-400">nel budget di {formatEuro(c.budget)} ✓</span>;
-}
-
 function Highlights({ r, monthName }: { r: Recap; monthName: string }) {
   const items: { icon: string; text: React.ReactNode }[] = [];
-  if (r.fixed) {
+  // Le categorie che si sono mosse di più rispetto al solito (mesi completi prima di questo).
+  for (const c of r.changes) {
     items.push({
-      icon: "📋",
-      text: <>Spese fisse: <strong>{formatEuro(r.fixed.paid || r.fixed.expected)}</strong>
-        {r.fixed.paidCount === r.fixed.count ? ", tutte pagate ✓" : `, ${r.fixed.paidCount} su ${r.fixed.count} trovate nei movimenti`}</>,
-    });
-  }
-  if (r.budget) {
-    items.push({
-      icon: "🎯",
-      text: r.budget.over.length === 0
-        ? <>Budget rispettato in tutte le categorie ({r.budget.count}) 🎉</>
-        : <>Budget rispettato in {r.budget.within} categorie su {r.budget.count}. Sforato:{" "}
-            {r.budget.over.slice(0, 3).map(o => `${o.name} (+${formatEuro(o.by)})`).join(", ")}</>,
+      icon: c.icon,
+      text: c.isNew
+        ? <><strong>{c.name}</strong>: {formatEuro(c.total)}, di solito niente</>
+        : c.diff > 0
+          ? <><strong>{c.name}</strong>: <span className="text-red-500">{formatEuro(c.diff)} più del solito</span> ({formatEuro(c.total)})</>
+          : <><strong>{c.name}</strong>: <span className="text-green-600 dark:text-green-400">{formatEuro(-c.diff)} meno del solito</span> ({formatEuro(c.total)})</>,
     });
   }
   if (r.biggest) {
@@ -104,8 +81,11 @@ function Highlights({ r, monthName }: { r: Recap; monthName: string }) {
       {items.map((it, i) => (
         <p key={i} className="text-sm flex gap-3"><span className="shrink-0">{it.icon}</span><span>{it.text}</span></p>
       ))}
-      {(r.biggest || r.topDay) && r.fixed && (
+      {(r.biggest || r.topDay) && (r.groups.fisse || r.groups.rate) && (
         <p className="text-[11px] text-muted-foreground">Spesa più grande e giorno più caro non contano spese fisse e rate.</p>
+      )}
+      {r.changes.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">&quot;Il solito&quot; è la media dei mesi completi prima di questo.</p>
       )}
     </div>
   );
@@ -129,14 +109,15 @@ async function RecapContent({ searchParams }: { searchParams: Promise<{ da?: str
   const isLatest = sel.from === latest.from;
   const previous = previousPeriods(payDay, sel.year, sel.month, RECAP_HISTORY + 1);
 
-  const [txs, budgetsRes, recurringRes, firstRes] = await Promise.all([
+  const [txs, budgetsRes, recurringRes, firstRes, categoriesRes] = await Promise.all([
     fetchTxs(supabase, userId, previous[previous.length - 1]?.from ?? sel.from, sel.to),
     supabase.from("category_budgets").select("category_id, monthly_budget").eq("user_id", userId),
     supabase.from("recurring_expenses").select("*").eq("user_id", userId),
     supabase.from("transactions").select("date").eq("user_id", userId).order("date", { ascending: true }).limit(1).maybeSingle(),
+    supabase.from("categories").select("id, name, icon").or(`user_id.eq.${userId},user_id.is.null`),
   ]);
   const planItems = ((recurringRes.data ?? []) as PlanItem[]).filter(it => isFixedExpense(it) || it.debt_type);
-  const r = buildRecap(txs, sel, previous, budgetsRes.data ?? [], planItems, todayISO());
+  const r = buildRecap(txs, sel, previous, budgetsRes.data ?? [], planItems, todayISO(), categoriesRes.data ?? []);
 
   const name = periodName(payDay, sel);
   const monthName = name.month;
@@ -146,10 +127,6 @@ async function RecapContent({ searchParams }: { searchParams: Promise<{ da?: str
   const rows = txs
     .filter(t => t.date >= sel.from && t.date <= sel.to)
     .map(t => ({ id: t.id, date: t.date, amount: Number(t.amount), description: t.description || t.merchant || "Movimento", icon: t.categories?.icon ?? "📦" }));
-
-  const top = r.categories.slice(0, 6);
-  const rest = r.categories.slice(6);
-  const restTotal = rest.reduce((s, c) => s + c.total, 0);
 
   return (
     <div className="flex flex-col gap-5 max-w-lg mx-auto w-full">
@@ -221,38 +198,7 @@ async function RecapContent({ searchParams }: { searchParams: Promise<{ da?: str
             </div>
           )}
 
-          {/* Dove sono andati i soldi */}
-          {top.length > 0 && (
-            <div className="rounded-2xl border p-5 flex flex-col gap-4">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Dove sono andati i soldi</h2>
-              {top.map(c => (
-                <div key={c.id} className="flex flex-col gap-1.5">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="text-sm font-medium flex items-center gap-2 min-w-0">
-                      <span>{c.icon}</span><span className="truncate">{c.name}</span>
-                    </span>
-                    <span className="text-sm font-semibold tabular-nums shrink-0">{formatEuro(c.total)}</span>
-                  </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${Math.max(2, c.pct)}%`, backgroundColor: c.color }} />
-                  </div>
-                  <div className="text-xs flex flex-wrap gap-x-3 gap-y-0.5">
-                    <span className="text-muted-foreground">{Math.round(c.pct)}% delle uscite</span>
-                    {usualNote(c)}
-                    {budgetNote(c)}
-                  </div>
-                </div>
-              ))}
-              {rest.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {rest.length === 1 ? `Un'altra categoria (${rest[0].name})` : `Altre ${rest.length} categorie`}: {formatEuro(restTotal)}
-                </p>
-              )}
-              {r.categories.some(c => c.budget) && (
-                <p className="text-[11px] text-muted-foreground">Il confronto è col budget di oggi, senza spese fisse e rate.</p>
-              )}
-            </div>
-          )}
+          <RecapGroups groups={r.groups} total={r.expenses} />
 
           <Highlights r={r} monthName={monthName} />
 

@@ -4,7 +4,7 @@
 
 import { isTransferCategory } from "./calculations";
 import { computePeriodRange, getCurrentPeriodAnchor } from "./period";
-import { isFixedExpense, planPayments, planStatus, type PlanItem } from "./fixed-expenses";
+import { fixedGroupMeta, fixedGroupOf, isFixedExpense, planStatus, type FixedGroup, type PlanItem } from "./fixed-expenses";
 
 export type RecapTx = {
   id?: string;
@@ -36,6 +36,27 @@ export type CategoryLine = {
 
 export type Totals = { income: number; expenses: number; saved: number };
 
+/** Una spesa fissa nel periodo: quanto era previsto e quanto è stato trovato nei movimenti. */
+export type FixedLine = { name: string; planned: number; spent: number; paid: boolean };
+export type FixedSubgroup = { key: FixedGroup; label: string; icon: string; planned: number; spent: number; items: FixedLine[] };
+export type SpendLine = { id: string; name: string; icon: string; spent: number };
+
+/**
+ * Le uscite divise nei grandi gruppi di Pianifica. Le cinque parti sommano alle uscite del
+ * periodo: ogni movimento finisce in un gruppo solo (prima spese fisse e rate riconosciute,
+ * poi accantonamenti, poi le categorie con un budget, il resto in "altre spese").
+ */
+export type SpendingGroups = {
+  fisse: { planned: number; spent: number; subgroups: FixedSubgroup[] } | null;
+  rate: { planned: number; spent: number } | null;
+  budget: { planned: number; spent: number; categories: (SpendLine & { planned: number })[] } | null;
+  altre: { spent: number; categories: SpendLine[] } | null;
+  accantonamenti: { spent: number } | null;
+};
+
+/** Categoria che si è mossa molto rispetto al solito (almeno 10 € e il 15%), o nuova. */
+export type UsualChange = { id: string; name: string; icon: string; total: number; diff: number; isNew: boolean };
+
 export type Recap = Totals & {
   period: Period;
   /** parte delle entrate rimasta: saved / income, null senza entrate */
@@ -44,14 +65,18 @@ export type Recap = Totals & {
   prev: Totals | null;
   categories: CategoryLine[];
   txCount: number;
-  /** la spesa singola più grande, escluse spese fisse e rate */
+  /** la spesa singola più grande, escluse spese fisse, rate e accantonamenti */
   biggest: RecapTx | null;
-  /** il giorno con più spese, escluse spese fisse e rate */
+  /** il giorno con più spese, escluse spese fisse, rate e accantonamenti */
   topDay: { date: string; total: number } | null;
   /** spese fisse del periodo */
   fixed: { expected: number; paid: number; count: number; paidCount: number } | null;
   /** categorie con un budget: quante rispettate e quali superate */
   budget: { count: number; within: number; over: { name: string; by: number }[] } | null;
+  /** le uscite nei grandi gruppi, con previsto e speso */
+  groups: SpendingGroups;
+  /** le categorie cambiate di più rispetto al solito, le più grandi prima (al massimo 4) */
+  changes: UsualChange[];
   firstTxDate: string | null;
   lastTxDate: string | null;
   /** l'ultimo movimento è di parecchi giorni prima della fine: forse l'estratto conto non è completo */
@@ -91,6 +116,7 @@ export function totals(txs: Pick<RecapTx, "amount" | "categories">[]): Totals {
  *                 solo a sapere se il penultimo è completo)
  * @param budgets  budget per categoria di oggi
  * @param planItems spese fisse e rate: i loro pagamenti non contano nel budget né nelle curiosità
+ * @param categories nomi e icone delle categorie: tipo delle spese fisse, categorie a budget senza spese
  */
 export function buildRecap(
   txs: RecapTx[],
@@ -99,7 +125,10 @@ export function buildRecap(
   budgets: { category_id: string; monthly_budget: number }[] = [],
   planItems: PlanItem[] = [],
   today: string = period.to,
+  categories: { id: string; name: string; icon?: string | null }[] = [],
 ): Recap {
+  const categoryById = new Map(categories.map(c => [c.id, c]));
+  const categoryNames: Record<string, string> = Object.fromEntries(categories.map(c => [c.id, c.name]));
   const current = txs.filter(t => inPeriod(t, period));
   const spendable = current.filter(t => !isTransferCategory(t.categories?.name));
   const expensesTx = spendable.filter(t => Number(t.amount) < 0);
@@ -126,7 +155,15 @@ export function buildRecap(
     return sum / history.length;
   };
 
-  const paidByPlan = planPayments(planItems, current, [period]);
+  const fixedStatuses = planItems.filter(isFixedExpense)
+    .map(it => planStatus(it, spendable, period.from, period.to, today))
+    .filter(s => s.state !== "not-due");
+  const rateStatuses = planItems
+    .filter(it => it.debt_type && (!it.debt_start_date || it.debt_start_date <= period.to) && (!it.end_date || it.end_date >= period.from))
+    .map(it => planStatus(it, spendable, period.from, period.to, today));
+  const fixedPaid = new Set(fixedStatuses.flatMap(st => st.payments));
+  const ratePaid = new Set(rateStatuses.flatMap(st => st.payments));
+  const paidByPlan = new Set([...fixedPaid, ...ratePaid]);
   const budgetOf = new Map(budgets.map(b => [b.category_id, Number(b.monthly_budget)]));
 
   const byCat = new Map<string, { name: string; icon: string; color: string; total: number; budgetSpent: number }>();
@@ -142,7 +179,7 @@ export function buildRecap(
     if (!paidByPlan.has(t)) entry.budgetSpent += abs(t);
     byCat.set(key, entry);
   }
-  const categories: CategoryLine[] = [...byCat.entries()]
+  const categoryLines: CategoryLine[] = [...byCat.entries()]
     .map(([id, v]) => ({
       id, ...v,
       pct: tot.expenses > 0 ? (v.total / tot.expenses) * 100 : 0,
@@ -151,7 +188,7 @@ export function buildRecap(
     }))
     .sort((a, b) => b.total - a.total);
 
-  const withBudget = categories.filter(c => c.budget && c.budget > 0);
+  const withBudget = categoryLines.filter(c => c.budget && c.budget > 0);
   const over = withBudget
     .filter(c => c.budgetSpent > c.budget! + 0.005)
     .map(c => ({ name: c.name, by: c.budgetSpent - c.budget! }))
@@ -160,16 +197,15 @@ export function buildRecap(
     ? { count: withBudget.length, within: withBudget.length - over.length, over }
     : null;
 
-  const variable = expensesTx.filter(t => !paidByPlan.has(t));
+  // Curiosità sugli acquisti: senza spese fisse, rate e soldi spostati negli accantonamenti.
+  const isSavingsTx = (t: RecapTx) => (t.categories?.name ?? "").toLowerCase() === "accantonamenti";
+  const variable = expensesTx.filter(t => !paidByPlan.has(t) && !isSavingsTx(t));
   const biggest = variable.reduce<RecapTx | null>((best, t) => (!best || abs(t) > abs(best) ? t : best), null);
   const byDay = new Map<string, number>();
   for (const t of variable) byDay.set(t.date, (byDay.get(t.date) ?? 0) + abs(t));
   const topDay = [...byDay.entries()].reduce<{ date: string; total: number } | null>(
     (best, [date, total]) => (!best || total > best.total ? { date, total } : best), null);
 
-  const fixedStatuses = planItems.filter(isFixedExpense)
-    .map(it => planStatus(it, current, period.from, period.to, today))
-    .filter(s => s.state !== "not-due");
   const fixed = fixedStatuses.length
     ? {
         expected: fixedStatuses.reduce((s, x) => s + x.expected, 0),
@@ -179,6 +215,66 @@ export function buildRecap(
       }
     : null;
 
+  // ── Gruppi ──
+  const subgroups = new Map<FixedGroup, FixedSubgroup>();
+  for (const st of fixedStatuses) {
+    const key = fixedGroupOf(st.item, st.item.category_id ? categoryNames[st.item.category_id] : null);
+    const meta = fixedGroupMeta(key);
+    const sub = subgroups.get(key) ?? { key, label: meta.label, icon: meta.icon, planned: 0, spent: 0, items: [] };
+    sub.planned += st.expected;
+    sub.spent += st.paidAmount;
+    sub.items.push({ name: st.item.name, planned: st.expected, spent: st.paidAmount, paid: st.state === "paid" });
+    subgroups.set(key, sub);
+  }
+  const fixedSubs = [...subgroups.values()].sort((a, b) => b.planned - a.planned);
+
+
+  let savingsSpent = 0;
+  const budgetSpentByCat = new Map<string, number>();
+  const otherByCat = new Map<string, SpendLine>();
+  for (const t of expensesTx) {
+    if (paidByPlan.has(t)) continue;
+    if (isSavingsTx(t)) { savingsSpent += abs(t); continue; }
+    const key = t.category_id ?? "__none__";
+    if ((budgetOf.get(key) ?? 0) > 0) {
+      budgetSpentByCat.set(key, (budgetSpentByCat.get(key) ?? 0) + abs(t));
+    } else {
+      const line = otherByCat.get(key) ?? { id: key, name: t.categories?.name ?? "Senza categoria", icon: t.categories?.icon ?? "📦", spent: 0 };
+      line.spent += abs(t);
+      otherByCat.set(key, line);
+    }
+  }
+  const budgetCats = budgets
+    .filter(b => Number(b.monthly_budget) > 0 && (categoryNames[b.category_id] ?? "").toLowerCase() !== "accantonamenti")
+    .map(b => {
+      const seen = byCat.get(b.category_id);
+      return {
+        id: b.category_id,
+        name: seen?.name ?? categoryNames[b.category_id] ?? "Categoria",
+        icon: seen?.icon ?? categoryById.get(b.category_id)?.icon ?? "📦",
+        planned: Number(b.monthly_budget),
+        spent: budgetSpentByCat.get(b.category_id) ?? 0,
+      };
+    })
+    .sort((a, b) => b.spent - a.spent || b.planned - a.planned);
+  const sum = <T>(list: T[], f: (x: T) => number) => list.reduce((acc, x) => acc + f(x), 0);
+  const otherCats = [...otherByCat.values()].sort((a, b) => b.spent - a.spent);
+
+  const groups: SpendingGroups = {
+    fisse: fixedSubs.length ? { planned: sum(fixedSubs, x => x.planned), spent: sum(fixedSubs, x => x.spent), subgroups: fixedSubs } : null,
+    rate: rateStatuses.length ? { planned: sum(rateStatuses, x => x.expected), spent: sum(rateStatuses, x => x.paidAmount) } : null,
+    budget: budgetCats.length ? { planned: sum(budgetCats, x => x.planned), spent: sum(budgetCats, x => x.spent), categories: budgetCats } : null,
+    altre: otherCats.length ? { spent: sum(otherCats, x => x.spent), categories: otherCats } : null,
+    accantonamenti: savingsSpent > 0 ? { spent: savingsSpent } : null,
+  };
+
+  const changes: UsualChange[] = categoryLines
+    .filter(c => c.usual !== null)
+    .map(c => ({ id: c.id, name: c.name, icon: c.icon, total: c.total, diff: c.total - c.usual!, isNew: c.usual! < 1 }))
+    .filter(c => (c.isNew ? c.total >= 20 : Math.abs(c.diff) >= Math.max(10, (c.total - c.diff) * 0.15)))
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+    .slice(0, 4);
+
   const lastTxDate = current.reduce<string | null>((m, t) => (!m || t.date > m ? t.date : m), null);
   const firstTxDate = current.reduce<string | null>((m, t) => (!m || t.date < m ? t.date : m), null);
 
@@ -187,12 +283,14 @@ export function buildRecap(
     period,
     savedRate: tot.income > 0 ? tot.saved / tot.income : null,
     prev,
-    categories,
+    categories: categoryLines,
     txCount: current.length,
     biggest,
     topDay,
     fixed,
     budget,
+    groups,
+    changes,
     firstTxDate,
     lastTxDate,
     maybeIncomplete: !!lastTxDate && daysBetween(lastTxDate, period.to) > INCOMPLETE_DAYS,

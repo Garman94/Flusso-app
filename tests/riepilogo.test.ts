@@ -130,3 +130,41 @@ test("periodi: quello che contiene una data, e il nome da persona", () => {
   assert.deepEqual(periodName(0, sett), { month: "settembre", year: 2026, range: null });
   assert.equal(periodName(10, { from: "2026-08-10", to: "2026-09-09" }).month, "agosto");
 });
+
+test("riepilogo: le uscite nei gruppi sommano al totale, con previsto e speso", () => {
+  const budgets = [
+    { category_id: "alimentari", monthly_budget: 200 },
+    { category_id: "ristoranti", monthly_budget: 60 },
+  ];
+  const names = ["Casa", "Intrattenimento", "Alimentari", "Ristoranti"].map(n => ({ id: n.toLowerCase(), name: n, icon: "•" }));
+  const r = buildRecap(txs, AGO, [LUG], budgets, [affitto, netflix, spotify], "2026-09-24", names);
+  const g = r.groups;
+  // fisse: affitto (casa) e netflix + spotify (abbonamenti); spotify non trovata
+  assert.equal(g.fisse!.spent, 813.99);
+  assert.equal(Math.round(g.fisse!.planned * 100) / 100, 824.98);
+  assert.deepEqual(g.fisse!.subgroups.map(s => [s.key, Math.round(s.planned * 100) / 100]), [["casa", 800], ["abbonamenti", 24.98]]);
+  assert.equal(g.fisse!.subgroups[1].items.find(i => i.name === "Spotify")!.paid, false);
+  // budget: previsto 260, speso 150 (alimentari) + 82 (ristoranti)
+  assert.deepEqual([g.budget!.planned, g.budget!.spent], [260, 232]);
+  assert.deepEqual(g.budget!.categories.map(c => [c.id, c.spent, c.planned]), [["alimentari", 150, 200], ["ristoranti", 82, 60]]);
+  const parts = (g.fisse?.spent ?? 0) + (g.rate?.spent ?? 0) + (g.budget?.spent ?? 0) + (g.altre?.spent ?? 0) + (g.accantonamenti?.spent ?? 0);
+  assert.equal(Math.round(parts * 100) / 100, Math.round(r.expenses * 100) / 100);
+  assert.equal(g.altre, null);          // tutto il resto è fisso o a budget
+  assert.equal(g.rate, null);
+});
+
+test("riepilogo: senza budget le spese vanno in 'altre', gli accantonamenti a parte", () => {
+  const withSavings = [...txs, tx("2026-08-20", -200, "Accantonamenti", "Giroconto deposito")];
+  const r = buildRecap(withSavings, AGO, [LUG]);
+  assert.equal(r.groups.accantonamenti!.spent, 200);
+  assert.equal(r.groups.fisse, null);
+  assert.equal(r.groups.budget, null);
+  assert.equal(r.groups.altre!.categories[0].id, "casa");
+  assert.equal(Math.round(r.groups.altre!.spent * 100) / 100, 1045.99);
+});
+
+test("riepilogo: rispetto al solito solo i cambi che contano", () => {
+  const r = buildRecap(txs, AGO, STORICO);
+  // alimentari 150 contro 110 di solito (+40); ristoranti 82 contro 35 (+47); casa e netflix uguali
+  assert.deepEqual(r.changes.map(c => [c.id, Math.round(c.diff)]), [["ristoranti", 47], ["alimentari", 40]]);
+});
