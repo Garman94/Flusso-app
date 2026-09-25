@@ -4,6 +4,20 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Luce e gas (2026-09-25)
+
+Pianifica → Spese fisse → "⚡ Calcola luce e gas" (`?v=utenze`, `app/dashboard/smart/utenze-panel.tsx`), dal gruppo Utenze e in fondo alla pagina. Gratis; la lettura di bollette e contratti con l'AI è Premium. Calcoli in `lib/utilities.ts`, test in `tests/utenze.test.ts`, tabelle nella migration 040.
+
+- **Tariffa** (`utility_tariffs`, una per tipo e utente): prezzo €/kWh o €/Smc, quote fisse €/mese, "altri costi" €/unità (trasporto, oneri di sistema, accise: tanti e variabili, per questo si tarano), IVA %, canone RAI €/mese (solo luce, addebitato gennaio-ottobre). Tutti IVA esclusa.
+- **Stima** (`estimateBill`): consumo × (prezzo + altri costi) + quote fisse, più IVA, più canone. **Taratura** (`calibrateOtherCosts`): dagli altri dati e da totale e consumo di una bolletta vera ricava gli altri costi; se vengono negativi prezzo o quote fisse sono troppo alti (avviso).
+- **Consumi** (`utility_readings`, uno per mese): griglia per anno; una bolletta di più mesi si divide in parti uguali (`splitConsumption`). **Previsione** (`forecastConsumption`): il dato del mese se c'è; altrimenti la media dello stesso mese negli ultimi 3 anni, corretta per la tendenza di quest'anno (mesi già passati contro gli stessi dell'anno prima, almeno 2, tra −30% e +30%); altrimenti la media degli ultimi 3 mesi.
+- **Lettura AI** (`utenze-actions.ts` → `readUtilityDocument`): PDF (fino a 3 MB, blocco `document`) o foto (ridotta dal browser), Claude Haiku 4.5, 10 letture al giorno (eventi `bill_extract`). Il prompt chiede per ogni fornitura prezzo, quote fisse, IVA, canone, dati della bolletta e storico consumi; `parseBillExtraction` scarta valori fuori misura. "Usa questi dati" salva la tariffa, tara gli altri costi se c'è la bolletta e salva lo storico più i mesi della bolletta.
+- **Nelle previsioni**: "Aggiorna la spesa fissa" mette la stima del mese come importo di una spesa fissa di tipo Utenze ("Luce e gas" = somma delle due). Non è automatico: da rifare quando cambia la stagione.
+- **Demo**: `reseed_demo_utenze()` (chiamata da `/api/demo/reset` dopo `reseed_demo`, errori ignorati) crea le due tariffe e i consumi di due anni pieni più quest'anno fino al mese scorso col 5% in meno. La sessione demo non scrive (trigger `block_demo_writes`).
+- Rollback: prima il codice, poi `supabase/rollback/040_utenze_down.sql` (cancella anche i dati degli utenti).
+
+---
+
 ## Riepilogo del mese (2026-09-24)
 
 "Mesi passati" in dashboard apre la pagina **`/dashboard/riepilogo`** (prima: finestra `month-report-modal.tsx`, rimossa, a mesi solari e senza confronti). Calcoli in `lib/recap.ts` (`buildRecap`), test in `tests/riepilogo.test.ts`.
