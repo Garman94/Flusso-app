@@ -58,16 +58,14 @@ function tvMonths(firstMonth: number, months: number): number {
 
 /** Bolletta stimata per `months` mesi a partire da `firstMonth` (1-12). */
 export function estimateBill(kind: UtilityKind, t: Tariff, consumption: number, firstMonth: number, months = 1): BillEstimate {
-  const energy = consumption * t.unit_price;
-  const other = consumption * t.other_unit_costs;
-  const fixed = t.fixed_monthly * months;
-  const vat = (energy + other + fixed) * (t.vat_pct / 100);
-  const tv = kind === "luce" ? t.tv_fee_monthly * tvMonths(firstMonth, months) : 0;
-  return {
-    consumption,
-    energy: round2(energy), other: round2(other), fixed: round2(fixed), vat: round2(vat), tv: round2(tv),
-    total: round2(energy + other + fixed + vat + tv),
-  };
+  // Ogni voce arrotondata al centesimo come in bolletta, e il totale è la loro somma: così le
+  // righe del calcolo mostrato tornano col totale.
+  const energy = round2(consumption * t.unit_price);
+  const other = round2(consumption * t.other_unit_costs);
+  const fixed = round2(t.fixed_monthly * months);
+  const vat = round2((energy + other + fixed) * (t.vat_pct / 100));
+  const tv = round2(kind === "luce" ? t.tv_fee_monthly * tvMonths(firstMonth, months) : 0);
+  return { consumption, energy, other, fixed, vat, tv, total: round2(energy + other + fixed + vat + tv) };
 }
 
 /**
