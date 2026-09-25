@@ -482,8 +482,30 @@ export function SmartPageClient({
     setDSaving(false);
   }
 
+  /** Il salvadanaio in comune a tutti gli accantonamenti, "" se nessuno, "mixed" se diversi. */
+  function sinkingPot(): string {
+    const ids = new Set(recurringItems.filter(it => it.next_due_date).map(it => it.savings_pot_id ?? ""));
+    if (ids.size === 0) return "";
+    return ids.size === 1 ? [...ids][0] : "mixed";
+  }
+
   function goAddAccantonamento() {
-    setAForm(EMPTY_A); setATxSearch(""); setView("accantonamento-form");
+    const common = sinkingPot();
+    setAForm({ ...EMPTY_A, savings_pot_id: common === "mixed" ? "" : common });
+    setATxSearch(""); setView("accantonamento-form");
+  }
+
+  const [potSaving, setPotSaving] = useState(false);
+  async function handleSetSinkingPot(potId: string) {
+    setPotSaving(true);
+    const { error } = await createClient().from("recurring_expenses")
+      .update({ savings_pot_id: potId || null })
+      .eq("user_id", userId).not("next_due_date", "is", null);
+    setPotSaving(false);
+    if (error) { toast.error(`Errore: ${error.message}`); return; }
+    setRecurringItems(prev => prev.map(it => it.next_due_date ? { ...it, savings_pot_id: potId || null } : it));
+    const pot = pots.find(p => p.id === potId);
+    toast.success(pot ? `Gli accantonamenti ora usano il salvadanaio "${pot.name}"` : "Gli accantonamenti ora contano tutti i salvadanai");
   }
 
   async function handleSaveAccantonamento() {
@@ -2893,8 +2915,14 @@ export function SmartPageClient({
         next_due_date: it.next_due_date!,
       }));
 
-    // Confronto con i soli salvadanai non collegati a un obiettivo (vedi potsForSinkingFunds).
-    const summary = aggregateSinkingFunds(sinkingInputs, potsForSinkingFunds(pots, goals.map(g => g.savings_pot_id)));
+    // Confronto con il salvadanaio degli accantonamenti, se scelto; altrimenti con i salvadanai
+    // non collegati a un obiettivo (vedi potsForSinkingFunds).
+    const commonPot = sinkingPot();
+    const commonPotName = pots.find(p => p.id === commonPot)?.name ?? null;
+    const summary = aggregateSinkingFunds(sinkingInputs, potsForSinkingFunds(
+      pots, goals.map(g => g.savings_pot_id), recurringItems.filter(it => it.next_due_date).map(it => it.savings_pot_id)));
+    const potLabel = commonPotName ? `Nel salvadanaio "${commonPotName}"`
+      : commonPot === "mixed" ? "Nei salvadanai collegati" : "Nei salvadanai (esclusi quelli degli obiettivi)";
 
     // Catch-up: per ogni voce calcola la quota "a regime" (= importo ÷ mesi del ciclo completo)
     // Se total_months < cycle_months significa che la saving_start_date è più vicina
@@ -3199,7 +3227,7 @@ export function SmartPageClient({
                     <span className="font-semibold">{fmt(summary.expected_saved_total)}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Salvadanaio attuale</span>
+                    <span className="text-muted-foreground">{potLabel}</span>
                     <span className="font-semibold">{fmt(summary.piggy_balance)}</span>
                   </div>
                   <div className="border-t pt-2 flex justify-between items-center text-sm">
@@ -3210,6 +3238,33 @@ export function SmartPageClient({
                   </div>
                 </div>
               </div>
+
+              {/* Dove stanno i soldi degli accantonamenti: un salvadanaio per tutti */}
+              {pots.length > 0 ? (
+                <div className="rounded-xl border px-4 py-3 flex flex-col gap-2">
+                  <label className="text-sm font-medium" htmlFor="sinking-pot">🐷 Dove tieni questi soldi?</label>
+                  <select
+                    id="sinking-pot"
+                    value={commonPot}
+                    disabled={potSaving}
+                    onChange={e => { if (e.target.value !== "mixed") void handleSetSinkingPot(e.target.value); }}
+                    className="border-2 rounded-xl px-3 py-2.5 text-base bg-background focus:outline-none focus:border-primary transition-colors disabled:opacity-50"
+                  >
+                    {pots.map(p => <option key={p.id} value={p.id}>{p.emoji} {p.name} ({fmt(Number(p.current_balance))})</option>)}
+                    <option value="">Tutti (tranne quelli degli obiettivi)</option>
+                    {commonPot === "mixed" && <option value="mixed" disabled>Salvadanai diversi, scelti voce per voce</option>}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    {commonPotName
+                      ? `Il confronto usa solo "${commonPotName}", e "Segna come pagata" scala da lì.`
+                      : "Se li tieni in un salvadanaio solo, sceglilo: il confronto userà solo quello e \"Segna come pagata\" scalerà da lì."}
+                  </p>
+                </div>
+              ) : (
+                <Link href="/dashboard/salvadanai" className="rounded-xl border px-4 py-3 text-sm text-primary hover:bg-muted/40 transition-colors">
+                  🐷 Crea un salvadanaio per gli accantonamenti, così vedi se sei in pari →
+                </Link>
+              )}
 
               {/* Notifica: accantonato da transazioni reali questo mese */}
               {accTxThisMonth > 0 && (

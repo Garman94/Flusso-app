@@ -18,6 +18,12 @@ Pianifica → Spese fisse → "⚡ Calcola luce e gas" (`?v=utenze`, `app/dashbo
 
 ---
 
+## Accantonamenti in un salvadanaio (2026-09-25)
+
+Accantonamenti → "🐷 Dove tieni questi soldi?": un salvadanaio per tutti gli accantonamenti. Scrive lo stesso `recurring_expenses.savings_pot_id` che prima si impostava voce per voce (e che serviva solo a "Segna come pagata"), su tutte le voci con `next_due_date`; i nuovi accantonamenti lo ricevono già scelto. `potsForSinkingFunds(pots, goalPotIds, sinkingPotIds)`: se almeno una voce è collegata conta solo il saldo dei salvadanai collegati, altrimenti tutti tranne quelli degli obiettivi (come prima). Stesso confronto nella card in dashboard (`sinking-funds-card.tsx`), con l'etichetta "Nel salvadanaio …". Il caso che l'ha fatto nascere: salvadanai "Accantonamenti" ed "Emergenza", e il confronto contava anche Emergenza.
+
+---
+
 ## Riepilogo del mese (2026-09-24)
 
 "Mesi passati" in dashboard apre la pagina **`/dashboard/riepilogo`** (prima: finestra `month-report-modal.tsx`, rimossa, a mesi solari e senza confronti). Calcoli in `lib/recap.ts` (`buildRecap`), test in `tests/riepilogo.test.ts`.

@@ -713,14 +713,19 @@ export function projectPeriodEnd(p: {
 }
 
 /**
- * Soldi nei salvadanai confrontabili con gli accantonamenti: quelli nei salvadanai
- * collegati a un obiettivo sono già "impegnati" per l'obiettivo e contarli anche qui
- * farebbe risultare in anticipo sugli accantonamenti con gli stessi euro due volte.
+ * Soldi nei salvadanai confrontabili con gli accantonamenti. Se gli accantonamenti sono
+ * collegati a dei salvadanai (di solito uno solo: Accantonamenti → "Dove tieni questi
+ * soldi?"), contano solo quelli: un salvadanaio "Emergenza" non è per l'assicurazione.
+ * Altrimenti tutti, tranne quelli collegati a un obiettivo: quei soldi sono già "impegnati"
+ * e contarli anche qui darebbe un "in anticipo" finto con gli stessi euro due volte.
  */
 export function potsForSinkingFunds(
   pots: { id: string; current_balance: number }[],
   goalPotIds: (string | null | undefined)[],
+  sinkingPotIds: (string | null | undefined)[] = [],
 ): number {
+  const linked = new Set(sinkingPotIds.filter((x): x is string => !!x));
+  if (linked.size > 0) return pots.filter(p => linked.has(p.id)).reduce((s, p) => s + Number(p.current_balance), 0);
   const reserved = new Set(goalPotIds.filter((x): x is string => !!x));
   return pots.filter(p => !reserved.has(p.id)).reduce((s, p) => s + Number(p.current_balance), 0);
 }

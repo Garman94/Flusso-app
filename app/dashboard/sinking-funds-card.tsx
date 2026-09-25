@@ -13,6 +13,7 @@ type RecurringRow = {
   amount_max: number | null;
   next_due_date: string | null;
   saving_start_date: string | null;
+  savings_pot_id: string | null;
   categories?: { icon: string | null }[] | null;
 };
 
@@ -40,6 +41,7 @@ function DueDateBadge({ iso }: { iso: string }) {
 export function SinkingFundsCard({ userId }: { userId: string }) {
   const [items, setItems] = useState<RecurringRow[]>([]);
   const [piggyBalance, setPiggyBalance] = useState(0);
+  const [potLabel, setPotLabel] = useState("Nei salvadanai (esclusi quelli degli obiettivi)");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,16 +49,22 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
     Promise.all([
       supabase
         .from("recurring_expenses")
-        .select("id, name, tipologia, amount, amount_max, next_due_date, saving_start_date, categories(icon)")
+        .select("id, name, tipologia, amount, amount_max, next_due_date, saving_start_date, savings_pot_id, categories(icon)")
         .eq("user_id", userId)
         .not("next_due_date", "is", null),
-      supabase.from("savings_pots").select("id, current_balance").eq("user_id", userId),
+      supabase.from("savings_pots").select("id, name, current_balance").eq("user_id", userId),
       supabase.from("goals").select("savings_pot_id").eq("user_id", userId),
     ]).then(([recurringRes, potsRes, goalsRes]) => {
-      setItems((recurringRes.data ?? []) as RecurringRow[]);
-      // Solo i salvadanai non collegati a un obiettivo: quei soldi sono già "per l'obiettivo"
-      // e contarli anche qui dava un "in anticipo" finto (stessi euro contati due volte).
-      setPiggyBalance(potsForSinkingFunds(potsRes.data ?? [], (goalsRes.data ?? []).map(g => g.savings_pot_id)));
+      const rows = (recurringRes.data ?? []) as RecurringRow[];
+      setItems(rows);
+      // Il salvadanaio degli accantonamenti se scelto, altrimenti quelli non collegati a un
+      // obiettivo (quei soldi sono già "per l'obiettivo"): vedi potsForSinkingFunds.
+      const linked = rows.map(r => r.savings_pot_id);
+      setPiggyBalance(potsForSinkingFunds(potsRes.data ?? [], (goalsRes.data ?? []).map(g => g.savings_pot_id), linked));
+      const ids = new Set(linked.filter(Boolean));
+      const single = ids.size === 1 ? (potsRes.data ?? []).find(p => ids.has(p.id)) : null;
+      if (single) setPotLabel(`Nel salvadanaio "${single.name}"`);
+      else if (ids.size > 1) setPotLabel("Nei salvadanai collegati");
       setLoading(false);
     });
   }, [userId]);
@@ -127,7 +135,7 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
 
       {/* Piggy vs expected */}
       <div className="flex items-center justify-between text-sm mb-1">
-        <span className="text-muted-foreground">Nei salvadanai (esclusi quelli degli obiettivi)</span>
+        <span className="text-muted-foreground">{potLabel}</span>
         <span className="font-semibold tabular-nums">{fmt(summary.piggy_balance)}</span>
       </div>
       <div className="flex items-center justify-between text-sm pb-4 border-b">
