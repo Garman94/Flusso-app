@@ -95,3 +95,9 @@ test("lettura AI: dati buoni tenuti, valori impossibili scartati", () => {
   assert.equal(g.vat_pct, 22);
   assert.deepEqual(parseBillExtraction("non è JSON"), []);
 });
+
+test("bolletta: le righe del calcolo sommano esattamente al totale", () => {
+  const b = estimateBill("luce", { ...luce, other_unit_costs: 0.065 }, 185, 9);
+  assert.equal(b.total, Math.round((b.energy + b.other + b.fixed + b.vat + b.tv) * 100) / 100);
+  assert.equal(b.total, 61.89); // 24,05 + 12,03 + 12 + 4,81 + 9
+});
