@@ -3,6 +3,9 @@
 // ============================================================
 
 import { toISODate } from "./dates";
+import { TRANSFER_CATEGORY_NAMES, isSpending } from "./money";
+
+export { TRANSFER_CATEGORY_NAMES };
 
 export type Transaction = {
   id?: string;
@@ -70,8 +73,6 @@ export function getCategoryMacroKey(categoryName?: string | null): MacroKey {
 // restano nelle tasche dell'utente, solo spostati tra conto e salvadanaio.
 // Vanno esclusi ovunque si calcoli "quanto guadagno/spendo". Accantonamenti
 // invece conta come spesa reale (voluto: vedi CLAUDE.md).
-export const TRANSFER_CATEGORY_NAMES = new Set(["spostamenti", "salvadanaio"]);
-
 export function isTransferCategory(categoryName?: string | null): boolean {
   return TRANSFER_CATEGORY_NAMES.has(categoryName?.toLowerCase() ?? "");
 }
@@ -127,15 +128,14 @@ export type MacroBreakdown = {
 };
 
 export function calculateMacroBreakdown(transactions: Transaction[]): MacroBreakdown[] {
-  const expenses = transactions.filter(t => Number(t.amount) < 0);
-  const totalExpenses = expenses.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-  if (totalExpenses === 0) return [];
-
   const map: Partial<Record<MacroKey, number>> = {};
-  for (const t of expenses) {
+  for (const t of transactions.filter(isSpending)) {
     const key = getCategoryMacroKey(t.categories?.name);
-    map[key] = (map[key] ?? 0) + Math.abs(Number(t.amount));
+    map[key] = (map[key] ?? 0) - Number(t.amount);
   }
+  for (const k of Object.keys(map) as MacroKey[]) if ((map[k] ?? 0) <= 0) delete map[k];
+  const totalExpenses = Object.values(map).reduce((s, v) => s + (v ?? 0), 0);
+  if (totalExpenses === 0) return [];
 
   return MACRO_CATEGORIES.filter(mc => (map[mc.key] ?? 0) > 0)
     .map(mc => ({
@@ -159,26 +159,25 @@ export type CategoryBreakdown = {
   pct: number;
 };
 
+/** Spesa netta per categoria: le spese meno i rimborsi (vedi lib/money.ts); le categorie a zero o sotto non compaiono. */
 export function calculateCategoryBreakdown(transactions: Transaction[]): CategoryBreakdown[] {
-  const expenses = transactions.filter(t => Number(t.amount) < 0);
-  const totalExpenses = expenses.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+  const map = new Map<string, { label: string; icon: string; color: string; total: number }>();
+  for (const t of transactions.filter(isSpending)) {
+    const key   = t.category_id ?? "__none__";
+    const entry = map.get(key) ?? {
+      label: t.categories?.name  ?? "Senza categoria",
+      icon:  t.categories?.icon  ?? "📦",
+      color: t.categories?.color ?? "#94a3b8",
+      total: 0,
+    };
+    entry.total -= Number(t.amount);
+    map.set(key, entry);
+  }
+  const rows = Array.from(map.entries()).filter(([, v]) => v.total > 0.005);
+  const totalExpenses = rows.reduce((s, [, v]) => s + v.total, 0);
   if (totalExpenses === 0) return [];
 
-  const map = new Map<string, { label: string; icon: string; color: string; total: number }>();
-  for (const t of expenses) {
-    const key   = t.category_id ?? "__none__";
-    const label = t.categories?.name  ?? "Senza categoria";
-    const icon  = t.categories?.icon  ?? "📦";
-    const color = t.categories?.color ?? "#94a3b8";
-    const entry = map.get(key);
-    if (entry) {
-      entry.total += Math.abs(Number(t.amount));
-    } else {
-      map.set(key, { label, icon, color, total: Math.abs(Number(t.amount)) });
-    }
-  }
-
-  return Array.from(map.entries())
+  return rows
     .map(([key, v]) => ({ key, ...v, pct: (v.total / totalExpenses) * 100 }))
     .sort((a, b) => b.total - a.total);
 }
