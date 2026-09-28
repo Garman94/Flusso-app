@@ -19,6 +19,7 @@ import {
 } from "@/lib/calculations";
 import { parseAmount } from "@/lib/import-parse";
 import { isFixedExpense, planStatus, splitPlan, type PlanItem } from "@/lib/fixed-expenses";
+import { flowOf, isSpending, moneyTotals } from "@/lib/money";
 import { updateStartingBalance } from "./saldo-action";
 import { toast } from "sonner";
 
@@ -340,11 +341,12 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     if (startingBalance == null) return null;
 
     // ── Effettivi (periodo corrente) ──
+    // Giroconti fuori; i rimborsi (entrate in una categoria di spesa, es. gli amici che ridanno
+    // la cena o il prelievo dagli accantonamenti) abbassano le spese: vedi lib/money.ts.
     const spendableTxs = periodTxs.filter(t => !isTransfer(t));
-    const expenseTxs = spendableTxs.filter(t => Number(t.amount) < 0);
-    const incomeTxs  = spendableTxs.filter(t => Number(t.amount) > 0);
-    const income      = incomeTxs.reduce((s, t) => s + Number(t.amount), 0);
-    const expensesAbs = expenseTxs.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+    const expenseTxs = spendableTxs.filter(t => isSpending(t));
+    const incomeTxs  = spendableTxs.filter(t => !isSpending(t));
+    const { income, expenses: expensesAbs } = moneyTotals(periodTxs);
     const actualToday = startingBalance + txSumToToday;
 
     // ── Contributo netto per componente (entrate reali - spese reali, periodo corrente) ──
@@ -354,12 +356,13 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       const key = t.member_id ?? "__none__";
       if (!memberMap.has(key)) memberMap.set(key, { name: "Non assegnato", color: "#94a3b8", income: 0, expense: 0 });
       const entry = memberMap.get(key)!;
-      if (Number(t.amount) > 0) entry.income += Number(t.amount);
-      else entry.expense += Math.abs(Number(t.amount));
+      const f = flowOf(t);
+      entry.income += f.income;
+      entry.expense += f.expense;
     }
     const memberBreakdown = Array.from(memberMap.entries())
       .map(([id, v]) => ({ id, ...v }))
-      .filter(m => m.income > 0 || m.expense > 0);
+      .filter(m => Math.abs(m.income) > 0.005 || Math.abs(m.expense) > 0.005);
 
     // ── Previsti: reddito dall'anagrafica (mese in cui inizia il periodo) ──
     const periodMonth = new Date(periodFrom + "T00:00:00").getMonth() + 1;

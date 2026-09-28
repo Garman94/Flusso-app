@@ -168,3 +168,24 @@ test("riepilogo: rispetto al solito solo i cambi che contano", () => {
   // alimentari 150 contro 110 di solito (+40); ristoranti 82 contro 35 (+47); casa e netflix uguali
   assert.deepEqual(r.changes.map(c => [c.id, Math.round(c.diff)]), [["ristoranti", 47], ["alimentari", 40]]);
 });
+
+test("riepilogo: rimborsi e prelievi dagli accantonamenti abbassano le uscite, i gruppi tornano col totale", () => {
+  const settembre = [
+    tx("2026-08-27", 2100, "Stipendio"),
+    tx("2026-08-28", -20, "Accantonamenti", "MOVIMENTO SALVADANAIO"),   // versamento
+    tx("2026-09-05", 244, "Accantonamenti", "MOVIMENTO SALVADANAIO"),   // prelievo per l assicurazione
+    tx("2026-09-06", -244, "Assicurazioni", "UNIPOL"),
+    tx("2026-09-10", -120, "Ristoranti", "CENA"),
+    tx("2026-09-11", 80, "Ristoranti", "TRASFERIMENTO DENARO BANCOMAT PAY"), // gli amici ridanno la loro parte
+  ];
+  const SET = { from: "2026-08-27", to: "2026-09-26" };
+  const r = buildRecap(settembre, SET, []);
+  assert.equal(r.income, 2100);                      // né il prelievo né i rimborsi sono entrate
+  assert.equal(r.expenses, 20 + 244 - 244 + 40);     // resta il versamento, l assicurazione è compensata
+  assert.equal(r.categories.find(c => c.id === "ristoranti")!.total, 40);
+  const g = r.groups;
+  assert.equal(g.accantonamenti!.spent, -224);        // ripresi più di quanto messo da parte nel periodo
+  const parts = (g.fisse?.spent ?? 0) + (g.rate?.spent ?? 0) + (g.budget?.spent ?? 0) + (g.altre?.spent ?? 0) + (g.accantonamenti?.spent ?? 0);
+  assert.equal(Math.round(parts * 100) / 100, r.expenses);
+  assert.equal(r.biggest!.description, "UNIPOL");      // le curiosità guardano solo le spese vere
+});

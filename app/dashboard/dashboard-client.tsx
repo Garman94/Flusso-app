@@ -10,6 +10,7 @@ import {
   type Transaction,
   type Goal,
 } from "@/lib/calculations";
+import { isSpending } from "@/lib/money";
 import { SinkingFundsCard } from "./sinking-funds-card";
 import { BalanceHeroCard } from "./balance-hero-card";
 import { OverdueExpensesBanner } from "./overdue-expenses-banner";
@@ -299,7 +300,7 @@ export function DashboardClient({
                 {macro.map(mc => {
                   const isOpen = expandedCat === mc.key;
                   const catTxs = spendableTxs
-                    .filter(t => Number(t.amount) < 0 && (mc.key === "__none__" ? t.category_id === null : t.category_id === mc.key))
+                    .filter(t => isSpending(t) && (mc.key === "__none__" ? t.category_id === null : t.category_id === mc.key))
                     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                   return (
                     <div key={mc.key} className="flex flex-col gap-1.5">
