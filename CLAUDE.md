@@ -4,6 +4,21 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Entrate, uscite e giroconti (2026-09-29)
+
+Come un movimento conta nelle entrate e nelle uscite: `lib/money.ts` (test in `tests/movimenti.test.ts`). Il saldo vede sempre tutti i movimenti; queste regole cambiano solo entrate e uscite, **mai il risparmio** (entrate − uscite = somma dei movimenti che non sono giroconti).
+
+1. **Giroconti** (`TRANSFER_CATEGORY_NAMES`: Spostamenti, Salvadanaio; ora definito qui e riesportato da calculations): né entrate né uscite.
+2. **Categorie di entrata** (`INCOME_CATEGORY_NAMES`: Stipendio, Bonifici, Entrate, Pensione, Rimborsi, Regali, Vendite, Interessi, Dividendi): un positivo è un'entrata, un negativo la riduce (storno).
+3. **Tutte le altre categorie sono di spesa**: un negativo è una spesa, un **positivo è un rimborso** e abbassa la spesa di quella categoria (amici che ridanno la cena con Bancomat Pay, resi, prelievo dal salvadanaio messo nella categoria della spesa che paga). Senza categoria: conta il segno.
+4. **Accantonamenti** è una categoria di spesa: il versamento è la spesa ("li ho già spesi"), il prelievo è un rimborso e compensa il pagamento dell'assicurazione: nel mese resta quello messo da parte. Nel riepilogo il gruppo Accantonamenti può essere negativo ("ripresi per pagare le spese dell'anno").
+
+Funzioni: `flowOf`, `moneyTotals`, `isSpending` (spesa o rimborso), `isRefund`, `spendingByCategory`, `categoryKind`. Usate da card del saldo (entrate, uscite, contributo per componente), "Dove vanno i soldi" (`calculateCategoryBreakdown`/`calculateMacroBreakdown`: spesa netta, categorie ≤ 0 nascoste), riepilogo (`totals`, categorie, gruppi, "il solito"), Budget (spesa netta, mai sotto zero; le categorie di entrata e di giroconto non sono più voci di budget). Spesa più grande e giorno più caro guardano solo le spese vere.
+
+**Soldi tra componenti della famiglia** (`familyTransferCandidates`): movimenti col nome di un componente che non è il titolare, come parola intera, più una parola da bonifico/giroconto ("BONIFICO ISTANTANEO DISPOSTO DA GANGEMI SAMIRA"). In Transazioni `family-transfers-banner.tsx` propone "Sì, sono giroconti": `markFamilyTransfers` (`transazioni/actions.ts`) sposta quei movimenti in Spostamenti e aggiunge la regola col nome del componente per i prossimi import. "No" lo nasconde nel browser. Caso reale che l'ha fatto nascere: 10 bonifici da Samira, 5 prelievi dal salvadanaio in Accantonamenti e 12 rimborsi di cene in Ristoranti contati come entrate.
+
+---
+
 ## Luce e gas (2026-09-25)
 
 Pianifica → Spese fisse → "⚡ Calcola luce e gas" (`?v=utenze`, `app/dashboard/smart/utenze-panel.tsx`), dal gruppo Utenze e in fondo alla pagina. Gratis; la lettura di bollette e contratti con l'AI è Premium. Calcoli in `lib/utilities.ts`, test in `tests/utenze.test.ts`, tabelle nella migration 040.

@@ -59,7 +59,7 @@ async function TransazioniContent({
       .gte("uploaded_at", monthStart.toISOString()),
     supabase
       .from("family_members")
-      .select("id, name, color")
+      .select("id, name, color, is_owner")
       .eq("user_id", userId)
       .order("created_at"),
   ]);
