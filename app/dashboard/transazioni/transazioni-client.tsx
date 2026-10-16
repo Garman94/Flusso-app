@@ -7,13 +7,14 @@ import { createClient } from "@/lib/supabase/client";
 import { ImportExcelModal } from "./import-excel-modal";
 import { ScreenshotModal } from "./screenshot-modal";
 import { createCategoryRule, deleteCategoryRule } from "./actions";
+import { FamilyTransfersBanner } from "./family-transfers-banner";
 import { computePeriodRange, getCurrentPeriodAnchor } from "@/lib/period";
 import { PageTour } from "@/components/tour/page-tour";
 import { useDemoGuard } from "@/components/demo-context";
 import { normalizeText, ruleKeyword } from "@/lib/categorize";
 
 export type Category = { id: string; name: string; color: string; icon: string };
-export type FamilyMember = { id: string; name: string; color: string };
+export type FamilyMember = { id: string; name: string; color: string; is_owner?: boolean | null };
 export type Transaction = {
   id: string;
   date: string;
@@ -448,6 +449,15 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
   return (
     <div className="flex flex-col gap-6">
       <PageTour path="/dashboard/transazioni" />
+      <FamilyTransfersBanner
+        transactions={transactions}
+        members={familyMembers}
+        categories={categories}
+        onApplied={(ids, categoryId) => {
+          const cat = categories.find(c => c.id === categoryId) ?? null;
+          setTransactions(prev => prev.map(t => ids.includes(t.id) ? { ...t, category_id: categoryId, categories: cat } : t));
+        }}
+      />
       {/* Choice modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">

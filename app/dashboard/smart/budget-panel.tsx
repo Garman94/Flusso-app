@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { formatEuro, classifyCategoryMonths, aggregateSinkingFunds, type MonthSpend, type SinkingFundInput } from "@/lib/calculations";
 import { expectedAmount, isFixedExpense, planPayments, type PlanItem } from "@/lib/fixed-expenses";
+import { categoryKind } from "@/lib/money";
 
 type Category = { id: string; name: string; color: string; icon: string };
 type Tx = { date: string; amount: number; category_id?: string | null; description?: string | null; merchant?: string | null };
@@ -37,7 +38,11 @@ type Props = {
 const HISTORY_MONTHS = 12;
 const ACCANTONAMENTI_NAME = "accantonamenti";
 // Categorie di trasferimento interno e reddito: non hanno senso come voce di budget.
-const EXCLUDED_CATEGORY_NAMES = new Set(["stipendio", "spostamenti", "salvadanaio"]);
+// Categorie di entrata e di giroconto (lib/money.ts): non hanno senso come voce di budget.
+const isBudgetCategory = (name: string) => categoryKind(name) === "expense";
+
+/** Spesa netta: le spese meno i rimborsi della stessa categoria (vedi lib/money.ts), mai sotto zero. */
+const netSpent = (txs: Tx[]) => Math.max(0, txs.reduce((s, t) => s - Number(t.amount), 0));
 
 /** Etichetta di un periodo dello storico (month 1-12): il mese, o l'intervallo se si parte dal giorno di paga. */
 function periodLabel(payDay: number, year: number, month: number) {
@@ -58,7 +63,7 @@ export function BudgetPanel({
   initialBudgets, initialNotes, onBack, onOpenAccantonamenti, onOpenFixed,
 }: Props) {
   const budgetCategories = useMemo(
-    () => categories.filter(c => !EXCLUDED_CATEGORY_NAMES.has(c.name.toLowerCase())),
+    () => categories.filter(c => isBudgetCategory(c.name)),
     [categories]
   );
   const accantonamentiId = useMemo(
@@ -137,9 +142,7 @@ export function BudgetPanel({
   const currentSpend = useMemo(() => {
     const map: Record<string, number> = {};
     for (const c of budgetCategories) {
-      map[c.id] = transactions
-        .filter(t => t.category_id === c.id && t.date >= curFrom && t.date <= curTo && Number(t.amount) < 0 && !planPaid.has(t))
-        .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+      map[c.id] = netSpent(transactions.filter(t => t.category_id === c.id && t.date >= curFrom && t.date <= curTo && !planPaid.has(t)));
     }
     return map;
   }, [budgetCategories, transactions, curFrom, curTo, planPaid]);
@@ -166,8 +169,8 @@ export function BudgetPanel({
     const since = recent.length ? recent[recent.length - 1].from : curFrom;
     const weight: Record<string, number> = {};
     for (const t of transactions) {
-      if (!t.category_id || Number(t.amount) >= 0 || t.date < since || t.date > curTo || planPaid.has(t)) continue;
-      weight[t.category_id] = (weight[t.category_id] ?? 0) + Math.abs(Number(t.amount));
+      if (!t.category_id || t.date < since || t.date > curTo || planPaid.has(t)) continue;
+      weight[t.category_id] = (weight[t.category_id] ?? 0) - Number(t.amount);
     }
     const used = budgetCategories
       .filter(c => (weight[c.id] ?? 0) > 0 || effectiveBudget(c.id) > 0)
@@ -182,9 +185,7 @@ export function BudgetPanel({
     if (!category) return null;
     const months: MonthSpend[] = [];
     for (const p of previousPeriods(payDay, cur.year, cur.month, HISTORY_MONTHS)) {
-      const total = transactions
-        .filter(t => t.category_id === category.id && t.date >= p.from && t.date <= p.to && Number(t.amount) < 0 && !planPaid.has(t))
-        .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+      const total = netSpent(transactions.filter(t => t.category_id === category.id && t.date >= p.from && t.date <= p.to && !planPaid.has(t)));
       months.push({ year: p.year, month: p.month, total });
     }
     return classifyCategoryMonths(months);

@@ -3,6 +3,7 @@
 // spese fisse pagate, qualche curiosità. Usa lo stesso periodo di paga della dashboard.
 
 import { isTransferCategory } from "./calculations";
+import { isSpending, moneyTotals } from "./money";
 import { computePeriodRange, getCurrentPeriodAnchor } from "./period";
 import { fixedGroupMeta, fixedGroupOf, isFixedExpense, planStatus, type FixedGroup, type PlanItem } from "./fixed-expenses";
 
@@ -99,15 +100,13 @@ function daysBetween(a: string, b: string): number {
 const inPeriod = (t: { date: string }, p: Period) => t.date >= p.from && t.date <= p.to;
 const abs = (t: RecapTx) => Math.abs(Number(t.amount));
 
+/** Entrate e uscite con le regole di lib/money.ts: giroconti fuori, rimborsi che abbassano le spese. */
 export function totals(txs: Pick<RecapTx, "amount" | "categories">[]): Totals {
-  let income = 0, expenses = 0;
-  for (const t of txs) {
-    if (isTransferCategory(t.categories?.name)) continue;
-    const a = Number(t.amount);
-    if (a > 0) income += a; else expenses += -a;
-  }
-  return { income, expenses, saved: income - expenses };
+  return moneyTotals(txs);
 }
+
+/** Quanto il movimento pesa sulla spesa: positivo per una spesa, negativo per un rimborso. */
+const spent = (t: RecapTx) => -Number(t.amount);
 
 /**
  * @param txs      movimenti del periodo e dei precedenti (per il confronto), in qualsiasi ordine
@@ -131,7 +130,9 @@ export function buildRecap(
   const categoryNames: Record<string, string> = Object.fromEntries(categories.map(c => [c.id, c.name]));
   const current = txs.filter(t => inPeriod(t, period));
   const spendable = current.filter(t => !isTransferCategory(t.categories?.name));
-  const expensesTx = spendable.filter(t => Number(t.amount) < 0);
+  // Spese e rimborsi (entrate in una categoria di spesa, che la abbassano): vedi lib/money.ts.
+  const spendingTx = spendable.filter(t => isSpending(t));
+  const expensesTx = spendingTx.filter(t => Number(t.amount) < 0);
   const tot = totals(current);
 
   // Un periodo passato vale per i confronti solo se è completo: ha movimenti e ne ha anche
@@ -150,24 +151,24 @@ export function buildRecap(
   const usualOf = (catKey: string): number | null => {
     if (!history.length) return null;
     const sum = history.reduce((s, list) => s + list
-      .filter(t => Number(t.amount) < 0 && (t.category_id ?? "__none__") === catKey)
-      .reduce((x, t) => x + abs(t), 0), 0);
+      .filter(t => isSpending(t) && (t.category_id ?? "__none__") === catKey)
+      .reduce((x, t) => x + spent(t), 0), 0);
     return sum / history.length;
   };
 
   const fixedStatuses = planItems.filter(isFixedExpense)
-    .map(it => planStatus(it, spendable, period.from, period.to, today))
+    .map(it => planStatus(it, spendingTx, period.from, period.to, today))
     .filter(s => s.state !== "not-due");
   const rateStatuses = planItems
     .filter(it => it.debt_type && (!it.debt_start_date || it.debt_start_date <= period.to) && (!it.end_date || it.end_date >= period.from))
-    .map(it => planStatus(it, spendable, period.from, period.to, today));
+    .map(it => planStatus(it, spendingTx, period.from, period.to, today));
   const fixedPaid = new Set(fixedStatuses.flatMap(st => st.payments));
   const ratePaid = new Set(rateStatuses.flatMap(st => st.payments));
   const paidByPlan = new Set([...fixedPaid, ...ratePaid]);
   const budgetOf = new Map(budgets.map(b => [b.category_id, Number(b.monthly_budget)]));
 
   const byCat = new Map<string, { name: string; icon: string; color: string; total: number; budgetSpent: number }>();
-  for (const t of expensesTx) {
+  for (const t of spendingTx) {
     const key = t.category_id ?? "__none__";
     const entry = byCat.get(key) ?? {
       name: t.categories?.name ?? "Senza categoria",
@@ -175,11 +176,12 @@ export function buildRecap(
       color: t.categories?.color ?? "#94a3b8",
       total: 0, budgetSpent: 0,
     };
-    entry.total += abs(t);
-    if (!paidByPlan.has(t)) entry.budgetSpent += abs(t);
+    entry.total += spent(t);
+    if (!paidByPlan.has(t)) entry.budgetSpent += spent(t);
     byCat.set(key, entry);
   }
   const categoryLines: CategoryLine[] = [...byCat.entries()]
+    .filter(([, v]) => Math.abs(v.total) > 0.005)
     .map(([id, v]) => ({
       id, ...v,
       pct: tot.expenses > 0 ? (v.total / tot.expenses) * 100 : 0,
@@ -232,15 +234,15 @@ export function buildRecap(
   let savingsSpent = 0;
   const budgetSpentByCat = new Map<string, number>();
   const otherByCat = new Map<string, SpendLine>();
-  for (const t of expensesTx) {
+  for (const t of spendingTx) {
     if (paidByPlan.has(t)) continue;
-    if (isSavingsTx(t)) { savingsSpent += abs(t); continue; }
+    if (isSavingsTx(t)) { savingsSpent += spent(t); continue; }
     const key = t.category_id ?? "__none__";
     if ((budgetOf.get(key) ?? 0) > 0) {
-      budgetSpentByCat.set(key, (budgetSpentByCat.get(key) ?? 0) + abs(t));
+      budgetSpentByCat.set(key, (budgetSpentByCat.get(key) ?? 0) + spent(t));
     } else {
       const line = otherByCat.get(key) ?? { id: key, name: t.categories?.name ?? "Senza categoria", icon: t.categories?.icon ?? "📦", spent: 0 };
-      line.spent += abs(t);
+      line.spent += spent(t);
       otherByCat.set(key, line);
     }
   }
@@ -258,14 +260,15 @@ export function buildRecap(
     })
     .sort((a, b) => b.spent - a.spent || b.planned - a.planned);
   const sum = <T>(list: T[], f: (x: T) => number) => list.reduce((acc, x) => acc + f(x), 0);
-  const otherCats = [...otherByCat.values()].sort((a, b) => b.spent - a.spent);
+  const otherCats = [...otherByCat.values()].filter(c => Math.abs(c.spent) > 0.005).sort((a, b) => b.spent - a.spent);
 
   const groups: SpendingGroups = {
     fisse: fixedSubs.length ? { planned: sum(fixedSubs, x => x.planned), spent: sum(fixedSubs, x => x.spent), subgroups: fixedSubs } : null,
     rate: rateStatuses.length ? { planned: sum(rateStatuses, x => x.expected), spent: sum(rateStatuses, x => x.paidAmount) } : null,
     budget: budgetCats.length ? { planned: sum(budgetCats, x => x.planned), spent: sum(budgetCats, x => x.spent), categories: budgetCats } : null,
     altre: otherCats.length ? { spent: sum(otherCats, x => x.spent), categories: otherCats } : null,
-    accantonamenti: savingsSpent > 0 ? { spent: savingsSpent } : null,
+    // negativo se nel periodo si è ripreso più di quanto si è messo da parte (per pagare una spesa dell'anno)
+    accantonamenti: Math.abs(savingsSpent) > 0.005 ? { spent: savingsSpent } : null,
   };
 
   const changes: UsualChange[] = categoryLines

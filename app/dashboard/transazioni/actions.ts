@@ -63,6 +63,39 @@ export async function createCategoryRule(keyword: string, categoryId: string, op
   return { success: true, count: affectedIds.length, affectedIds };
 }
 
+/**
+ * Segna come giroconti i movimenti con un componente della famiglia (lib/money.ts →
+ * familyTransferCandidates) e aggiunge una regola col suo nome, così anche i prossimi import
+ * li mettono tra i giroconti. Aggiorna solo i movimenti indicati, non tutti quelli col nome.
+ */
+export async function markFamilyTransfers(memberName: string, txIds: string[], transferCategoryId: string) {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  if (!data?.claims) return { error: "Non autenticato", affectedIds: [] as string[] };
+  const userId = data.claims.sub;
+
+  const { data: affected, error } = await supabase
+    .from("transactions")
+    .update({ category_id: transferCategoryId })
+    .eq("user_id", userId)
+    .in("id", txIds)
+    .select("id");
+  if (error) return { error: error.message, affectedIds: [] as string[] };
+
+  const kw = memberName.trim().toLowerCase().split(/\s+/)[0];
+  const { data: existing } = await supabase
+    .from("category_rules").select("id").eq("user_id", userId).eq("value", kw).limit(1);
+  if (kw && !existing?.length) {
+    await supabase.from("category_rules").insert({
+      user_id: userId, category_id: transferCategoryId, field: "description", operator: "contains", value: kw,
+    });
+  }
+
+  revalidatePath("/dashboard/transazioni");
+  revalidatePath("/dashboard");
+  return { success: true, affectedIds: (affected ?? []).map(t => t.id) };
+}
+
 /** Elimina una regola di categoria */
 export async function deleteCategoryRule(ruleId: string) {
   const supabase = await createClient();
