@@ -25,6 +25,8 @@ Prima un obiettivo collegato a un salvadanaio aveva un suo contatore (`goals.cur
 
 ## Emergenza (2026-10-16)
 
+**Database**: migration 041, 042 e 043 applicate in produzione il 2026-10-16 (`db push` dal PC, dopo una prova in transazione annullata: un versamento nel salvadanaio "Nuovo laptop" della demo porta con sé l'obiettivo collegato, 480 → 500 €).
+
 Tasto "🚨 Emergenza" in dashboard (accanto a "Messi da parte nei salvadanai", `balance-hero-card.tsx`) e in Pianifica → Accantonamenti (riquadro "Ti servono soldi per un imprevisto?"). Componente `app/dashboard/emergency-button.tsx` (finestra in un portale su `body`, `z-[60]`: sopra la barra di navigazione del telefono), azione `app/dashboard/emergency-actions.ts` → `withdrawForEmergency`, calcoli in `lib/emergency.ts`, test in `tests/emergenza.test.ts`, colonna nella migration 041.
 
 - **Cosa fa**: si scrive quanto prendere da ogni salvadanaio (più "A cosa ti servono?", facoltativo). Ogni prelievo è un `savings_transactions` di tipo `withdraw` con nota "🚨 Emergenza: …". Ordine: prima i salvadanai liberi (quello con "emergenz"/"imprevist" nel nome in cima, etichetta "Prendi prima da qui"), poi quelli degli accantonamenti, per ultimi quelli degli obiettivi ("scende anche lui": l'obiettivo vale il saldo del salvadanaio, vedi "Obiettivi e salvadanai").
