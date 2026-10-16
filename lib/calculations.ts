@@ -426,6 +426,8 @@ export type OverdueCheckItem = {
   next_due_date: string | null; // presente = gestita da Accantonamenti, esclusa qui
   match_keywords: string[];
   category_id: string | null;
+  debt_start_date?: string | null; // rate: prima di questa data non c'è niente da pagare
+  end_date?: string | null;        // rate: dopo questa data il piano è finito
 };
 
 export type OverdueResult = { item: OverdueCheckItem; dueDate: string; amount: number };
@@ -461,6 +463,9 @@ export function findOverdueRecurring(
   for (const it of items) {
     const due = currentCycleDueDate(it, todayMid);
     if (!due || due > todayMid) continue;
+    // Una rata che parte più avanti (o è già finita) questo mese non ha nulla in scadenza.
+    if (it.debt_start_date && toISODate(due) < it.debt_start_date) continue;
+    if (it.end_date && toISODate(due) > it.end_date) continue;
 
     if (it.last_paid_date && new Date(it.last_paid_date + "T00:00:00") >= due) continue;
 

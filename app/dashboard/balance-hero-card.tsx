@@ -364,14 +364,16 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     // ── Previsti: reddito dall'anagrafica (mese in cui inizia il periodo) ──
     const periodMonth = new Date(periodFrom + "T00:00:00").getMonth() + 1;
 
-    // Rate in corso (esclude quelle non ancora iniziate e quelle già terminate).
+    // Rate in corso (esclude quelle non ancora iniziate e quelle già terminate) con una
+    // scadenza in questo periodo: una rata partita da poco può avere la prima nel periodo dopo.
     const rateItems = items
       .filter(it => it.debt_type && it.debt_total_amount && it.debt_start_date)
       .map(it => ({
         item: it,
         progress: computeDebtProgress({ totalAmount: it.debt_total_amount!, monthlyAmount: it.amount, startDate: it.debt_start_date! }),
+        status: planStatus(it as PlanItem, periodTxs, periodFrom, periodTo, iso),
       }))
-      .filter(r => r.progress.status === "active");
+      .filter(r => r.progress.status === "active" && r.status.state !== "not-due");
     const rateMonthly = rateItems.reduce((s, r) => s + r.item.amount, 0);
 
     // Spese fisse (affitto, abbonamenti, bollette) e rate: per ognuna si sa se in questo
@@ -380,7 +382,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     const fixedStatuses = items.filter(isFixedExpense)
       .map(it => planStatus(it as PlanItem, periodTxs, periodFrom, periodTo, iso))
       .filter(st => st.state !== "not-due");
-    const rateStatuses = rateItems.map(r => planStatus(r.item as PlanItem, periodTxs, periodFrom, periodTo, iso));
+    const rateStatuses = rateItems.map(r => r.status);
     const plan = splitPlan([...fixedStatuses, ...rateStatuses], t => !isTransfer(t));
     const fixedMonthly = fixedStatuses.reduce((s, st) => s + st.expected, 0);
 

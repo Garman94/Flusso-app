@@ -66,7 +66,7 @@ export function OverdueExpensesBanner({ userId }: Props) {
       // previsioni (sono in Pianifica → "Da sistemare"), e avvisare per voci che l'utente
       // non trova da nessuna parte confonde.
       supabase.from("recurring_expenses")
-        .select("id, name, secondary_name, tipologia, frequency, due_day, due_month, amount, amount_max, last_paid_date, next_due_date, match_keywords, category_id")
+        .select("id, name, secondary_name, tipologia, frequency, due_day, due_month, amount, amount_max, last_paid_date, next_due_date, match_keywords, category_id, debt_start_date, end_date")
         .eq("user_id", userId).eq("tipologia", "fissa").not("debt_type", "is", null),
       supabase.from("transactions")
         .select("amount, date, description, merchant, category_id")

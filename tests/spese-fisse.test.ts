@@ -55,6 +55,25 @@ test("spese fisse: finita (end_date passata) non conta", () => {
   assert.equal(dueInPeriod(item({ due_day: 5, end_date: "2026-07-31" }), FROM, TO).count, 0);
 });
 
+test("rate: prima della data di inizio non c'è niente da pagare", () => {
+  const rata = (start: string) => item({ debt_type: "rata_acquisto", due_day: 5, debt_start_date: start });
+  // parte a dicembre: in questo periodo non conta
+  assert.equal(dueInPeriod(rata("2026-12-01"), FROM, TO).count, 0);
+  // parte il 10 settembre, scadenza il 5: la prima rata è il 5 ottobre, nel periodo dopo
+  assert.equal(dueInPeriod(rata("2026-09-10"), FROM, TO).count, 0);
+  assert.deepEqual(dueInPeriod(rata("2026-09-10"), "2026-09-27", "2026-10-26").dates, ["2026-10-05"]);
+  // parte il 1° settembre: la rata del 5 settembre c'è
+  assert.deepEqual(dueInPeriod(rata("2026-09-01"), FROM, TO).dates, ["2026-09-05"]);
+  // partita da tempo: come sempre
+  assert.equal(dueInPeriod(rata("2025-01-01"), FROM, TO).count, 1);
+  // stato in dashboard: "non in questo periodo", non "mancante"
+  const st = planStatus({ ...rata("2026-12-01"), match_keywords: ["finanziaria"] }, [], FROM, TO, "2026-09-20");
+  assert.equal(st.state, "not-due");
+  assert.equal(st.expected, 0);
+  // prossima scadenza: dalla data di inizio
+  assert.equal(nextDueDate(rata("2026-12-01"), "2026-09-24"), "2026-12-05");
+});
+
 test("spese fisse: prossima scadenza", () => {
   assert.equal(nextDueDate(item({ due_day: 10 }), "2026-09-24"), "2026-10-10");
   assert.equal(nextDueDate(item({ due_day: 30 }), "2026-09-24"), "2026-09-30");
