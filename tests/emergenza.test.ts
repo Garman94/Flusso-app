@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { projectSinkingFund, aggregateSinkingFunds, sinkingFundInput, type SinkingFundInput } from "../lib/calculations";
-import { emergencyLimit, planEmergency, sinkingGroups, upcomingDues } from "../lib/emergency";
+import { emergencyLimit, planCatchUp, planEmergency, sinkingGroups, upcomingDues } from "../lib/emergency";
 
 const OGGI = new Date(2026, 9, 16); // 16 ottobre 2026
 const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 0.01, `${a} ≠ ${b}`);
@@ -117,4 +117,25 @@ test("emergenza: quali salvadanai tengono gli accantonamenti", () => {
     [{ potIds: ["acc", "emerg"], itemIds: ["a"] }],
   );
   assert.deepEqual(sinkingGroups(pots, [], []), []);
+});
+
+test("ricalcolo: soldi presi senza Emergenza, le quote salgono per recuperarli", () => {
+  // fino a settembre andavano messi da parte 595,83 + 166,67 + 600 = 1362,50; ce ne sono 1000
+  const c = planCatchUp(voci, 1000, OGGI)!;
+  near(c.shortfall, 362.5);
+  assert.equal(c.plan.fromSurplus, 0);
+  // si recupera sulla vacanza (marzo): bollo e assicurazione, vicini, restano com'erano
+  assert.deepEqual(c.plan.items.map(i => i.name), ["Vacanza"]);
+  near(c.plan.items[0].taken, 362.5);
+  near(c.plan.items[0].quotaAfter, 160.42);   // (1200 − 237,50) / 6
+  assert.ok(c.plan.monthlyAfter > c.plan.monthlyBefore);
+  // dopo il ricalcolo non manca più niente: il riquadro sparisce e rifarlo non cambia nulla
+  const dopo = voci.map(v => {
+    const it = c.plan.items.find(i => i.id === v.id);
+    return it ? { ...v, saving_start_date: it.savingStart, saved_offset: it.savingOffset } : v;
+  });
+  assert.equal(planCatchUp(dopo, 1000, OGGI), null);
+  // a inizio mese, prima di versare la quota del mese, non c'è niente da ricalcolare
+  assert.equal(planCatchUp(voci, 1362.5, OGGI), null);
+  assert.equal(planCatchUp(voci, 1600, OGGI), null);
 });

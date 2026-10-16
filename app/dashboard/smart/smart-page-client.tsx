@@ -11,6 +11,8 @@ import { createClient } from "@/lib/supabase/client";
 import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estimateGoalCompletion, computeDebtProgress, potsForSinkingFunds, sinkingFundInput } from "@/lib/calculations";
 import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
 import { resetSavingStartDate, markSinkingFundPaid } from "./sinking-fund-actions";
+import { recalcSinkingFunds } from "../emergency-actions";
+import { planCatchUp, sinkingGroups, type EmergencyItemPlan } from "@/lib/emergency";
 import { addGoalContribution } from "./goal-actions";
 import { BudgetPanel } from "./budget-panel";
 import { FixedExpensesPanel, fixedSuggestions, useDismissedSuggestions } from "./fixed-expenses-panel";
@@ -66,6 +68,8 @@ type Props = {
   userId: string; plan: string; initialGoals: Goal[];
   /** piano gratuito con prova Premium già usata: cambia il testo del blocco */
   trialExpired?: boolean;
+  /** admin (ADMIN_EMAILS): vede il ricalcolo degli accantonamenti indietro */
+  isAdmin?: boolean;
   transactions: Transaction[]; categories: Category[];
   initialRecurring?: RecurringExpense[];
   initialPots?: PotLite[];
@@ -292,7 +296,7 @@ const PREMIUM_VIEWS: ReadonlySet<View> = new Set<View>([
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function SmartPageClient({
-  userId, plan, trialExpired = false, initialGoals, transactions, categories,
+  userId, plan, trialExpired = false, isAdmin = false, initialGoals, transactions, categories,
   initialRecurring, initialPots = [], initialContributions = [], piggyBalance = 0,
   payDay = 0, periodFrom, periodTo,
   initialCategoryBudgets = [], initialBudgetNotes = [],
@@ -362,6 +366,7 @@ export function SmartPageClient({
   const [contribSaving, setContribSaving] = useState(false);
   const pots = initialPots;
   const router = useRouter();
+  const [recalcBusy, setRecalcBusy] = useState(false);
 
   /** Dopo un'Emergenza: quote degli accantonamenti (qui) e saldi dei salvadanai (dal server). */
   async function reloadAfterEmergency() {
@@ -2955,6 +2960,23 @@ export function SmartPageClient({
 
     const readyToPay = summary.projections.filter(p => p.months_remaining <= 0);
 
+    // Solo admin: quanto manca rispetto al piano e come cambierebbero le quote per recuperarlo
+    // (stesso calcolo dell'Emergenza, gruppo per gruppo di salvadanai: recalcSinkingFunds).
+    const catchUp = isAdmin ? (() => {
+      const withDates = recurringItems.filter(it => it.next_due_date && it.saving_start_date);
+      let shortfall = 0, monthlyBefore = 0, monthlyAfter = 0;
+      const items: EmergencyItemPlan[] = [];
+      for (const grp of sinkingGroups(pots, goals.map(x => x.savings_pot_id), withDates)) {
+        const inputs = withDates.filter(it => grp.itemIds.includes(it.id)).map(sinkingFundInput);
+        const balance = pots.filter(p => grp.potIds.includes(p.id)).reduce((t, p) => t + Number(p.current_balance), 0);
+        const c = planCatchUp(inputs, balance);
+        if (!c || c.plan.uncovered) continue;
+        shortfall += c.shortfall; monthlyBefore += c.plan.monthlyBefore; monthlyAfter += c.plan.monthlyAfter;
+        items.push(...c.plan.items);
+      }
+      return shortfall > 0.005 ? { shortfall, monthlyBefore, monthlyAfter, items } : null;
+    })() : null;
+
     // Saldo del salvadanaio collegato alla voce (fallback: totale aggregato, come "Segna come pagata").
     const potBalanceFor = (it: RecurringExpense) =>
       it.savings_pot_id
@@ -3246,6 +3268,48 @@ export function SmartPageClient({
                   </div>
                 </div>
               </div>
+
+              {/* Solo admin: soldi presi senza l'Emergenza → ricalcolo delle quote per recuperarli */}
+              {isAdmin && catchUp && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex flex-col gap-2 text-sm">
+                  <p>
+                    🔄 Nel salvadanaio mancano <strong>{fmt(catchUp.shortfall)}</strong>{" "}rispetto a quanto andava messo da parte
+                    fino al mese scorso: soldi presi senza passare dall&apos;Emergenza? Ricalcola le quote per rimetterli da parte
+                    entro le scadenze.
+                    {-summary.delta - catchUp.shortfall > 0.5 && (
+                      <> Gli altri {fmt(-summary.delta - catchUp.shortfall)} del Delta sono le quote di questo mese, da versare come sempre.</>
+                    )}
+                  </p>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground">Da mettere da parte ogni mese</span>
+                    <span className="tabular-nums text-right">{fmt(catchUp.monthlyBefore)} → <strong>{fmt(catchUp.monthlyAfter)}</strong></span>
+                  </div>
+                  {catchUp.items.map(it => (
+                    <p key={it.id} className="text-xs text-muted-foreground">
+                      {it.dueThisMonth
+                        ? <>· {it.name}: da rimettere {fmt(it.taken)} entro il {new Date(it.due + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "long" })}</>
+                        : <>· {it.name}: {fmt(it.quotaAfter)} al mese (prima {fmt(it.quotaBefore)})</>}
+                    </p>
+                  ))}
+                  <div className="flex items-center justify-between gap-3 pt-1">
+                    <span className="text-[11px] text-muted-foreground">Solo admin · non sposta soldi, cambia solo le quote</span>
+                    <button
+                      disabled={recalcBusy}
+                      onClick={async () => {
+                        setRecalcBusy(true);
+                        const res = await recalcSinkingFunds();
+                        setRecalcBusy(false);
+                        if ("error" in res) { toast.error(res.error); return; }
+                        toast.success(`Ricalcolato: da ora ${fmt(res.monthlyAfter)} al mese.`);
+                        await reloadAfterEmergency();
+                      }}
+                      className="shrink-0 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                    >
+                      {recalcBusy ? "…" : "Ricalcola"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Emergenza: prendere dai salvadanai senza restare scoperti sulle prossime scadenze */}
               {pots.length > 0 && (

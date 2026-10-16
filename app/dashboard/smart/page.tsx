@@ -6,6 +6,7 @@ import { getEffectivePlan } from "@/lib/preview-plan";
 import { SmartPageClient } from "./smart-page-client";
 import type { RecurringExpense as SmartRecurringExpense } from "./smart-page-client";
 import { currentPeriod } from "@/lib/period";
+import { isAdminEmail } from "@/lib/admin-emails";
 
 async function SmartContent() {
   const supabase = await createClient();
@@ -51,6 +52,7 @@ async function SmartContent() {
       userId={userId}
       plan={plan}
       trialExpired={trialExpired}
+      isAdmin={isAdminEmail(data.claims.email as string | undefined)}
       initialGoals={goalsRes.data ?? []}
       transactions={transactionsRes.data ?? []}
       categories={categoriesRes.data ?? []}
