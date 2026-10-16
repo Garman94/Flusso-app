@@ -80,7 +80,7 @@ type Props = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
+  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" }).format(n);
 }
 
 const FREQ_MONTHS: Record<string, number> = {
@@ -2942,11 +2942,15 @@ export function SmartPageClient({
       (s, d) => s + (d.proj.months_remaining > 0 ? d.steady_monthly : 0), 0,
     );
     const in_catchup = summary.this_month_total > steady_state_total + 0.01;
+    // Dopo un'Emergenza (voci ripartite con saving_offset): indietro è normale, si sta recuperando.
+    const afterEmergency = sinkingInputs.some(i => (i.saved_offset ?? 0) !== 0);
 
     const statusConfig = {
       ahead:    { color: "text-green-600 dark:text-green-400",  bg: "bg-green-500/10 border-green-500/30",   label: "In anticipo 🟢" },
       on_track: { color: "text-primary",                        bg: "bg-primary/5 border-primary/30",        label: "In pari ✅" },
-      behind:   { color: "text-destructive",                    bg: "bg-destructive/5 border-destructive/30", label: "In ritardo 🔴" },
+      behind:   afterEmergency
+        ? { color: "text-amber-600 dark:text-amber-400",        bg: "bg-amber-500/10 border-amber-500/30",   label: "In recupero ⏫" }
+        : { color: "text-destructive",                          bg: "bg-destructive/5 border-destructive/30", label: "In ritardo 🔴" },
     }[summary.status];
 
     const readyToPay = summary.projections.filter(p => p.months_remaining <= 0);
@@ -3191,9 +3195,9 @@ export function SmartPageClient({
                     ⏫ Sei in fase di recupero
                   </p>
                   <p className="text-amber-700/80 dark:text-amber-500 text-xs leading-relaxed">
-                    Alcune scadenze arrivano prima che tu abbia avuto il tempo di accantonare l&apos;importo completo,
-                    quindi la rata mensile attuale è più alta del normale.
-                    Una volta superate queste prime scadenze, la quota mensile si stabilizzerà.
+                    {afterEmergency
+                      ? "Dopo il prelievo d'emergenza la quota mensile è più alta: rimetti da parte quello che hai preso entro le scadenze. Superate quelle, la quota torna normale."
+                      : "Alcune scadenze arrivano prima che tu abbia avuto il tempo di accantonare l'importo completo, quindi la rata mensile attuale è più alta del normale. Una volta superate queste prime scadenze, la quota mensile si stabilizzerà."}
                   </p>
                   <div className="flex justify-between items-center pt-1 border-t border-amber-400/30">
                     <span className="text-xs text-amber-700/80 dark:text-amber-500">Quota a regime (da prossimo ciclo)</span>

@@ -23,8 +23,12 @@ export type Goal = {
 };
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
+// useGrouping "always": con le regole italiane recenti Node scrive "2100,00 €" e i browser
+// "2.100,00 €"; la differenza tra server e browser rompeva l'idratazione di React.
+const EURO = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" });
+
 export function formatEuro(n: number): string {
-  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
+  return EURO.format(n);
 }
 
 // ─── Macro categories ─────────────────────────────────────────────────────────

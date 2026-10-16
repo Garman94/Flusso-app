@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rollBalance, projectPeriodEnd, potsForSinkingFunds } from "../lib/calculations";
+import { rollBalance, projectPeriodEnd, potsForSinkingFunds, formatEuro } from "../lib/calculations";
 import { computePeriodRange, getCurrentPeriodAnchor, currentPeriod, previousPeriods } from "../lib/period";
 import { matchUserRule, ruleKeyword } from "../lib/categorize";
 
@@ -135,4 +135,12 @@ test("parola chiave proposta: il negozio, non il modo di pagamento", () => {
   assert.equal(ruleKeyword("BAR CENTRALE"), "bar centrale");
   assert.equal(ruleKeyword("ADDEBITO SDD ENEL ENERGIA"), "enel");
   assert.equal(ruleKeyword("12/09/2026 1234"), null);
+});
+
+test("importi: il punto delle migliaia c'è sempre, come nel browser", () => {
+  // Node con le regole italiane recenti scriveva "2100,00 €" e il browser "2.100,00 €":
+  // React segnalava la differenza (hydration) su ogni pagina con importi sopra i 1.000 €.
+  assert.equal(formatEuro(2100), "2.100,00\u00a0€");
+  assert.equal(formatEuro(-1234.5), "-1.234,50\u00a0€");
+  assert.equal(formatEuro(999), "999,00\u00a0€");
 });

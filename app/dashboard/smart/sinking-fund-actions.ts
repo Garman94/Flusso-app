@@ -12,9 +12,12 @@ export async function resetSavingStartDate(recurringId: string) {
 
   const today = todayISO();
 
+  // saving_offset solo se serve: così funziona anche prima della migration 041.
+  const { data: rec } = await supabase
+    .from("recurring_expenses").select("*").eq("id", recurringId).eq("user_id", data.claims.sub).maybeSingle();
   const { error } = await supabase
     .from("recurring_expenses")
-    .update({ saving_start_date: today, saving_offset: 0 })
+    .update({ saving_start_date: today, ...(Number(rec?.saving_offset ?? 0) !== 0 ? { saving_offset: 0 } : {}) })
     .eq("id", recurringId)
     .eq("user_id", data.claims.sub);
 
@@ -42,7 +45,7 @@ export async function markSinkingFundPaid(
 
   const { data: rec } = await supabase
     .from("recurring_expenses")
-    .select("amount, amount_max, tipologia, frequency, custom_days, next_due_date, savings_pot_id")
+    .select("*")
     .eq("id", recurringId)
     .eq("user_id", userId)
     .single();
@@ -65,7 +68,8 @@ export async function markSinkingFundPaid(
       next_due_date: toISODate(newDueDate),
       saving_start_date: newSavingStart,
       // un ciclo nuovo riparte da zero, anche se il precedente era ripartito dopo un'Emergenza
-      saving_offset: 0,
+      // (scritto solo se serve: così funziona anche prima della migration 041)
+      ...(Number(rec.saving_offset ?? 0) !== 0 ? { saving_offset: 0 } : {}),
     })
     .eq("id", recurringId)
     .eq("user_id", userId);

@@ -75,9 +75,33 @@ test("emergenza: senza prelievo dalle voci la quota non cambia", () => {
   assert.equal(soloAnticipo.monthlyAfter, soloAnticipo.monthlyBefore);
 });
 
-test("emergenza: oltre il massimo è segnalato", () => {
-  assert.equal(planEmergency(voci, 1600, 800, OGGI).exceeds, true);
+test("emergenza: oltre il massimo si può, ma tocca le spese vicine e lo dice", () => {
   assert.equal(planEmergency(voci, 1600, 750, OGGI).exceeds, false);
+
+  const oltre = planEmergency(voci, 1600, 800, OGGI);
+  assert.equal(oltre.exceeds, true);
+  assert.equal(oltre.uncovered, false);
+  // anticipo 66,67 → Vacanza tutta (700) → il resto dal Bollo, che scade il mese prossimo
+  assert.deepEqual(oltre.items.map(i => [i.name, i.near]), [["Vacanza", false], ["Bollo", true]]);
+  const bollo = oltre.items[1];
+  near(bollo.taken, 33.33);
+  near(bollo.quotaAfter, 33.33);             // (200 − 133,33) in due mesi
+  near(oltre.monthlyAfter, 250);             // bollo 33,33 + vacanza (1200 + 100) / 6
+  near(aggregateSinkingFunds(voci.map(v => {
+    const it = oltre.items.find(i => i.id === v.id);
+    return it ? { ...v, saving_start_date: it.savingStart, saved_offset: it.savingOffset } : v;
+  }), 0, OGGI).this_month_total, oltre.monthlyAfter);
+
+  // tutto: anche l'assicurazione di questo mese, da rimettere entro la scadenza
+  const tutto = planEmergency(voci, 1600, 1600, OGGI);
+  const ass = tutto.items.find(i => i.name === "Assicurazione")!;
+  assert.equal(ass.dueThisMonth, true);
+  near(ass.taken, 650);
+  near(projectSinkingFund({ ...assicurazione, saving_start_date: ass.savingStart, saved_offset: ass.savingOffset }, OGGI).expected_saved_so_far, 650);
+  assert.equal(tutto.uncovered, false);
+
+  // più di quanto c'è da parte per le voci: non si può
+  assert.equal(planEmergency(voci, 1000, 1600, OGGI).uncovered, true);
 });
 
 test("emergenza: quali salvadanai tengono gli accantonamenti", () => {

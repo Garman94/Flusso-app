@@ -19,7 +19,7 @@ type RecurringRow = {
 };
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
+  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" }).format(n);
 }
 
 function fmtDate(iso: string) {
@@ -81,13 +81,18 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
 
   const summary = aggregateSinkingFunds(sinkingInputs, piggyBalance);
 
+  // Dopo un'Emergenza (voci ripartite con saving_offset) essere indietro è normale: si recupera.
+  const recovering = summary.status === "behind" && sinkingInputs.some(i => (i.saved_offset ?? 0) !== 0);
+
   const statusColor =
     summary.status === "ahead"  ? "text-green-600 dark:text-green-400" :
+    recovering                  ? "text-amber-600 dark:text-amber-400" :
     summary.status === "behind" ? "text-destructive" :
                                   "text-primary";
 
   const statusLabel =
     summary.status === "ahead"  ? "In anticipo 🟢" :
+    recovering                  ? "In recupero ⏫" :
     summary.status === "behind" ? "In ritardo 🔴" :
                                   "In pari ✅";
 

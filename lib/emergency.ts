@@ -1,12 +1,14 @@
 // Emergenza: prendere soldi dai salvadanai senza restare scoperti sulle prossime spese.
 //
-// Dal salvadanaio degli accantonamenti si può prendere tutto tranne quello che serve per le
-// voci che scadono questo mese e il prossimo: per quelle non c'è il tempo di rimetterli da
-// parte. Il resto si toglie alle voci che scadono più avanti, partendo dalla più lontana, e
-// per quelle il piano riparte da questo mese con quello che è rimasto: la quota mensile sale
-// quanto basta per arrivare alla scadenza con l'importo intero.
+// Dal salvadanaio degli accantonamenti si consiglia di prendere al massimo il saldo meno
+// quello che serve per le voci che scadono questo mese e il prossimo: per quelle non c'è il
+// tempo di rimetterli da parte. Il prelievo si toglie alle voci che scadono più avanti,
+// partendo dalla più lontana, e per quelle il piano riparte da questo mese con quello che è
+// rimasto: la quota mensile sale quanto basta per arrivare alla scadenza con l'importo intero.
+// Oltre il massimo si può andare (è un'emergenza), con un avviso: allora tocca anche le voci
+// vicine, e per quelle di questo mese i soldi vanno rimessi entro la scadenza.
 
-import { monthsBetween, projectSinkingFund, type SinkingFundInput } from "./calculations";
+import { aggregateSinkingFunds, monthsBetween, projectSinkingFund, type SinkingFundInput } from "./calculations";
 import { toISODate } from "./dates";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -51,6 +53,10 @@ export type EmergencyItemPlan = {
   taken: number;
   quotaBefore: number;
   quotaAfter: number;
+  /** scade questo mese (o è già scaduta): niente quota, `taken` va rimesso entro `due` */
+  dueThisMonth: boolean;
+  /** scade questo mese o il prossimo: è oltre il massimo consigliato */
+  near: boolean;
   /** nuovi valori da salvare su recurring_expenses */
   savingStart: string;
   savingOffset: number;
@@ -62,8 +68,10 @@ export type EmergencyPlan = {
   items: EmergencyItemPlan[];
   monthlyBefore: number;
   monthlyAfter: number;
-  /** il prelievo supera quanto si può prendere */
+  /** il prelievo supera il massimo consigliato (tocca le spese di questo mese e del prossimo) */
   exceeds: boolean;
+  /** il prelievo supera anche quello che le voci dovrebbero avere: non si può fare */
+  uncovered: boolean;
 };
 
 /**
@@ -87,12 +95,16 @@ export function planEmergency(
   const fromSurplus = Math.min(withdrawal, Math.max(0, round2(balance - expectedTotal)));
   let left = round2(withdrawal - fromSurplus);
 
-  // Poi le voci con più tempo davanti: la scadenza più lontana per prima.
+  // Poi le voci con più tempo davanti: la scadenza più lontana per prima. Le voci di questo
+  // mese e del prossimo solo oltre il massimo consigliato, sempre dalla più lontana.
   const firstOfMonth = toISODate(new Date(today.getFullYear(), today.getMonth(), 1));
   const items: EmergencyItemPlan[] = [];
-  const candidates = projections
-    .filter(p => p.months_remaining >= 2)
-    .sort((a, b) => b.input.next_due_date.localeCompare(a.input.next_due_date));
+  const latestFirst = (a: { input: SinkingFundInput }, b: { input: SinkingFundInput }) =>
+    b.input.next_due_date.localeCompare(a.input.next_due_date);
+  const candidates = [
+    ...projections.filter(p => p.months_remaining >= 2).sort(latestFirst),
+    ...projections.filter(p => p.months_remaining < 2).sort(latestFirst),
+  ];
   for (const p of candidates) {
     if (left <= 0) break;
     const taken = round2(Math.min(left, Math.max(0, p.expected_saved_so_far)));
@@ -113,13 +125,20 @@ export function planEmergency(
       taken,
       quotaBefore: round2(p.monthly_quota),
       quotaAfter: round2((p.input.amount_per_cycle - savingOffset) / months),
+      dueThisMonth: p.months_remaining <= 0,
+      near: p.months_remaining < 2,
       savingStart,
       savingOffset,
     });
   }
 
-  const monthlyAfter = round2(monthlyBefore + items.reduce((s, it) => s + it.quotaAfter - it.quotaBefore, 0));
-  return { fromSurplus: round2(fromSurplus), items, monthlyBefore, monthlyAfter, exceeds: exceeds || left > 0.005 };
+  // La quota mensile dopo: lo stesso calcolo di dashboard e Accantonamenti sui valori nuovi.
+  const after = inputs.map(i => {
+    const it = items.find(x => x.id === i.id);
+    return it ? { ...i, saving_start_date: it.savingStart, saved_offset: it.savingOffset } : i;
+  });
+  const monthlyAfter = round2(aggregateSinkingFunds(after, 0, today).this_month_total);
+  return { fromSurplus: round2(fromSurplus), items, monthlyBefore, monthlyAfter, exceeds, uncovered: left > 0.005 };
 }
 
 // ── Quali salvadanai tengono gli accantonamenti ─────────────────────────────

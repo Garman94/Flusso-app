@@ -31,7 +31,7 @@ export type DisplayRule    = { id: string; find_text: string; replace_with: stri
 export type CategoryRule   = { id: string; value: string; category_id: string; categories: { name: string; icon: string; color: string } | null };
 
 function formatEuro(n: number) {
-  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
+  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" }).format(n);
 }
 
 /** Applica le regole display alla descrizione: sostituisce il testo trovato col replacement, il resto rimane */
