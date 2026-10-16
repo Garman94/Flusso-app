@@ -173,36 +173,46 @@ export type PeriodDue = {
  * cadono nei mesi indicati da `due_month` (il mese di una qualsiasi scadenza) ogni N mesi.
  */
 export function dueInPeriod(
-  it: Pick<PlanItem, "frequency" | "custom_days" | "due_day" | "due_month" | "end_date">,
+  it: Pick<PlanItem, "frequency" | "custom_days" | "due_day" | "due_month" | "end_date" | "debt_start_date">,
   from: string,
   to: string,
 ): PeriodDue {
-  if (it.end_date && it.end_date < from) return { count: 0, dates: [], spread: false };
+  const none: PeriodDue = { count: 0, dates: [], spread: false };
+  if (it.end_date && it.end_date < from) return none;
+  // Rate: prima della data di inizio non c'è niente da pagare.
+  const start = it.debt_start_date ?? null;
+  if (start && start > to) return none;
   const n = monthsPerCycle(it.frequency, it.custom_days);
   if (isSpread(it)) return { count: 1 / n, dates: [], spread: true };
   const day = it.due_day ?? (n > 1 ? 1 : null);
   const dates = day == null ? [] : monthsTouched(from, to)
     .filter(([, m0]) => fallsInMonth(it, m0, n))
     .map(([y, m0]) => dateIn(y, m0, day))
-    .filter(d => d >= from && d <= to && (!it.end_date || d <= it.end_date));
-  if (n === 1) return { count: 1, dates: dates.slice(0, 1), spread: false };
+    .filter(d => d >= from && d <= to && (!it.end_date || d <= it.end_date) && (!start || d >= start));
+  if (n === 1) {
+    // Una rata che parte dentro il periodo, con la scadenza del periodo prima dell'inizio:
+    // la prima rata è nel periodo dopo.
+    if (start && start > from && day != null && dates.length === 0) return none;
+    return { count: 1, dates: dates.slice(0, 1), spread: false };
+  }
   return { count: dates.length, dates, spread: false };
 }
 
 /** Prossima data (da `today` compreso) in cui cade, o null se non ha una data. */
 export function nextDueDate(
-  it: Pick<PlanItem, "frequency" | "custom_days" | "due_day" | "due_month" | "end_date">,
+  it: Pick<PlanItem, "frequency" | "custom_days" | "due_day" | "due_month" | "end_date" | "debt_start_date">,
   today: string,
 ): string | null {
   if (isSpread(it)) return null;
   const n = monthsPerCycle(it.frequency, it.custom_days);
   const day = it.due_day ?? (n > 1 ? 1 : null);
   if (day == null) return null;
-  let y = +today.slice(0, 4), m = +today.slice(5, 7) - 1;
+  const from = it.debt_start_date && it.debt_start_date > today ? it.debt_start_date : today;
+  let y = +from.slice(0, 4), m = +from.slice(5, 7) - 1;
   for (let i = 0; i < 25; i++) {
     if (fallsInMonth(it, m, n)) {
       const d = dateIn(y, m, day);
-      if (d >= today) return it.end_date && d > it.end_date ? null : d;
+      if (d >= from) return it.end_date && d > it.end_date ? null : d;
     }
     if (++m === 12) { m = 0; y++; }
   }

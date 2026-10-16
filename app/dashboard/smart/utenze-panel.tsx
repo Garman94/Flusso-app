@@ -31,7 +31,7 @@ const emptyTariff = (kind: UtilityKind): Tariff => ({
   supplier: null, unit_price: 0, other_unit_costs: UTILITY[kind].otherDefault, fixed_monthly: 0, vat_pct: 10, tv_fee_monthly: 0,
 });
 const hasPrice = (t?: Tariff) => !!t && t.unit_price > 0;
-const dec = (n: number, digits = 2) => n.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: digits });
+const dec = (n: number, digits = 2) => n.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: digits, useGrouping: "always" });
 const num = (s: string) => parseAmount(s);
 
 function errorText(message: string): string {

@@ -55,7 +55,7 @@ function detectBank(rows: unknown[][]): BankFormat {
 }
 
 function formatEuro(n: number) {
-  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
+  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" }).format(n);
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 import { todayISO } from "@/lib/dates";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatEuro,
@@ -10,17 +11,18 @@ import {
   hasIncomeInfo,
   normalizeMonthlyIncome,
   aggregateSinkingFunds,
+  sinkingFundInput,
   computeDebtProgress,
   isTransferCategory,
   rollBalance,
   projectPeriodEnd,
   type IncomeInfo,
-  type SinkingFundInput,
 } from "@/lib/calculations";
 import { parseAmount } from "@/lib/import-parse";
 import { isFixedExpense, planStatus, splitPlan, type PlanItem } from "@/lib/fixed-expenses";
 import { flowOf, isSpending, moneyTotals } from "@/lib/money";
 import { updateStartingBalance } from "./saldo-action";
+import { EmergencyButton } from "./emergency-button";
 import { toast } from "sonner";
 
 // Card principale della dashboard. Tre domande, in quest'ordine:
@@ -45,6 +47,7 @@ type RecurringRow = {
   amount_max: number | null;
   next_due_date: string | null;
   saving_start_date: string | null;
+  saving_offset?: number | null;
   debt_type: string | null;
   debt_total_amount: number | null;
   debt_start_date: string | null;
@@ -260,6 +263,7 @@ function ProgressStat({
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: Props) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [startingBalance, setStartingBalance] = useState<number | null>(null);
   /** data dell'ultimo saldo inserito a mano, se il saldo di questo periodo è stato riportato */
@@ -285,7 +289,8 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       const [profileRes, recRes, periodTxRes, memRes, budgetRes] = await Promise.all([
         supabase.from("profiles").select(`period_starting_balance, period_starting_balance_date, ${INCOME_COLS}`).eq("id", userId).single(),
         supabase.from("recurring_expenses")
-          .select("id, name, tipologia, frequency, custom_days, amount, amount_max, next_due_date, saving_start_date, debt_type, debt_total_amount, debt_start_date, due_day, due_month, match_keywords, secondary_name, end_date, last_paid_date")
+          // "*": comprende saving_offset (migration 041) e regge anche se la colonna non c'è ancora
+          .select("*")
           .eq("user_id", userId),
         // Filtro per data: senza, il limite di default di 1000 righe potrebbe tagliare il periodo corrente.
         supabase.from("transactions")
@@ -367,14 +372,16 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     // ── Previsti: reddito dall'anagrafica (mese in cui inizia il periodo) ──
     const periodMonth = new Date(periodFrom + "T00:00:00").getMonth() + 1;
 
-    // Rate in corso (esclude quelle non ancora iniziate e quelle già terminate).
+    // Rate in corso (esclude quelle non ancora iniziate e quelle già terminate) con una
+    // scadenza in questo periodo: una rata partita da poco può avere la prima nel periodo dopo.
     const rateItems = items
       .filter(it => it.debt_type && it.debt_total_amount && it.debt_start_date)
       .map(it => ({
         item: it,
         progress: computeDebtProgress({ totalAmount: it.debt_total_amount!, monthlyAmount: it.amount, startDate: it.debt_start_date! }),
+        status: planStatus(it as PlanItem, periodTxs, periodFrom, periodTo, iso),
       }))
-      .filter(r => r.progress.status === "active");
+      .filter(r => r.progress.status === "active" && r.status.state !== "not-due");
     const rateMonthly = rateItems.reduce((s, r) => s + r.item.amount, 0);
 
     // Spese fisse (affitto, abbonamenti, bollette) e rate: per ognuna si sa se in questo
@@ -383,23 +390,15 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     const fixedStatuses = items.filter(isFixedExpense)
       .map(it => planStatus(it as PlanItem, periodTxs, periodFrom, periodTo, iso))
       .filter(st => st.state !== "not-due");
-    const rateStatuses = rateItems.map(r => planStatus(r.item as PlanItem, periodTxs, periodFrom, periodTo, iso));
+    const rateStatuses = rateItems.map(r => r.status);
     const plan = splitPlan([...fixedStatuses, ...rateStatuses], t => !isTransfer(t));
     const fixedMonthly = fixedStatuses.reduce((s, st) => s + st.expected, 0);
 
     // Spese previste = spese fisse + rate in corso + quota mensile accantonamenti + budget
     // per categoria (Pianifica).
-    const sinkingInputs: SinkingFundInput[] = items
+    const sinkingInputs = items
       .filter(it => it.next_due_date && it.saving_start_date)
-      .map(it => ({
-        id: it.id,
-        name: it.name,
-        amount_per_cycle: it.tipologia === "variabile" && it.amount_max != null
-          ? (it.amount + it.amount_max) / 2
-          : it.amount,
-        saving_start_date: it.saving_start_date!,
-        next_due_date: it.next_due_date!,
-      }));
+      .map(sinkingFundInput);
     const sinkingMonthly = aggregateSinkingFunds(sinkingInputs, piggyBalance).this_month_total;
     const spesePreviste = fixedMonthly + rateMonthly + sinkingMonthly + budgetTotal;
     // Il resto delle spese previste, quelle "da spendere": budget, accantonamenti e le voci
@@ -655,16 +654,17 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
         )}
       </div>
 
-      {/* Salvadanai */}
-      <Link href="/dashboard/salvadanai" className="pt-4 border-t flex items-center justify-between group">
-        <div className="flex flex-col gap-0.5">
+      {/* Salvadanai, con il tasto Emergenza accanto */}
+      <div className="pt-4 border-t flex items-center justify-between gap-3">
+        <Link href="/dashboard/salvadanai" className="flex flex-col gap-0.5 group min-w-0">
           <span className="text-xs text-muted-foreground">Messi da parte nei salvadanai 🐷</span>
-          <span className="text-lg font-semibold tabular-nums">{formatEuro(piggyBalance)}</span>
-        </div>
-        <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">
-          Apri →
-        </span>
-      </Link>
+          <span className="text-lg font-semibold tabular-nums">
+            {formatEuro(piggyBalance)}{" "}
+            <span className="text-xs font-normal text-muted-foreground group-hover:text-foreground transition-colors">Apri →</span>
+          </span>
+        </Link>
+        <EmergencyButton userId={userId} onDone={() => { setRefreshKey(k => k + 1); router.refresh(); }} />
+      </div>
     </div>
   );
 }

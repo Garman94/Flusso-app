@@ -4,7 +4,7 @@ import { computePeriodRange, currentPeriod, previousPeriods } from "@/lib/period
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { formatEuro, classifyCategoryMonths, aggregateSinkingFunds, type MonthSpend, type SinkingFundInput } from "@/lib/calculations";
+import { formatEuro, classifyCategoryMonths, aggregateSinkingFunds, sinkingFundInput, type MonthSpend } from "@/lib/calculations";
 import { expectedAmount, isFixedExpense, planPayments, type PlanItem } from "@/lib/fixed-expenses";
 import { categoryKind } from "@/lib/money";
 
@@ -15,7 +15,7 @@ type NoteRow = { category_id: string; year: number; month: number; note: string 
 type RecurringItem = {
   id: string; name: string; tipologia: string;
   amount: number; amount_max: number | null;
-  next_due_date: string | null; saving_start_date: string | null;
+  next_due_date: string | null; saving_start_date: string | null; saving_offset?: number | null;
 };
 
 type Props = {
@@ -75,14 +75,9 @@ export function BudgetPanel({
   // budget non è impostabile a mano, è sempre questo valore (evita due numeri diversi
   // per la stessa cosa e il doppio conteggio in dashboard).
   const sinkingSummary = useMemo(() => {
-    const inputs: SinkingFundInput[] = recurringItems
+    const inputs = recurringItems
       .filter(it => it.next_due_date && it.saving_start_date)
-      .map(it => ({
-        id: it.id, name: it.name,
-        amount_per_cycle: it.tipologia === "variabile" && it.amount_max != null ? (it.amount + it.amount_max) / 2 : it.amount,
-        saving_start_date: it.saving_start_date!,
-        next_due_date: it.next_due_date!,
-      }));
+      .map(sinkingFundInput);
     return aggregateSinkingFunds(inputs, piggyBalance);
   }, [recurringItems, piggyBalance]);
 

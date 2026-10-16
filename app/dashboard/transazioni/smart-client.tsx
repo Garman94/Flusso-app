@@ -44,7 +44,7 @@ function toMonthly(amount: number, freq: BudgetItem["frequency"]): number {
 }
 
 function formatEuro(n: number) {
-  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
+  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" }).format(n);
 }
 
 const EMPTY_FORM = { name: "", amount: "", frequency: "mensile" as BudgetItem["frequency"], category_id: "" };

@@ -71,6 +71,20 @@ for (const zone of ZONES) {
   });
 }
 
+test("avviso rate scadute: niente per le rate non ancora iniziate o già finite", () => {
+  const rata = (p: { debt_start_date?: string; end_date?: string }) => ({
+    id: "r", name: "Prestito auto", tipologia: "fissa" as const, frequency: "mensile",
+    due_day: 5, due_month: null, amount: 250, amount_max: null,
+    last_paid_date: null, next_due_date: null, match_keywords: [], category_id: null, ...p,
+  });
+  const oggi = new Date(2026, 9, 16); // 16 ottobre: la rata del 5 è passata
+  assert.equal(findOverdueRecurring([rata({ debt_start_date: "2026-12-01" })], [], oggi).length, 0);
+  assert.equal(findOverdueRecurring([rata({ debt_start_date: "2026-10-10" })], [], oggi).length, 0);
+  assert.equal(findOverdueRecurring([rata({ end_date: "2026-09-05" })], [], oggi).length, 0);
+  // in corso e non pagata: l'avviso resta
+  assert.equal(findOverdueRecurring([rata({ debt_start_date: "2026-01-05" })], [], oggi)[0].dueDate, "2026-10-05");
+});
+
 test("todayISO segue Europe/Rome, non il fuso della macchina", () => {
   // 22:30 UTC del 20/09 = 00:30 del 21/09 a Roma (CEST, UTC+2)
   const instant = new Date("2026-09-20T22:30:00Z");
