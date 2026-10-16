@@ -102,6 +102,7 @@ Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 | `041_emergenza.sql` | `recurring_expenses.saving_offset`: quanto c'era già da parte per un accantonamento quando il piano riparte dopo un'Emergenza (default 0). Rollback in `supabase/rollback/` |
 | `042_obiettivi_salvadanai.sql` | Trigger `sync_goal_from_pot`: un obiettivo collegato e allineato segue il saldo del suo salvadanaio. Non modifica dati esistenti |
 | `043_demo_obiettivi_salvadanai.sql` | Solo demo: `reseed_demo_salvadanai()` (ogni obiettivo col suo salvadanaio, accantonamenti nel salvadanaio "Accantonamenti") |
+| `044_dizionario_negozi.sql` | `merchant_dictionary`: dizionario condiviso parola del negozio → categoria per la categorizzazione automatica (364 voci di partenza). Lettura per tutti, scrittura dall'admin. Rollback in `supabase/rollback/` |
 
 **Via CLI:**
 ```bash
