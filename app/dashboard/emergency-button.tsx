@@ -223,7 +223,7 @@ export function EmergencyButton({ userId, onDone, className }: {
               <span className="rounded-full bg-green-500/15 text-green-700 dark:text-green-400 px-2 py-0.5">Prendi prima da qui: non tocca accantonamenti né obiettivi</span>
             )}
             {g && <span className="rounded-full bg-muted px-2 py-0.5">🏦 Accantonamenti</span>}
-            {goal && <span className="rounded-full bg-muted px-2 py-0.5">🎯 Obiettivo &ldquo;{goal.name}&rdquo;: non scende da solo</span>}
+            {goal && <span className="rounded-full bg-muted px-2 py-0.5">🎯 Obiettivo &ldquo;{goal.name}&rdquo;: scende anche lui</span>}
           </div>
         )}
         {g && g.potIds.length === 1 && sinkingNotice(g)}

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageTour } from "@/components/tour/page-tour";
 import { SalvadanaiClient } from "./salvadanai-client";
 import type { SavingsPot, SavingsPotMember, SavingsTransaction } from "@/lib/savings";
+import type { PotGoal } from "./salvadanai-client";
 
 async function SalvadanaiContent() {
   const supabase = await createClient();
@@ -11,7 +12,7 @@ async function SalvadanaiContent() {
   if (!data?.claims) redirect("/auth/login");
   const userId = data.claims.sub;
 
-  const [potsRes, membersRes, potMembersRes, txRes] = await Promise.all([
+  const [potsRes, membersRes, potMembersRes, txRes, goalsRes] = await Promise.all([
     supabase.from("savings_pots").select("*").eq("user_id", userId).order("created_at"),
     supabase.from("family_members").select("id, name, color").eq("user_id", userId).order("created_at"),
     supabase.from("savings_pot_members").select("id, pot_id, member_id, contributed_amount"),
@@ -21,6 +22,7 @@ async function SalvadanaiContent() {
       .eq("user_id", userId)
       .order("date", { ascending: false })
       .limit(200),
+    supabase.from("goals").select("name, icon, target_amount, savings_pot_id").eq("user_id", userId).not("savings_pot_id", "is", null),
   ]);
 
   return (
@@ -30,6 +32,7 @@ async function SalvadanaiContent() {
       familyMembers={(membersRes.data ?? []) as { id: string; name: string; color: string }[]}
       potMembers={(potMembersRes.data ?? []) as SavingsPotMember[]}
       initialTransactions={(txRes.data ?? []) as SavingsTransaction[]}
+      goals={(goalsRes.data ?? []) as PotGoal[]}
     />
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { toISODate, todayISO } from "@/lib/dates";
-import { useCallback, useEffect, useRef, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TrackOnMount } from "@/components/track-on-mount";
@@ -11,12 +11,14 @@ import { createClient } from "@/lib/supabase/client";
 import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estimateGoalCompletion, computeDebtProgress, potsForSinkingFunds, sinkingFundInput } from "@/lib/calculations";
 import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
 import { resetSavingStartDate, markSinkingFundPaid } from "./sinking-fund-actions";
-import { addGoalContribution } from "./goal-actions";
+import { addGoalContribution, createPotForGoal, reconcileGoal } from "./goal-actions";
+import { goalMismatch, potChoicesForGoal, withPotBalances } from "@/lib/goals";
 import { BudgetPanel } from "./budget-panel";
 import { FixedExpensesPanel, fixedSuggestions, useDismissedSuggestions } from "./fixed-expenses-panel";
 import { UtenzePanel } from "./utenze-panel";
 import { isFixedExpense } from "@/lib/fixed-expenses";
 import { EmergencyButton } from "../emergency-button";
+import { useDemoGuard } from "@/components/demo-context";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +34,9 @@ type Goal = {
 };
 type PotLite = { id: string; name: string; emoji: string; current_balance: number };
 type GoalContribution = { id: string; goal_id: string; amount: number; note: string | null; date: string };
+type PotMovement = { id: string; amount: number; type: "deposit" | "withdraw"; note: string | null; date: string };
+/** valore di gForm.savings_pot_id: "crea un salvadanaio nuovo per l'obiettivo" */
+const NEW_POT = "__new__";
 type Tipologia = "fissa" | "variabile" | "entrata";
 type Frequency = "mensile" | "bimestrale" | "trimestrale" | "semestrale" | "annuale" | "personalizzata";
 export type RecurringExpense = {
@@ -222,7 +227,7 @@ const EMPTY_G = {
   target_amount: "",
   current_amount: "0",
   deadline: "",
-  savings_pot_id: "",
+  savings_pot_id: NEW_POT,
   monthly_contribution: "",
 };
 
@@ -321,7 +326,7 @@ export function SmartPageClient({
   }, []);
   const [recurringItems, setRecurringItems] = useState<RecurringExpense[]>(initialRecurring ?? []);
   const [recurringLoading, setRecurringLoading] = useState(!initialRecurring);
-  const [goals, setGoals] = useState(initialGoals);
+  const [storedGoals, setGoals] = useState(initialGoals);
 
   // Recurring wizard (add)
   const [rStep, setRStep] = useState(1);
@@ -362,6 +367,12 @@ export function SmartPageClient({
   const [contribSaving, setContribSaving] = useState(false);
   const pots = initialPots;
   const router = useRouter();
+  // Un obiettivo collegato vale il saldo del suo salvadanaio (lib/goals.ts): da qui in giù
+  // `goals` ha già current_amount giusto; recorded_amount è il contatore salvato.
+  const goals = useMemo(() => withPotBalances(storedGoals, pots), [storedGoals, pots]);
+  const [potMovements, setPotMovements] = useState<PotMovement[]>([]);
+  const demoGuard = useDemoGuard();
+  const [goalBusy, setGoalBusy] = useState(false);
 
   /** Dopo un'Emergenza: quote degli accantonamenti (qui) e saldi dei salvadanai (dal server). */
   async function reloadAfterEmergency() {
@@ -575,6 +586,42 @@ export function SmartPageClient({
     setGDetailId(g.id); setContribAmount(""); setContribNote(""); setView("goal-detail");
   }
 
+  // Movimenti del salvadanaio dell'obiettivo aperto: sono lo storico dell'obiettivo.
+  const [potsTick, setPotsTick] = useState(0);
+  const detailPotId = view === "goal-detail" ? goals.find(g => g.id === gDetailId && g.in_pot)?.savings_pot_id ?? null : null;
+  useEffect(() => {
+    if (!detailPotId) { setPotMovements([]); return; }
+    createClient().from("savings_transactions")
+      .select("id, amount, type, note, date")
+      .eq("pot_id", detailPotId).order("date", { ascending: false }).order("created_at", { ascending: false }).limit(50)
+      .then(({ data }) => setPotMovements((data ?? []) as PotMovement[]));
+  }, [detailPotId, potsTick]);
+
+  /** Obiettivo senza salvadanaio: crea il suo e ci mette quello che aveva già da parte. */
+  async function handleCreatePotForGoal(goalId: string) {
+    if (demoGuard()) return;
+    setGoalBusy(true);
+    const res = await createPotForGoal(goalId);
+    setGoalBusy(false);
+    if ("error" in res) { toast.error(res.error); return; }
+    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, savings_pot_id: res.potId } : g));
+    toast.success("Salvadanaio creato: da ora versamenti e prelievi aggiornano l'obiettivo.");
+    router.refresh();
+  }
+
+  /** Obiettivo e salvadanaio segnavano cifre diverse: l'utente sceglie quale è giusta. */
+  async function handleReconcileGoal(goalId: string, keep: "pot" | "goal") {
+    if (demoGuard()) return;
+    setGoalBusy(true);
+    const res = await reconcileGoal(goalId, keep);
+    setGoalBusy(false);
+    if ("error" in res) { toast.error(res.error); return; }
+    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, current_amount: res.amount } : g));
+    setPotsTick(t => t + 1);
+    toast.success("Fatto: ora obiettivo e salvadanaio dicono la stessa cifra.");
+    router.refresh();
+  }
+
   async function handleAddContribution() {
     if (!gDetailId) return;
     const amt = parseFloat(contribAmount.replace(",", "."));
@@ -583,13 +630,20 @@ export function SmartPageClient({
     const res = await addGoalContribution({ goalId: gDetailId, amount: amt, note: contribNote });
     setContribSaving(false);
     if (res?.error) { toast.error(res.error); return; }
-    setContributions(prev => [
-      { id: res.id ?? crypto.randomUUID(), goal_id: gDetailId, amount: amt, note: contribNote || null, date: todayISO() },
-      ...prev,
-    ]);
-    setGoals(prev => prev.map(g => g.id === gDetailId ? { ...g, current_amount: Number(g.current_amount) + amt } : g));
+    if (res.toPot) {
+      // Versamento nel salvadanaio: l'obiettivo sale col saldo (nuovi saldi dal server).
+      setGoals(prev => prev.map(g => g.id === gDetailId ? { ...g, current_amount: Number(g.current_amount) + amt } : g));
+      setPotsTick(t => t + 1);
+      router.refresh();
+    } else {
+      setContributions(prev => [
+        { id: res.id ?? crypto.randomUUID(), goal_id: gDetailId, amount: amt, note: contribNote || null, date: todayISO() },
+        ...prev,
+      ]);
+      setGoals(prev => prev.map(g => g.id === gDetailId ? { ...g, current_amount: Number(g.current_amount) + amt } : g));
+    }
     setContribAmount(""); setContribNote("");
-    toast.success("Contributo aggiunto!");
+    toast.success(res.toPot ? "Messo nel salvadanaio!" : "Contributo aggiunto!");
   }
 
   // ── Recurring CRUD ─────────────────────────────────────────────────────────
@@ -705,37 +759,52 @@ export function SmartPageClient({
     setGSaving(true);
     const supabase = createClient();
     const mc = parseFloat(gForm.monthly_contribution.replace(",", "."));
+    // Salvadanaio esistente: i soldi dell'obiettivo sono il suo saldo. Nuovo: si crea dopo,
+    // con dentro quello che l'utente ha già da parte (createPotForGoal).
+    const wantsNewPot = gForm.savings_pot_id === NEW_POT;
+    const potId = wantsNewPot ? null : gForm.savings_pot_id || null;
+    const linkedPot = potId ? pots.find(p => p.id === potId) : null;
     const payload = {
       name: gForm.name.trim(), icon: gForm.icon,
-      target_amount: ta, current_amount: isNaN(ca) ? 0 : ca,
+      target_amount: ta,
+      current_amount: linkedPot ? Number(linkedPot.current_balance) : isNaN(ca) ? 0 : ca,
       deadline: gForm.deadline || null,
-      savings_pot_id: gForm.savings_pot_id || null,
+      savings_pot_id: potId,
       monthly_contribution: isNaN(mc) ? null : mc,
     };
-    if (gEditId) {
-      const { data, error } = await supabase
-        .from("goals").update(payload).eq("id", gEditId).select().single();
-      if (error) toast.error("Errore.");
-      else {
-        setGoals(prev => prev.map(g => g.id === gEditId ? data as Goal : g));
-        toast.success("Obiettivo aggiornato!"); goBack("list-goals");
-      }
-    } else {
-      const { data, error } = await supabase
-        .from("goals").insert({ user_id: userId, ...payload }).select().single();
-      if (error) toast.error("Errore.");
-      else {
-        setGoals(prev => [data as Goal, ...prev]);
-        toast.success("Obiettivo creato!"); goBack("list-goals");
-      }
+    // Un obiettivo già collegato tiene la sua cifra: se era diversa dal salvadanaio, la scelta
+    // si fa nel dettaglio (non la si sovrascrive di nascosto modificando il nome).
+    const before = gEditId ? storedGoals.find(g => g.id === gEditId) : null;
+    if (before && before.savings_pot_id && before.savings_pot_id === potId) payload.current_amount = Number(before.current_amount);
+
+    const { data, error } = gEditId
+      ? await supabase.from("goals").update(payload).eq("id", gEditId).select().single()
+      : await supabase.from("goals").insert({ user_id: userId, ...payload }).select().single();
+    if (error || !data) { toast.error("Errore."); setGSaving(false); return; }
+    let saved = data as Goal;
+    if (wantsNewPot) {
+      const res = await createPotForGoal(saved.id);
+      if ("error" in res) toast.error(`Obiettivo salvato, ma il salvadanaio no: ${res.error}`);
+      else saved = { ...saved, savings_pot_id: res.potId };
+    } else if (potId) {
+      // Il traguardo del salvadanaio è quello dell'obiettivo (anche nella pagina Salvadanai).
+      await supabase.from("savings_pots").update({ target_amount: ta }).eq("id", potId);
     }
+    setGoals(prev => gEditId ? prev.map(g => g.id === gEditId ? saved : g) : [saved, ...prev]);
+    if (wantsNewPot || potId) router.refresh();
+    toast.success(gEditId ? "Obiettivo aggiornato!" : "Obiettivo creato!");
+    goBack("list-goals");
     setGSaving(false);
   }
 
   async function handleDeleteGoal(id: string) {
+    const linked = goals.find(g => g.id === id)?.in_pot;
     const { error } = await createClient().from("goals").delete().eq("id", id);
     if (error) toast.error("Errore.");
-    else { setGoals(prev => prev.filter(g => g.id !== id)); toast.success("Eliminato."); }
+    else {
+      setGoals(prev => prev.filter(g => g.id !== id));
+      toast.success(linked ? "Obiettivo eliminato: il salvadanaio e i suoi soldi restano." : "Eliminato.");
+    }
   }
 
   // ── Transaction name suggestions ──────────────────────────────────────────
@@ -2235,6 +2304,11 @@ export function SmartPageClient({
       ? Math.max(1, Math.ceil((new Date(gForm.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30)))
       : 0;
     const gSuggestedMonthly = gMonthsLeft > 0 ? Math.max(0, (gTarget - gCurrent) / gMonthsLeft) : 0;
+    // Il salvadanaio a cui l'obiettivo che si modifica è già collegato, e quello scelto ora.
+    const gEditPot = gEditId ? pots.find(p => p.id === storedGoals.find(g => g.id === gEditId)?.savings_pot_id) ?? null : null;
+    const gRecapPot = gForm.savings_pot_id && gForm.savings_pot_id !== NEW_POT ? pots.find(p => p.id === gForm.savings_pot_id) ?? null : null;
+    const goalPotChoices = potChoicesForGoal(pots, storedGoals, gEditId,
+      recurringItems.filter(it => it.next_due_date).map(it => it.savings_pot_id));
 
     function gBack() {
       if (gStep === 1) { goBack("list-goals"); return; }
@@ -2352,15 +2426,22 @@ export function SmartPageClient({
                   autoFocus
                 />
               </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">Già risparmiato (€) — opzionale</label>
-                <input
-                  type="text" value={gForm.current_amount}
-                  onChange={e => setGForm(f => ({ ...f, current_amount: e.target.value }))}
-                  placeholder="0"
-                  className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
-                />
-              </div>
+              {gEditPot ? (
+                <p className="text-sm text-muted-foreground">
+                  Già da parte: <strong className="text-foreground">{fmt(Number(gEditPot.current_balance))}</strong>, il saldo
+                  di {gEditPot.emoji} {gEditPot.name}. Cambia con i versamenti e i prelievi del salvadanaio.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Già risparmiato (€) — opzionale</label>
+                  <input
+                    type="text" value={gForm.current_amount}
+                    onChange={e => setGForm(f => ({ ...f, current_amount: e.target.value }))}
+                    placeholder="0"
+                    className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+                  />
+                </div>
+              )}
             </div>
             <button
               onClick={() => {
@@ -2410,34 +2491,57 @@ export function SmartPageClient({
           </div>
         )}
 
-        {/* Step 4 — Salvadanaio collegato */}
+        {/* Step 4 — Salvadanaio: i soldi dell'obiettivo sono quelli del salvadanaio */}
         {gStep === 4 && (
           <div className="flex flex-col gap-6">
-            <h2 className="text-xl font-bold">Collegare a un salvadanaio?</h2>
+            <div className="flex flex-col gap-1.5">
+              <h2 className="text-xl font-bold">Dove tieni questi soldi?</h2>
+              <p className="text-sm text-muted-foreground">
+                L&apos;obiettivo vale quello che c&apos;è nel salvadanaio: versamenti e prelievi lo aggiornano da soli.
+              </p>
+            </div>
             <div className="flex flex-col gap-2">
-              {pots.map(p => (
-                <button key={p.id} type="button"
-                  onClick={() => setGForm(f => ({ ...f, savings_pot_id: p.id }))}
-                  className={`rounded-xl border-2 px-4 py-3 text-left text-sm flex justify-between items-center transition-colors ${
-                    gForm.savings_pot_id === p.id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+              {!gEditPot && (
+                <button type="button"
+                  onClick={() => setGForm(f => ({ ...f, savings_pot_id: NEW_POT }))}
+                  className={`rounded-xl border-2 px-4 py-3 text-left text-sm flex flex-col gap-0.5 transition-colors ${
+                    gForm.savings_pot_id === NEW_POT ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
                   }`}>
-                  <span>{p.emoji} {p.name}</span>
-                  <span className="text-muted-foreground">{fmt(Number(p.current_balance))}</span>
+                  <span className="font-medium">✨ Un salvadanaio nuovo: {gForm.icon} {gForm.name || "obiettivo"}</span>
+                  <span className="text-xs text-muted-foreground">Consigliato. Ci metto quello che hai già da parte.</span>
                 </button>
-              ))}
+              )}
+              {goalPotChoices.map(({ pot: p, usedBy, sinking }) => {
+                const blocked = !!usedBy || sinking;
+                return (
+                  <button key={p.id} type="button" disabled={blocked}
+                    onClick={() => setGForm(f => ({ ...f, savings_pot_id: p.id }))}
+                    className={`rounded-xl border-2 px-4 py-3 text-left text-sm flex justify-between items-center gap-3 transition-colors disabled:opacity-50 ${
+                      gForm.savings_pot_id === p.id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                    }`}>
+                    <span className="flex flex-col gap-0.5 min-w-0">
+                      <span>{p.emoji} {p.name}</span>
+                      {usedBy && <span className="text-xs text-muted-foreground">È già dell&apos;obiettivo &ldquo;{usedBy}&rdquo;</span>}
+                      {!usedBy && sinking && <span className="text-xs text-muted-foreground">Tiene gli accantonamenti</span>}
+                    </span>
+                    <span className="text-muted-foreground shrink-0">{fmt(Number(p.current_balance))}</span>
+                  </button>
+                );
+              })}
               <button type="button"
                 onClick={() => setGForm(f => ({ ...f, savings_pot_id: "" }))}
                 className={`rounded-xl border-2 px-4 py-3 text-left text-sm transition-colors ${
                   !gForm.savings_pot_id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
                 }`}>
-                No, tienili separati
+                Nessun salvadanaio: segno i versamenti qui
               </button>
-              {pots.length === 0 && (
-                <a href="/dashboard/salvadanai" className="text-xs text-primary hover:underline">
-                  Crea un salvadanaio →
-                </a>
-              )}
             </div>
+            {gForm.savings_pot_id && gForm.savings_pot_id !== NEW_POT && gForm.savings_pot_id !== gEditPot?.id
+              && parseFloat(gForm.current_amount.replace(",", ".") || "0") > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Con un salvadanaio esistente conta il suo saldo, non la cifra &ldquo;già risparmiato&rdquo; del passo 2.
+              </p>
+            )}
             <button onClick={() => setGStep(5)}
               className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold hover:bg-primary/90 transition-colors">
               Continua →
@@ -2487,7 +2591,9 @@ export function SmartPageClient({
                 <span className="font-bold text-lg">{gForm.name}</span>
               </div>
               <RecapRow label="Obiettivo" value={fmt(parseFloat(gForm.target_amount.replace(",", ".")))} />
-              {parseFloat(gForm.current_amount.replace(",", ".") || "0") > 0 && (
+              {gRecapPot ? (
+                <RecapRow label="Già risparmiato" value={fmt(Number(gRecapPot.current_balance))} />
+              ) : parseFloat(gForm.current_amount.replace(",", ".") || "0") > 0 && (
                 <RecapRow
                   label="Già risparmiato"
                   value={fmt(parseFloat(gForm.current_amount.replace(",", ".")))}
@@ -2499,12 +2605,11 @@ export function SmartPageClient({
                   ? new Date(gForm.deadline).toLocaleDateString("it-IT")
                   : "Nessuna"}
               />
-              {gForm.savings_pot_id && (
-                <RecapRow
-                  label="Salvadanaio"
-                  value={(() => { const p = pots.find(x => x.id === gForm.savings_pot_id); return p ? `${p.emoji} ${p.name}` : "—"; })()}
-                />
-              )}
+              <RecapRow
+                label="Salvadanaio"
+                value={gForm.savings_pot_id === NEW_POT ? `Nuovo: ${gForm.icon} ${gForm.name}`
+                  : gRecapPot ? `${gRecapPot.emoji} ${gRecapPot.name}` : "Nessuno"}
+              />
               {parseFloat(gForm.monthly_contribution.replace(",", ".") || "0") > 0 && (
                 <RecapRow label="Al mese" value={fmt(parseFloat(gForm.monthly_contribution.replace(",", ".")))} />
               )}
@@ -2675,6 +2780,7 @@ export function SmartPageClient({
       monthly,
     );
     const history = contributions.filter(c => c.goal_id === g.id);
+    const mismatch = goalMismatch({ savings_pot_id: g.savings_pot_id, current_amount: g.recorded_amount }, pots);
     const monthsToDeadline = g.deadline
       ? Math.max(1, Math.ceil((new Date(g.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30)))
       : 0;
@@ -2723,6 +2829,43 @@ export function SmartPageClient({
           </div>
         </div>
 
+        {/* Prima dell'unione obiettivo e salvadanaio potevano segnare cifre diverse */}
+        {mismatch && linkedPot && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 flex flex-col gap-3 text-sm">
+            <p>
+              L&apos;obiettivo segnava <strong>{fmt(mismatch.recorded)}</strong>, nel salvadanaio {linkedPot.emoji} {linkedPot.name} ci
+              sono <strong>{fmt(mismatch.inPot)}</strong>. Da ora contano solo i soldi del salvadanaio: quale cifra è giusta?
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button disabled={goalBusy} onClick={() => handleReconcileGoal(g.id, "pot")}
+                className="flex-1 rounded-lg border-2 px-3 py-2 font-medium hover:bg-background/60 disabled:opacity-50 transition-colors">
+                {fmt(mismatch.inPot)}, il salvadanaio
+              </button>
+              <button disabled={goalBusy || mismatch.recorded < 0} onClick={() => handleReconcileGoal(g.id, "goal")}
+                className="flex-1 rounded-lg border-2 px-3 py-2 font-medium hover:bg-background/60 disabled:opacity-50 transition-colors">
+                {fmt(mismatch.recorded)}, l&apos;obiettivo
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Scegliendo l&apos;obiettivo, Flusso registra nel salvadanaio un versamento o un prelievo della differenza.
+            </p>
+          </div>
+        )}
+
+        {/* Obiettivo senza salvadanaio: proposta di crearlo */}
+        {!g.in_pot && (
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-col gap-2 text-sm">
+            <p>
+              💡 Tieni questi soldi in un salvadanaio: versamenti e prelievi aggiorneranno l&apos;obiettivo da soli,
+              e non li conterai due volte.
+            </p>
+            <button disabled={goalBusy} onClick={() => handleCreatePotForGoal(g.id)}
+              className="self-start rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              {goalBusy ? "…" : `Crea il salvadanaio ${g.icon} ${g.name}`}
+            </button>
+          </div>
+        )}
+
         {/* Proiezione */}
         {monthly > 0 && remaining > 0 && (
           <GoalProjection current={cur} target={tgt} monthly={monthly} />
@@ -2730,7 +2873,7 @@ export function SmartPageClient({
 
         {/* Aggiungi contributo */}
         <div className="rounded-xl border p-4 flex flex-col gap-2">
-          <p className="text-sm font-semibold">Aggiungi contributo</p>
+          <p className="text-sm font-semibold">{linkedPot ? `Metti in ${linkedPot.emoji} ${linkedPot.name}` : "Aggiungi contributo"}</p>
           <div className="flex gap-2">
             <input value={contribAmount} onChange={e => setContribAmount(e.target.value)} inputMode="decimal"
               placeholder="Importo €" className="border rounded-md px-3 py-2 text-sm bg-background flex-1" />
@@ -2745,8 +2888,28 @@ export function SmartPageClient({
 
         {/* Storico */}
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-semibold">Storico contributi</p>
-          {history.length === 0 ? (
+          <p className="text-sm font-semibold">{g.in_pot ? "Movimenti del salvadanaio" : "Storico contributi"}</p>
+          {g.in_pot && (potMovements.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-3 text-center">Ancora nessun movimento.</p>
+          ) : (
+            <ul className="divide-y border rounded-xl">
+              {potMovements.map(m => (
+                <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+                  <div className="flex flex-col min-w-0">
+                    <span className="truncate">{m.note || (m.type === "deposit" ? "Versamento" : "Prelievo")}</span>
+                    <span className="text-xs text-muted-foreground">{new Date(m.date + "T00:00:00").toLocaleDateString("it-IT")}</span>
+                  </div>
+                  <span className={`font-semibold tabular-nums shrink-0 ${m.type === "deposit" ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                    {m.type === "deposit" ? "+" : "−"}{fmt(Number(m.amount))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ))}
+          {g.in_pot && history.length > 0 && (
+            <p className="text-xs text-muted-foreground pt-2">Segnati sull&apos;obiettivo prima del salvadanaio:</p>
+          )}
+          {g.in_pot && history.length === 0 ? null : history.length === 0 ? (
             <p className="text-sm text-muted-foreground py-3 text-center">Ancora nessun contributo.</p>
           ) : (
             <ul className="divide-y border rounded-xl">

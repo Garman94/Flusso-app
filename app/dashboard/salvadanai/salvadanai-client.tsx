@@ -12,6 +12,8 @@ import {
 import { createPot, updatePot, deletePot, addSavingsTransaction } from "./savings-actions";
 
 type Member = { id: string; name: string; color: string };
+/** Obiettivo collegato a un salvadanaio: l'obiettivo vale il saldo del salvadanaio (lib/goals.ts). */
+export type PotGoal = { name: string; icon: string; target_amount: number; savings_pot_id: string };
 
 type Props = {
   userId: string;
@@ -19,11 +21,13 @@ type Props = {
   familyMembers: Member[];
   potMembers: SavingsPotMember[];
   initialTransactions: SavingsTransaction[];
+  goals?: PotGoal[];
 };
 
 const COLORS = ["#6366f1", "#ec4899", "#f97316", "#22c55e", "#3b82f6", "#a855f7", "#eab308", "#14b8a6"];
 
-export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initialTransactions }: Props) {
+export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initialTransactions, goals = [] }: Props) {
+  const goalOf = (potId: string) => goals.find(g => g.savings_pot_id === potId) ?? null;
   const router = useRouter();
   const demoGuard = useDemoGuard();
 
@@ -281,6 +285,11 @@ export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initi
               <div>
                 <h1 className="font-bold text-lg">{detailPot.name}</h1>
                 {detailPot.is_shared && <span className="text-xs text-muted-foreground">Condiviso</span>}
+                {goalOf(detailPot.id) && (
+                  <p className="text-xs text-muted-foreground">
+                    {goalOf(detailPot.id)!.icon} Obiettivo &ldquo;{goalOf(detailPot.id)!.name}&rdquo;: versamenti e prelievi lo aggiornano
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex gap-2">
@@ -424,6 +433,9 @@ export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initi
                   </div>
                   {pot.is_shared && <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted">condiviso</span>}
                 </div>
+                {goalOf(pot.id) && (
+                  <span className="text-[11px] text-muted-foreground -mt-2">{goalOf(pot.id)!.icon} Obiettivo &ldquo;{goalOf(pot.id)!.name}&rdquo;</span>
+                )}
                 <span className="text-2xl font-bold tabular-nums">{formatEuro(Number(pot.current_balance))}</span>
                 {pct != null && pot.target_amount != null && (
                   <div className="flex flex-col gap-1">
