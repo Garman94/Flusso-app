@@ -2,6 +2,8 @@
 
 Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ultima modifica: 2026-09-15 (Accantonamenti collegabili a un salvadanaio specifico; categoria "Accantonamenti" torna a contare come spesa reale — la parentesi di trasferimento interno introdotta più presto in giornata è stata annullata su richiesta esplicita).
 
+**Come lavorare con Marco** (richiesta sua, 2026-10-16): quando chiede una modifica o una funzione nuova, oltre a farla dire sempre con franchezza se è sensata e funzionale: dubbi, casi in cui non torna, alternative più semplici. Il parere accompagna il lavoro, non lo sostituisce: se la richiesta è chiara si fa, e si segnala cosa non convince.
+
 ---
 
 ## Emergenza (2026-10-16)
