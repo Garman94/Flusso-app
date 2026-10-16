@@ -99,6 +99,9 @@ Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 | `038_demo_spese_fisse.sql` | `reseed_demo` con le spese fisse (affitto, abbonamenti, bollette, telefono) e il Budget solo per le spese che cambiano; ricarica la demo. Rollback in `supabase/rollback/` |
 | `039_fixed_group.sql` | `recurring_expenses.fixed_group`: tipo della spesa fissa (casa, utenze, abbonamenti, trasporti, assicurazioni, altro); vuoto = dedotto. Rollback in `supabase/rollback/` |
 | `040_utenze.sql` | Luce e gas: `utility_tariffs` (tariffa del fornitore) e `utility_readings` (consumi mensili), RLS e blocco demo; `reseed_demo_utenze()` per la demo. Rollback in `supabase/rollback/` |
+| `041_emergenza.sql` | `recurring_expenses.saving_offset`: quanto c'era già da parte per un accantonamento quando il piano riparte dopo un'Emergenza (default 0). Rollback in `supabase/rollback/` |
+| `042_obiettivi_salvadanai.sql` | Trigger `sync_goal_from_pot`: un obiettivo collegato e allineato segue il saldo del suo salvadanaio. Non modifica dati esistenti |
+| `043_demo_obiettivi_salvadanai.sql` | Solo demo: `reseed_demo_salvadanai()` (ogni obiettivo col suo salvadanaio, accantonamenti nel salvadanaio "Accantonamenti") |
 
 **Via CLI:**
 ```bash
