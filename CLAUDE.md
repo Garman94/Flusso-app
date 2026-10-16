@@ -4,6 +4,22 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Emergenza (2026-10-16)
+
+Tasto "🚨 Emergenza" in dashboard (accanto a "Messi da parte nei salvadanai", `balance-hero-card.tsx`) e in Pianifica → Accantonamenti (riquadro "Ti servono soldi per un imprevisto?"). Componente `app/dashboard/emergency-button.tsx` (finestra in un portale su `body`, `z-[60]`: sopra la barra di navigazione del telefono), azione `app/dashboard/emergency-actions.ts` → `withdrawForEmergency`, calcoli in `lib/emergency.ts`, test in `tests/emergenza.test.ts`, colonna nella migration 041.
+
+- **Cosa fa**: si scrive quanto prendere da ogni salvadanaio (più "A cosa ti servono?", facoltativo). Ogni prelievo è un `savings_transactions` di tipo `withdraw` con nota "🚨 Emergenza: …".
+- **Quota massima** (`emergencyLimit`): dal salvadanaio che tiene gli accantonamenti (`sinkingGroups`, stessa regola di `potsForSinkingFunds`: i salvadanai collegati, altrimenti tutti tranne quelli degli obiettivi, insieme) si può prendere il saldo meno l'importo intero delle voci che scadono questo mese (o già scadute) e il mese prossimo (`upcomingDues`): "Questo mese devi ancora pagare…", "Il mese prossimo devi pagare…", "Puoi prendere al massimo…". È un limite vero: lo ricontrolla anche il server. Dagli altri salvadanai, fino al saldo.
+- **Ricalcolo** (`planEmergency`): il prelievo si prende prima da quello che c'è in più rispetto al previsto (le quote non cambiano), poi dalle voci con la scadenza più lontana, ognuna fino a quanto dovrebbe avere. Per le voci toccate il piano riparte da questo mese: `saving_start_date` = 1° del mese, `saving_offset` = quanto le restava fino al mese scorso meno il prelievo. `projectSinkingFund` fa quota = (importo − offset) / mesi e previsto = offset + quota × mesi passati, quindi la quota sale ed entra da sola in dashboard ("Spese previste"), Budget (categoria Accantonamenti) e card Accantonamenti. Senza prelievo dalla voce la quota resta identica (test).
+- **Solo dall'Emergenza**: la quota non dipende dal saldo dei salvadanai in generale (chi non registra i versamenti in Flusso risulterebbe sempre indietro). "Segna come pagata" e "Ricalcola da oggi" rimettono `saving_offset` a 0.
+- `sinkingFundInput(row)` (lib/calculations.ts) costruisce l'input degli accantonamenti in dashboard, Pianifica, Budget e card: usarlo anche altrove, per non perdere l'offset. Le query che lo leggono usano `select("*")`: reggono anche senza la colonna.
+- Eventi: `emergency_opened`, `emergency_used` (`pots`, `recalculated`; mai importi). Demo: il salvataggio è bloccato da `useDemoGuard`.
+- **Migration 041 da applicare PRIMA del deploy** (e prima dell'anteprima, che usa il database vero): "Segna come pagata" scrive `saving_offset`. Rollback: prima il codice, poi `supabase/rollback/041_emergenza_down.sql`.
+
+**Rate non ancora iniziate (fix 2026-10-16)**: l'avviso "La rata … risulta scaduta" (`findOverdueRecurring`) ignorava `debt_start_date`: una rata che parte a dicembre risultava scaduta a ottobre. Ora salta le rate prima dell'inizio e dopo `end_date`. Stessa regola in `dueInPeriod`/`nextDueDate`: una rata partita a metà periodo con la scadenza prima dell'inizio ha la prima rata nel periodo dopo (non pesa su "Spese previste" né su "puoi ancora spendere").
+
+---
+
 ## Luce e gas (2026-09-25)
 
 Pianifica → Spese fisse → "⚡ Calcola luce e gas" (`?v=utenze`, `app/dashboard/smart/utenze-panel.tsx`), dal gruppo Utenze e in fondo alla pagina. Gratis; la lettura di bollette e contratti con l'AI è Premium. Calcoli in `lib/utilities.ts`, test in `tests/utenze.test.ts`, tabelle nella migration 040.
@@ -692,6 +708,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `032_category_budgets.sql` | Tabelle `category_budgets` (budget mensile manuale per categoria) e `category_budget_notes` (annotazione mesi "speciali") — tab Smart → Budget |
 | `033_recurring_debt_fields.sql` | Campi `debt_type`, `debt_total_amount`, `debt_start_date` su `recurring_expenses` — tab Smart → Rate |
 | `034_recurring_savings_pot.sql` | Campo `savings_pot_id` (FK `savings_pots`, on delete set null) su `recurring_expenses` — salvadanaio collegato a un accantonamento, tab Smart → Accantonamenti |
+| `041_emergenza.sql` | Campo `saving_offset` (default 0) su `recurring_expenses` — già da parte all'inizio del piano, scritto solo dall'Emergenza |
 
 ---
 

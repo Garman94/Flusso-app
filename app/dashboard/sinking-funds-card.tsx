@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { aggregateSinkingFunds, potsForSinkingFunds } from "@/lib/calculations";
-import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
+import { aggregateSinkingFunds, potsForSinkingFunds, sinkingFundInput } from "@/lib/calculations";
+import type { SinkingFundProjection } from "@/lib/calculations";
 
 type RecurringRow = {
   id: string;
@@ -13,6 +13,7 @@ type RecurringRow = {
   amount_max: number | null;
   next_due_date: string | null;
   saving_start_date: string | null;
+  saving_offset?: number | null;
   savings_pot_id: string | null;
   categories?: { icon: string | null }[] | null;
 };
@@ -49,7 +50,8 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
     Promise.all([
       supabase
         .from("recurring_expenses")
-        .select("id, name, tipologia, amount, amount_max, next_due_date, saving_start_date, savings_pot_id, categories(icon)")
+        // "*": comprende saving_offset (migration 041) e regge anche se la colonna non c'è ancora
+        .select("*, categories(icon)")
         .eq("user_id", userId)
         .not("next_due_date", "is", null),
       supabase.from("savings_pots").select("id, name, current_balance").eq("user_id", userId),
@@ -71,17 +73,9 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
 
   if (loading) return null;
 
-  const sinkingInputs: SinkingFundInput[] = items
+  const sinkingInputs = items
     .filter(it => it.next_due_date && it.saving_start_date)
-    .map(it => ({
-      id: it.id,
-      name: it.name,
-      amount_per_cycle: it.tipologia === "variabile" && it.amount_max != null
-        ? (it.amount + it.amount_max) / 2
-        : it.amount,
-      saving_start_date: it.saving_start_date!,
-      next_due_date: it.next_due_date!,
-    }));
+    .map(sinkingFundInput);
 
   if (sinkingInputs.length === 0) return null;
 

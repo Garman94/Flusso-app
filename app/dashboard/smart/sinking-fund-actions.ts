@@ -14,7 +14,7 @@ export async function resetSavingStartDate(recurringId: string) {
 
   const { error } = await supabase
     .from("recurring_expenses")
-    .update({ saving_start_date: today })
+    .update({ saving_start_date: today, saving_offset: 0 })
     .eq("id", recurringId)
     .eq("user_id", data.claims.sub);
 
@@ -64,6 +64,8 @@ export async function markSinkingFundPaid(
     .update({
       next_due_date: toISODate(newDueDate),
       saving_start_date: newSavingStart,
+      // un ciclo nuovo riparte da zero, anche se il precedente era ripartito dopo un'Emergenza
+      saving_offset: 0,
     })
     .eq("id", recurringId)
     .eq("user_id", userId);

@@ -3,12 +3,12 @@
 import { toISODate, todayISO } from "@/lib/dates";
 import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { TrackOnMount } from "@/components/track-on-mount";
 import { PageTour } from "@/components/tour/page-tour";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estimateGoalCompletion, computeDebtProgress, potsForSinkingFunds } from "@/lib/calculations";
+import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estimateGoalCompletion, computeDebtProgress, potsForSinkingFunds, sinkingFundInput } from "@/lib/calculations";
 import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
 import { resetSavingStartDate, markSinkingFundPaid } from "./sinking-fund-actions";
 import { addGoalContribution } from "./goal-actions";
@@ -16,6 +16,7 @@ import { BudgetPanel } from "./budget-panel";
 import { FixedExpensesPanel, fixedSuggestions, useDismissedSuggestions } from "./fixed-expenses-panel";
 import { UtenzePanel } from "./utenze-panel";
 import { isFixedExpense } from "@/lib/fixed-expenses";
+import { EmergencyButton } from "../emergency-button";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,8 @@ export type RecurringExpense = {
   last_paid_date: string | null;
   next_due_date: string | null;
   saving_start_date: string | null;
+  /** già da parte a saving_start_date: lo scrive solo l'Emergenza (migration 041) */
+  saving_offset?: number | null;
   debt_type: DebtType | null;
   debt_total_amount: number | null;
   debt_start_date: string | null;
@@ -358,6 +361,15 @@ export function SmartPageClient({
   const [contribNote, setContribNote] = useState("");
   const [contribSaving, setContribSaving] = useState(false);
   const pots = initialPots;
+  const router = useRouter();
+
+  /** Dopo un'Emergenza: quote degli accantonamenti (qui) e saldi dei salvadanai (dal server). */
+  async function reloadAfterEmergency() {
+    const { data } = await createClient().from("recurring_expenses").select("*")
+      .eq("user_id", userId).order("created_at", { ascending: true });
+    if (data) setRecurringItems(data as RecurringExpense[]);
+    router.refresh();
+  }
 
   // Mark-paid dialog
   const [paidDialog, setPaidDialog] = useState<{
@@ -2905,15 +2917,7 @@ export function SmartPageClient({
   if (view === "accantonamenti") {
     const sinkingInputs: SinkingFundInput[] = recurringItems
       .filter(it => it.next_due_date && it.saving_start_date)
-      .map(it => ({
-        id: it.id,
-        name: it.name,
-        amount_per_cycle: it.tipologia === "variabile" && it.amount_max != null
-          ? (it.amount + it.amount_max) / 2
-          : it.amount,
-        saving_start_date: it.saving_start_date!,
-        next_due_date: it.next_due_date!,
-      }));
+      .map(sinkingFundInput);
 
     // Confronto con il salvadanaio degli accantonamenti, se scelto; altrimenti con i salvadanai
     // non collegati a un obiettivo (vedi potsForSinkingFunds).
@@ -3119,7 +3123,7 @@ export function SmartPageClient({
                       }
                       setRecurringItems(prev => prev.map(it =>
                         it.id === paidDialog.proj.input.id
-                          ? { ...it, next_due_date: r.newDueDate, saving_start_date: r.newSavingStart }
+                          ? { ...it, next_due_date: r.newDueDate, saving_start_date: r.newSavingStart, saving_offset: 0 }
                           : it
                       ));
                       setPaidDialog(null);
@@ -3238,6 +3242,19 @@ export function SmartPageClient({
                   </div>
                 </div>
               </div>
+
+              {/* Emergenza: prendere dai salvadanai senza restare scoperti sulle prossime scadenze */}
+              {pots.length > 0 && (
+                <div className="rounded-xl border border-red-500/30 px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-0.5 text-sm min-w-0">
+                    <span className="font-medium">Ti servono soldi per un imprevisto?</span>
+                    <span className="text-xs text-muted-foreground">
+                      Flusso ti dice quanto puoi prendere e ricalcola quanto mettere da parte ogni mese.
+                    </span>
+                  </div>
+                  <EmergencyButton userId={userId} onDone={reloadAfterEmergency} />
+                </div>
+              )}
 
               {/* Dove stanno i soldi degli accantonamenti: un salvadanaio per tutti */}
               {pots.length > 0 ? (
@@ -3419,7 +3436,7 @@ export function SmartPageClient({
                               const today = todayISO();
                               setRecurringItems(prev => prev.map(it =>
                                 it.id === proj.input.id
-                                  ? { ...it, saving_start_date: today }
+                                  ? { ...it, saving_start_date: today, saving_offset: 0 }
                                   : it
                               ));
                             }

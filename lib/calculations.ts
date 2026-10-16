@@ -205,7 +205,30 @@ export type SinkingFundInput = {
   amount_per_cycle: number;     // importo del ciclo (es. assicurazione annua = 120)
   saving_start_date: string;    // YYYY-MM-DD
   next_due_date: string;        // YYYY-MM-DD
+  /**
+   * Già da parte a saving_start_date (recurring_expenses.saving_offset, migration 041). Lo
+   * scrive solo l'Emergenza: dopo un prelievo il piano riparte da questo mese con quello che
+   * è rimasto per la voce, e la quota sale. 0 = piano normale.
+   */
+  saved_offset?: number;
 };
+
+/** Da una riga di recurring_expenses con next_due_date e saving_start_date. */
+export function sinkingFundInput(it: {
+  id: string; name: string; tipologia: string; amount: number; amount_max: number | null;
+  saving_start_date: string | null; next_due_date: string | null; saving_offset?: number | null;
+}): SinkingFundInput {
+  return {
+    id: it.id,
+    name: it.name,
+    amount_per_cycle: it.tipologia === "variabile" && it.amount_max != null
+      ? (Number(it.amount) + Number(it.amount_max)) / 2
+      : Number(it.amount),
+    saving_start_date: it.saving_start_date!,
+    next_due_date: it.next_due_date!,
+    saved_offset: Number(it.saving_offset ?? 0),
+  };
+}
 
 export type SinkingFundProjection = {
   input: SinkingFundInput;
@@ -239,8 +262,9 @@ export function projectSinkingFund(
   const elapsed_raw    = monthsBetween(start, today) + 1;
   const months_elapsed = Math.max(0, Math.min(total_months, elapsed_raw));
 
-  const monthly_quota         = input.amount_per_cycle / total_months;
-  const expected_saved_so_far = monthly_quota * months_elapsed;
+  const offset                = input.saved_offset ?? 0;
+  const monthly_quota         = (input.amount_per_cycle - offset) / total_months;
+  const expected_saved_so_far = offset + monthly_quota * months_elapsed;
 
   return {
     input,
