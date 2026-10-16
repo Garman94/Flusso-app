@@ -166,3 +166,28 @@ export function sinkingGroups(
   const potIds = pots.filter(p => !reserved.has(p.id)).map(p => p.id);
   return potIds.length ? [{ potIds, itemIds: items.map(it => it.id) }] : [];
 }
+
+// ── Ricalcolo quando il salvadanaio è già indietro ──────────────────────────
+
+export type CatchUp = { shortfall: number; plan: EmergencyPlan };
+
+/**
+ * Il salvadanaio ha meno di quanto il piano prevede (soldi presi senza passare dall'Emergenza):
+ * si ricalcola come se la differenza fosse stata un prelievo d'emergenza, così le quote salgono
+ * quanto basta per arrivare a ogni scadenza con l'importo intero. null se non manca niente.
+ */
+export function planCatchUp(inputs: SinkingFundInput[], balance: number, today: Date = new Date()): CatchUp | null {
+  // Si confronta con quello che andava messo da parte fino al mese scorso: la quota di questo
+  // mese si versa durante il mese, e a inizio mese non è "mancante". Altrimenti il ricalcolo
+  // comparirebbe ogni mese e, rifatto, gonfierebbe le quote.
+  let expected = 0, dueByLastMonth = 0;
+  for (const i of inputs) {
+    const p = projectSinkingFund(i, today);
+    const monthsBefore = Math.max(0, Math.min(p.total_months, monthsBetween(new Date(i.saving_start_date + "T00:00:00"), today)));
+    expected += p.expected_saved_so_far;
+    dueByLastMonth += (i.saved_offset ?? 0) + p.monthly_quota * monthsBefore;
+  }
+  const shortfall = round2(dueByLastMonth - balance);
+  if (shortfall <= 0.005) return null;
+  return { shortfall, plan: planEmergency(inputs, round2(expected), shortfall, today) };
+}

@@ -22,7 +22,7 @@ async function SalvadanaiContent() {
       .eq("user_id", userId)
       .order("date", { ascending: false })
       .limit(200),
-    supabase.from("goals").select("name, icon, target_amount, savings_pot_id").eq("user_id", userId).not("savings_pot_id", "is", null),
+    supabase.from("goals").select("id, name, icon, target_amount, deadline, monthly_contribution, savings_pot_id").eq("user_id", userId).not("savings_pot_id", "is", null),
   ]);
 
   return (

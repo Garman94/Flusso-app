@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/dates";
 import { formatEuro, sinkingFundInput } from "@/lib/calculations";
-import { emergencyLimit, planEmergency, sinkingGroups } from "@/lib/emergency";
+import { emergencyLimit, planCatchUp, planEmergency, sinkingGroups } from "@/lib/emergency";
+import { isAdminEmail } from "@/lib/admin-emails";
 import { syncGoalsWithPot } from "./goal-sync";
 
 export type EmergencyResult =
@@ -115,4 +116,58 @@ export async function withdrawForEmergency(input: {
     monthlyAfter: Math.round(monthlyAfter * 100) / 100,
     refill,
   };
+}
+
+/**
+ * Solo admin: il salvadanaio degli accantonamenti ha meno del previsto perché dei soldi sono
+ * usciti senza passare dall'Emergenza. Ricalcola le quote come se la differenza fosse stata un
+ * prelievo d'emergenza (planCatchUp): nessun movimento nei salvadanai, cambiano solo i piani.
+ */
+export async function recalcSinkingFunds(): Promise<EmergencyResult & { shortfall?: number }> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  if (!data?.claims) return { error: "Non autenticato." };
+  if (!isAdminEmail(data.claims.email as string | undefined)) return { error: "Per ora è solo per l'admin." };
+  const userId = data.claims.sub as string;
+
+  const [potsRes, goalsRes, recRes] = await Promise.all([
+    supabase.from("savings_pots").select("id, name, current_balance").eq("user_id", userId),
+    supabase.from("goals").select("savings_pot_id").eq("user_id", userId),
+    supabase.from("recurring_expenses").select("*").eq("user_id", userId)
+      .not("next_due_date", "is", null).not("saving_start_date", "is", null),
+  ]);
+  if (potsRes.error || recRes.error) return { error: (potsRes.error ?? recRes.error)!.message };
+  const pots = potsRes.data ?? [];
+  const items = recRes.data ?? [];
+  if (items.length > 0 && !("saving_offset" in items[0])) {
+    return { error: "Manca un aggiornamento del database (migration 041): applicalo e riprova." };
+  }
+
+  const today = new Date(todayISO() + "T00:00:00");
+  const updates: { id: string; saving_start_date: string; saving_offset: number }[] = [];
+  const refill: { name: string; amount: number; due: string }[] = [];
+  let monthlyBefore = 0, monthlyAfter = 0, shortfall = 0;
+  for (const g of sinkingGroups(pots, (goalsRes.data ?? []).map(x => x.savings_pot_id), items)) {
+    const inputs = items.filter(it => g.itemIds.includes(it.id)).map(sinkingFundInput);
+    const balance = pots.filter(p => g.potIds.includes(p.id)).reduce((s, p) => s + Number(p.current_balance), 0);
+    const c = planCatchUp(inputs, balance, today);
+    if (!c || c.plan.uncovered) continue;
+    shortfall += c.shortfall;
+    monthlyBefore += c.plan.monthlyBefore;
+    monthlyAfter += c.plan.monthlyAfter;
+    updates.push(...c.plan.items.map(it => ({ id: it.id, saving_start_date: it.savingStart, saving_offset: it.savingOffset })));
+    refill.push(...c.plan.items.filter(it => it.dueThisMonth).map(it => ({ name: it.name, amount: it.taken, due: it.due })));
+  }
+  if (updates.length === 0) return { error: "Gli accantonamenti sono in pari: non c'è niente da ricalcolare." };
+
+  for (const u of updates) {
+    const { error } = await supabase.from("recurring_expenses")
+      .update({ saving_start_date: u.saving_start_date, saving_offset: u.saving_offset })
+      .eq("id", u.id).eq("user_id", userId);
+    if (error) return { error: error.message };
+  }
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/smart");
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return { success: true, total: 0, shortfall: r2(shortfall), monthlyBefore: r2(monthlyBefore), monthlyAfter: r2(monthlyAfter), refill };
 }
