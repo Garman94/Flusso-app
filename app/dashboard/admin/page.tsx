@@ -10,6 +10,9 @@ import { AdminFeedback } from "./admin-feedback";
 import { getPreviewPlan } from "@/lib/preview-plan";
 import { pendingChanges } from "@/lib/anteprima";
 import { AdminAnteprima } from "./admin-anteprima";
+import { AdminDizionario } from "./admin-dizionario";
+import { dictionaryProposals, type RuleRow } from "@/lib/dictionary-proposals";
+import { categoryKind } from "@/lib/money";
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
@@ -36,7 +39,7 @@ async function AdminContent() {
 
   const service = getServiceClient();
 
-  const [{ data: profiles, error: profilesError }, { data: coupons }, previewPlan, changes] = await Promise.all([
+  const [{ data: profiles, error: profilesError }, { data: coupons }, previewPlan, changes, dictionaryRes, rulesRes, systemCatsRes] = await Promise.all([
     service
       .from("profiles")
       .select("id, full_name, plan, created_at")
@@ -47,7 +50,14 @@ async function AdminContent() {
       .order("created_at", { ascending: false }),
     getPreviewPlan(),
     pendingChanges(),
+    // Dizionario condiviso (migration 044) e regole degli utenti per le proposte: solo parola e categoria
+    service.from("merchant_dictionary").select("id, keyword, category_name, source").order("keyword"),
+    service.from("category_rules").select("user_id, value, categories(name, user_id)"),
+    service.from("categories").select("name").is("user_id", null).order("name"),
   ]);
+  const dictionary = dictionaryRes.data ?? [];
+  const proposals = dictionaryProposals((rulesRes.data ?? []) as unknown as RuleRow[], dictionary);
+  const expenseCategories = (systemCatsRes.data ?? []).map(c => c.name).filter(n => categoryKind(n) === "expense");
 
   if (profilesError) {
     return <p className="text-destructive text-sm">Errore nel caricamento utenti: {profilesError.message}</p>;
@@ -75,6 +85,11 @@ async function AdminContent() {
 
       {/* Users table */}
       <AdminUsersSection profiles={profiles ?? []} />
+
+      {/* Dizionario condiviso dei negozi (se la migration 044 manca, la sezione non compare) */}
+      {!dictionaryRes.error && (
+        <AdminDizionario entries={dictionary} proposals={proposals} categories={expenseCategories} />
+      )}
 
       {/* Coupon manager */}
       <div className="flex flex-col gap-4">

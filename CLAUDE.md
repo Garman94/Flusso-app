@@ -7,6 +7,17 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Dizionario condiviso dei negozi (2026-10-17)
+
+Categorizzazione automatica uguale per tutti, sopra la quale ognuno ha le sue regole. Ordine in `categorize()` (lib/categorize.ts): **1. regole personali** (`category_rules`: "Ricorda" dopo un cambio di categoria e pannello Regole, anche verso categorie personali) → **2. dizionario condiviso** (tabella `merchant_dictionary`, migration 044) → **3. categoria scritta dalla banca** (`BANK_CATEGORY_MAP`) → **4. parole del codice** (`KEYWORDS`). Un cambio a mano su un movimento resta sempre.
+
+- **Tabella**: `keyword` normalizzata (`normalizeText`) → `category_name` di una categoria predefinita di spesa; `source` base/utenti/admin. Lettura per gli utenti collegati, scrittura solo dal server col service role (`app/dashboard/admin/dizionario-actions.ts`, controllo admin). Partenza: 364 voci (marchi italiani non presenti in `KEYWORDS` e nomi comuni di tipi di negozio).
+- **Parole a rischio**: le parole da 6 lettere in su valgono anche dentro altre parole (stessa regola delle regole personali). Tolte dalla partenza "market", "discount", "action" (TRANSACTION), "normal", "notion" (PROMOTION), "diesel" (GASOLIO DIESEL), "motivi", "giunti" (AGGIUNTIVI); niente "sport", "distributore", "pensione". `tests/dizionario.test.ts` legge le voci dalla migration e controlla esempi giusti e falsi positivi.
+- **Admin → "📚 Dizionario condiviso"** (`admin-dizionario.tsx`): cerca, aggiungi o correggi (upsert sulla parola), togli. **Proposte dagli utenti** (`lib/dictionary-proposals.ts`): parole delle regole personali verso una categoria predefinita di spesa insegnate da almeno 2 persone diverse (`MIN_USERS`), non già nel dizionario né già riconosciute con la stessa categoria dalle parole del codice; si mostrano parola, categoria e numero di persone, mai chi. Giroconti, entrate e categorie personali esclusi (lì finiscono nomi di persone).
+- Rollback: prima il codice, poi `supabase/rollback/044_dizionario_negozi_down.sql`.
+
+---
+
 ## Obiettivi e salvadanai, un numero solo (2026-10-16)
 
 Prima un obiettivo collegato a un salvadanaio aveva un suo contatore (`goals.current_amount`, mosso da "Aggiungi contributo") e il salvadanaio il suo saldo: gli stessi euro contavano due volte e un prelievo non faceva scendere l'obiettivo. Ora **un obiettivo collegato vale il saldo del suo salvadanaio**. Regole in `lib/goals.ts`, test in `tests/obiettivi.test.ts`.

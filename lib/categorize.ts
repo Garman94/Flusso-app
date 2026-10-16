@@ -114,6 +114,37 @@ export function matchUserRule(description: string, rules: UserRule[]): string | 
   return best?.id ?? null;
 }
 
+// ── Dizionario condiviso (migration 044, tabella merchant_dictionary) ──────────
+
+/** Una voce del dizionario condiviso: parola del negozio → nome di una categoria predefinita. */
+export type DictionaryEntry = { keyword: string; category_name: string };
+
+/** Categoria (nome) dal dizionario condiviso, con le stesse regole delle regole personali. */
+export function matchDictionary(description: string, dictionary: DictionaryEntry[]): string | null {
+  return matchUserRule(description, dictionary.map(d => ({ value: d.keyword, category_id: d.category_name })));
+}
+
+/**
+ * Categoria (id) di un movimento, in ordine di priorità:
+ * 1. le regole personali (scelte dell'utente, anche verso le sue categorie);
+ * 2. il dizionario condiviso, uguale per tutti;
+ * 3. la categoria scritta dalla banca nel file;
+ * 4. le parole chiave del codice (KEYWORDS).
+ * Il nome trovato nei passi 2-4 diventa l'id della categoria con quel nome tra quelle dell'utente.
+ */
+export function categorize(
+  input: { description: string; bankCategory?: string | null },
+  ctx: { userRules: UserRule[]; dictionary: DictionaryEntry[]; categories: { id: string; name: string }[] },
+): string | null {
+  const byRule = matchUserRule(input.description, ctx.userRules);
+  if (byRule && ctx.categories.some(c => c.id === byRule)) return byRule;
+  const name = matchDictionary(input.description, ctx.dictionary)
+    ?? (input.bankCategory ? BANK_CATEGORY_MAP[input.bankCategory.trim()] ?? null : null)
+    ?? guessFromDescription(input.description);
+  if (!name) return null;
+  return ctx.categories.find(c => c.name.toLowerCase() === name.toLowerCase())?.id ?? null;
+}
+
 // Parole che dicono COME è stato pagato, non A CHI: non servono a riconoscere un negozio.
 const NOT_A_MERCHANT = new Set([
   "pagamento", "pagam", "pag", "pos", "carta", "card", "debit", "debito", "credito", "credit",
