@@ -8,6 +8,8 @@ import { ImportExcelModal } from "./import-excel-modal";
 import { ScreenshotModal } from "./screenshot-modal";
 import { createCategoryRule, deleteCategoryRule } from "./actions";
 import { FamilyTransfersBanner } from "./family-transfers-banner";
+import { AutoCategorizeBanner } from "./auto-categorize-banner";
+import type { DictionaryEntry } from "@/lib/categorize";
 import { computePeriodRange, getCurrentPeriodAnchor } from "@/lib/period";
 import { PageTour } from "@/components/tour/page-tour";
 import { useDemoGuard } from "@/components/demo-context";
@@ -84,6 +86,8 @@ type Props = {
   initialCategoryRules: CategoryRule[];
   categories: Category[];
   familyMembers?: FamilyMember[];
+  /** dizionario condiviso dei negozi (migration 044) */
+  dictionary?: DictionaryEntry[];
   powerUser?: boolean;
   initialFilter?: FilterType;
   initialEditMode?: boolean;
@@ -92,7 +96,7 @@ type Props = {
   periodMonth?: number;
 };
 
-export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], powerUser = false, initialFilter = "all", initialEditMode = false, payDay = 0, periodYear, periodMonth }: Props) {
+export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], dictionary = [], powerUser = false, initialFilter = "all", initialEditMode = false, payDay = 0, periodYear, periodMonth }: Props) {
   const demoGuard = useDemoGuard();
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
@@ -458,6 +462,18 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           setTransactions(prev => prev.map(t => ids.includes(t.id) ? { ...t, category_id: categoryId, categories: cat } : t));
         }}
       />
+      <AutoCategorizeBanner
+        uncategorized={transactions.filter(t => !t.category_id).length}
+        categories={categories}
+        onAssigned={assigned => {
+          const byId = new Map(assigned.map(a => [a.id, a.category_id]));
+          setTransactions(prev => prev.map(t => {
+            const categoryId = byId.get(t.id);
+            if (!categoryId) return t;
+            return { ...t, category_id: categoryId, categories: categories.find(c => c.id === categoryId) ?? null };
+          }));
+        }}
+      />
       {/* Choice modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -524,6 +540,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           categories={categories}
           familyMembers={familyMembers}
           userRules={categoryRules}
+          dictionary={dictionary}
           onClose={() => setShowImport(false)}
           onImported={handleExcelImported}
         />
@@ -535,6 +552,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           userId={userId}
           categories={categories}
           userRules={categoryRules}
+          dictionary={dictionary}
           onClose={() => setShowScreenshot(false)}
           onImported={handleImported}
         />

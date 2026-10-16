@@ -25,7 +25,7 @@ async function TransazioniContent({
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
 
-  const [profileRes, transactionsRes, categoriesRes, uncategorizedRes, displayRulesRes, categoryRulesRes, excelUploadsRes, familyMembersRes] = await Promise.all([
+  const [profileRes, transactionsRes, categoriesRes, uncategorizedRes, displayRulesRes, categoryRulesRes, excelUploadsRes, familyMembersRes, dictionaryRes] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", userId).single(),
     supabase
       .from("transactions")
@@ -62,6 +62,8 @@ async function TransazioniContent({
       .select("id, name, color, is_owner")
       .eq("user_id", userId)
       .order("created_at"),
+    // Dizionario condiviso dei negozi (migration 044): per la categorizzazione negli import
+    supabase.from("merchant_dictionary").select("keyword, category_name"),
   ]);
 
   const payDay: number = profileRes.data?.pay_day ?? 0;
@@ -82,7 +84,8 @@ async function TransazioniContent({
       payDay={payDay}
       periodYear={periodYear}
       periodMonth={periodMonth}
-      familyMembers={(familyMembersRes.data ?? []) as { id: string; name: string; color: string }[]}
+      familyMembers={(familyMembersRes.data ?? []) as { id: string; name: string; color: string; is_owner: boolean | null }[]}
+      dictionary={dictionaryRes.data ?? []}
       powerUser={profileRes.data?.power_user ?? false}
     />
   );

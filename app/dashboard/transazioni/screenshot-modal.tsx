@@ -7,7 +7,7 @@ import { track } from "@/lib/track";
 import { useDemoGuard } from "@/components/demo-context";
 import { prepareImage } from "@/lib/image-prepare";
 import { classifyRows, type DedupStatus } from "@/lib/import-dedup";
-import { guessFromDescription, matchUserRule, type UserRule } from "@/lib/categorize";
+import { categorize, type DictionaryEntry, type UserRule } from "@/lib/categorize";
 import { parseAmount } from "@/lib/import-parse";
 import type { ExtractedTransaction } from "@/lib/screenshot-extract";
 import { extractTransactionsFromScreenshot } from "./screenshot-action";
@@ -18,6 +18,8 @@ type Props = {
   userId: string;
   categories: Category[];
   userRules?: UserRule[];
+  /** dizionario condiviso dei negozi: dopo le regole personali */
+  dictionary?: DictionaryEntry[];
   onClose: () => void;
   onImported: (transactions: ExtractedTransaction[]) => void;
 };
@@ -32,7 +34,7 @@ type Row = ExtractedTransaction & {
 
 const euroText = (n: number) => String(n).replace(".", ",");
 
-export function ScreenshotModal({ userId, categories, userRules = [], onClose, onImported }: Props) {
+export function ScreenshotModal({ userId, categories, userRules = [], dictionary = [], onClose, onImported }: Props) {
   const demoGuard = useDemoGuard();
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -85,9 +87,8 @@ export function ScreenshotModal({ userId, categories, userRules = [], onClose, o
 
       setRows(
         classified.map(({ row, status }) => {
-          const byRule = matchUserRule(row.description, userRules);
-          const name = byRule ? null : guessFromDescription(row.description);
-          const cat = byRule ? categories.find((c) => c.id === byRule) : name ? categories.find((c) => c.name === name) : undefined;
+          const categoryId = categorize({ description: row.description }, { userRules, dictionary, categories });
+          const cat = categoryId ? categories.find((c) => c.id === categoryId) : undefined;
           return {
             ...row,
             status,

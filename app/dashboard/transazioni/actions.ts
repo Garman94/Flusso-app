@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { categorize } from "@/lib/categorize";
 
 /** Assegna categoria a una singola transazione */
 export async function categorizeTransaction(txId: string, categoryId: string) {
@@ -94,6 +95,52 @@ export async function markFamilyTransfers(memberName: string, txIds: string[], t
   revalidatePath("/dashboard/transazioni");
   revalidatePath("/dashboard");
   return { success: true, affectedIds: (affected ?? []).map(t => t.id) };
+}
+
+/**
+ * "✨ Categorizza in automatico": ai movimenti senza categoria applica regole personali,
+ * dizionario condiviso, parole del codice (lib/categorize.ts → categorize). Aggiorna solo quelli
+ * ancora senza categoria, quindi le scelte fatte a mano non si toccano.
+ */
+export async function autoCategorize(): Promise<{ error?: string; assigned: { id: string; category_id: string }[]; remaining: number }> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  if (!data?.claims) return { error: "Non autenticato", assigned: [], remaining: 0 };
+  const userId = data.claims.sub;
+
+  const [txRes, rulesRes, dictRes, catsRes] = await Promise.all([
+    supabase.from("transactions").select("id, description, merchant").eq("user_id", userId).is("category_id", null).limit(5000),
+    supabase.from("category_rules").select("value, category_id").eq("user_id", userId),
+    supabase.from("merchant_dictionary").select("keyword, category_name"),
+    supabase.from("categories").select("id, name, user_id").or(`user_id.eq.${userId},user_id.is.null`),
+  ]);
+  if (txRes.error) return { error: txRes.error.message, assigned: [], remaining: 0 };
+
+  // A parità di nome, la categoria dell'utente prima di quella predefinita.
+  const categories = [...(catsRes.data ?? [])].sort((a, b) => Number(a.user_id === null) - Number(b.user_id === null));
+  const ctx = { userRules: rulesRes.data ?? [], dictionary: dictRes.data ?? [], categories };
+  const byCategory = new Map<string, string[]>();
+  for (const t of txRes.data ?? []) {
+    const id = categorize({ description: `${t.description ?? ""} ${t.merchant ?? ""}` }, ctx);
+    if (id) byCategory.set(id, [...(byCategory.get(id) ?? []), t.id]);
+  }
+
+  const assigned: { id: string; category_id: string }[] = [];
+  for (const [categoryId, ids] of byCategory) {
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200);
+      const { data: done, error } = await supabase.from("transactions")
+        .update({ category_id: categoryId })
+        .eq("user_id", userId).in("id", chunk).is("category_id", null)
+        .select("id");
+      if (error) return { error: error.message, assigned, remaining: (txRes.data ?? []).length - assigned.length };
+      assigned.push(...(done ?? []).map(d => ({ id: d.id, category_id: categoryId })));
+    }
+  }
+
+  revalidatePath("/dashboard/transazioni");
+  revalidatePath("/dashboard");
+  return { assigned, remaining: (txRes.data ?? []).length - assigned.length };
 }
 
 /** Elimina una regola di categoria */

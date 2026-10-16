@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useDemoGuard } from "@/components/demo-context";
-import { guessCategoryName, matchUserRule, type UserRule } from "@/lib/categorize";
+import { categorize, type DictionaryEntry, type UserRule } from "@/lib/categorize";
 import {
   detectColumns,
   loadRememberedMap,
@@ -41,6 +41,8 @@ type Props = {
   familyMembers?: FamilyMember[];
   /** regole "contiene X → categoria" dell'utente: si applicano prima di quelle predefinite */
   userRules?: UserRule[];
+  /** dizionario condiviso dei negozi: dopo le regole personali */
+  dictionary?: DictionaryEntry[];
   onClose: () => void;
   onImported: (count: number) => void;
 };
@@ -59,7 +61,7 @@ function formatEuro(n: number) {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export function ImportExcelModal({ userId, categories, familyMembers = [], userRules = [], onClose, onImported }: Props) {
+export function ImportExcelModal({ userId, categories, familyMembers = [], userRules = [], dictionary = [], onClose, onImported }: Props) {
   const hasMembers = familyMembers.length > 0;
   const demoGuard = useDemoGuard();
 
@@ -99,15 +101,11 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
   useEffect(() => { void track("import_opened"); }, []);
 
   function toParsedRows(raw: RawRow[]): ParsedRow[] {
-    return raw.map(r => {
-      const byRule = matchUserRule(r.description, userRules);
-      if (byRule && categories.some(c => c.id === byRule)) {
-        return { date: r.date, amount: r.amount, description: r.description, category_id: byRule };
-      }
-      const name = guessCategoryName(r.bankCategory, r.description);
-      const cat = name ? categories.find(c => c.name === name) : undefined;
-      return { date: r.date, amount: r.amount, description: r.description, category_id: cat?.id ?? null };
-    });
+    // Regole personali → dizionario condiviso → categoria della banca → parole del codice
+    return raw.map(r => ({
+      date: r.date, amount: r.amount, description: r.description,
+      category_id: categorize({ description: r.description, bankCategory: r.bankCategory }, { userRules, dictionary, categories }),
+    }));
   }
 
   async function processFile(file: File) {
