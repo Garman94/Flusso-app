@@ -4,6 +4,7 @@ import { toISODate, todayISO } from "@/lib/dates";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { addMonths, monthsPerCycle } from "@/lib/calculations";
+import { syncGoalsWithPot } from "../goal-sync";
 
 export async function resetSavingStartDate(recurringId: string) {
   const supabase = await createClient();
@@ -88,11 +89,11 @@ export async function markSinkingFundPaid(
     // Preferisci scalare dal salvadanaio collegato a questa voce (savings_pot_id).
     // Se non è collegato nessun pot, fallback al primo pot creato (comportamento
     // storico); se l'utente non ha alcun pot, update diretto di piggy_balance.
-    let pot: { id: string } | null = null;
+    let pot: { id: string; current_balance: number } | null = null;
     if (rec.savings_pot_id) {
       const { data } = await supabase
         .from("savings_pots")
-        .select("id")
+        .select("id, current_balance")
         .eq("id", rec.savings_pot_id)
         .eq("user_id", userId)
         .maybeSingle();
@@ -101,7 +102,7 @@ export async function markSinkingFundPaid(
     if (!pot) {
       const { data } = await supabase
         .from("savings_pots")
-        .select("id")
+        .select("id, current_balance")
         .eq("user_id", userId)
         .order("created_at")
         .limit(1)
@@ -118,6 +119,8 @@ export async function markSinkingFundPaid(
         note: "Pagamento accantonamento",
       });
       if (txErr) return { error: txErr.message };
+      const before = Number(pot.current_balance);
+      await syncGoalsWithPot(supabase, userId, pot.id, before, before - amountToDeduct);
     } else {
       const { error: piggyErr } = await supabase
         .from("profiles")

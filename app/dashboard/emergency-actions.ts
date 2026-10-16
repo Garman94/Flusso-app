@@ -6,6 +6,7 @@ import { todayISO } from "@/lib/dates";
 import { formatEuro, sinkingFundInput } from "@/lib/calculations";
 import { emergencyLimit, planCatchUp, planEmergency, sinkingGroups } from "@/lib/emergency";
 import { isAdminEmail } from "@/lib/admin-emails";
+import { syncGoalsWithPot } from "./goal-sync";
 
 export type EmergencyResult =
   | { error: string }
@@ -93,6 +94,10 @@ export async function withdrawForEmergency(input: {
     [...byPot].map(([potId, amount]) => ({ pot_id: potId, user_id: userId, amount, type: "withdraw", note })),
   );
   if (txErr) return { error: txErr.message };
+  for (const [potId, amount] of byPot) {
+    const before = Number(pots.find(p => p.id === potId)!.current_balance);
+    await syncGoalsWithPot(supabase, userId, potId, before, before - amount);
+  }
 
   for (const u of updates) {
     const { error } = await supabase.from("recurring_expenses")

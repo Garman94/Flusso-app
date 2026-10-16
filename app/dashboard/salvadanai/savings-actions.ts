@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { syncGoalsWithPot } from "../goal-sync";
 
 function revalidate() {
   revalidatePath("/dashboard");
@@ -103,6 +104,8 @@ export async function addSavingsTransaction(input: {
 
   if (!(input.amount > 0)) return { error: "Importo non valido." };
 
+  const { data: pot } = await supabase.from("savings_pots").select("current_balance")
+    .eq("id", input.potId).eq("user_id", userId).maybeSingle();
   const { error } = await supabase.from("savings_transactions").insert({
     pot_id: input.potId,
     user_id: userId,
@@ -113,6 +116,10 @@ export async function addSavingsTransaction(input: {
   });
 
   if (error) return { error: error.message };
+  if (pot) {
+    const before = Number(pot.current_balance);
+    await syncGoalsWithPot(supabase, userId, input.potId, before, before + (input.type === "deposit" ? input.amount : -input.amount));
+  }
   revalidate();
   return { success: true };
 }

@@ -110,15 +110,15 @@ export function EmergencyButton({ userId, onDone, className }: {
   const unlinked = !!data && data.items.length > 0 && data.items.every(it => !it.savings_pot_id)
     && groups.some(g => g.potIds.length > 1);
 
-  // Prima i salvadanai liberi (il fondo emergenze in cima), poi quelli degli accantonamenti,
-  // per ultimi quelli degli obiettivi.
+  // Prima il fondo emergenze (anche se è l'obiettivo "Fondo emergenza": è fatto per questo),
+  // poi gli altri salvadanai liberi, poi quelli degli accantonamenti, per ultimi gli obiettivi.
   const sortedPots = useMemo(() => {
     if (!data) return [];
     const rank = (p: Pot) =>
-      groups.some(g => g.potIds.includes(p.id)) ? 2 : data.goals.some(g => g.savings_pot_id === p.id) ? 3 : isEmergencyPot(p) ? 0 : 1;
+      groups.some(g => g.potIds.includes(p.id)) ? 2 : isEmergencyPot(p) ? 0 : data.goals.some(g => g.savings_pot_id === p.id) ? 3 : 1;
     return [...data.pots].sort((a, b) => rank(a) - rank(b));
   }, [data, groups]);
-  const firstFree = sortedPots.find(p => !groupOf(p.id) && !goalOf(p.id) && p.current_balance > 0) ?? null;
+  const firstFree = sortedPots.find(p => !groupOf(p.id) && (!goalOf(p.id) || isEmergencyPot(p)) && p.current_balance > 0) ?? null;
 
   const total = data ? data.pots.reduce((s, p) => s + parse(amounts[p.id] ?? ""), 0) : 0;
   const potTooMuch = (p: Pot) => parse(amounts[p.id] ?? "") > p.current_balance + 0.005;
@@ -219,11 +219,11 @@ export function EmergencyButton({ userId, onDone, className }: {
         </div>
         {(g || goal || (p === firstFree && groups.length > 0)) && (
           <div className="flex flex-wrap gap-1.5 text-[11px]">
-            {p === firstFree && !g && !goal && (
+            {p === firstFree && !g && (
               <span className="rounded-full bg-green-500/15 text-green-700 dark:text-green-400 px-2 py-0.5">Prendi prima da qui: non tocca accantonamenti né obiettivi</span>
             )}
             {g && <span className="rounded-full bg-muted px-2 py-0.5">🏦 Accantonamenti</span>}
-            {goal && <span className="rounded-full bg-muted px-2 py-0.5">🎯 Obiettivo &ldquo;{goal.name}&rdquo;: non scende da solo</span>}
+            {goal && <span className="rounded-full bg-muted px-2 py-0.5">🎯 Obiettivo &ldquo;{goal.name}&rdquo;: scende anche lui</span>}
           </div>
         )}
         {g && g.potIds.length === 1 && sinkingNotice(g)}

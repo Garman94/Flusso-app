@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { formatEuro } from "@/lib/calculations";
 import { useDemoGuard } from "@/components/demo-context";
@@ -12,6 +13,19 @@ import {
 import { createPot, updatePot, deletePot, addSavingsTransaction } from "./savings-actions";
 
 type Member = { id: string; name: string; color: string };
+/** Obiettivo collegato a un salvadanaio: l'obiettivo vale il saldo del salvadanaio (lib/goals.ts). */
+export type PotGoal = {
+  id: string; name: string; icon: string; target_amount: number; savings_pot_id: string;
+  deadline: string | null; monthly_contribution: number | null;
+};
+
+/** "🏖️ Obiettivo “Vacanza estiva” · 150,00 €/mese · entro feb 2027" */
+function goalLine(g: PotGoal) {
+  const parts = [`${g.icon} Obiettivo “${g.name}”`];
+  if (g.monthly_contribution) parts.push(`${formatEuro(Number(g.monthly_contribution))}/mese`);
+  if (g.deadline) parts.push(`entro ${new Date(g.deadline + "T00:00:00").toLocaleDateString("it-IT", { month: "short", year: "numeric" })}`);
+  return parts.join(" · ");
+}
 
 type Props = {
   userId: string;
@@ -19,16 +33,20 @@ type Props = {
   familyMembers: Member[];
   potMembers: SavingsPotMember[];
   initialTransactions: SavingsTransaction[];
+  goals?: PotGoal[];
 };
 
 const COLORS = ["#6366f1", "#ec4899", "#f97316", "#22c55e", "#3b82f6", "#a855f7", "#eab308", "#14b8a6"];
 
-export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initialTransactions }: Props) {
+export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initialTransactions, goals = [] }: Props) {
+  const goalOf = (potId: string) => goals.find(g => g.savings_pot_id === potId) ?? null;
   const router = useRouter();
   const demoGuard = useDemoGuard();
 
-  const [view, setView] = useState<"list" | "wizard" | "detail">("list");
-  const [detailId, setDetailId] = useState<string | null>(null);
+  // ?pot=… apre direttamente un salvadanaio (per esempio dal dettaglio di un obiettivo)
+  const potParam = useSearchParams().get("pot");
+  const [view, setView] = useState<"list" | "wizard" | "detail">(potParam ? "detail" : "list");
+  const [detailId, setDetailId] = useState<string | null>(potParam);
   const [busy, setBusy] = useState(false);
 
   // wizard
@@ -281,6 +299,11 @@ export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initi
               <div>
                 <h1 className="font-bold text-lg">{detailPot.name}</h1>
                 {detailPot.is_shared && <span className="text-xs text-muted-foreground">Condiviso</span>}
+                {goalOf(detailPot.id) && (
+                  <Link href={`/dashboard/smart?v=goal-detail&id=${goalOf(detailPot.id)!.id}`} className="text-xs text-primary hover:underline">
+                    {goalLine(goalOf(detailPot.id)!)} →
+                  </Link>
+                )}
               </div>
             </div>
             <div className="flex gap-2">
@@ -424,6 +447,9 @@ export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initi
                   </div>
                   {pot.is_shared && <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted">condiviso</span>}
                 </div>
+                {goalOf(pot.id) && (
+                  <span className="text-[11px] text-muted-foreground -mt-2">{goalLine(goalOf(pot.id)!)}</span>
+                )}
                 <span className="text-2xl font-bold tabular-nums">{formatEuro(Number(pot.current_balance))}</span>
                 {pct != null && pot.target_amount != null && (
                   <div className="flex flex-col gap-1">

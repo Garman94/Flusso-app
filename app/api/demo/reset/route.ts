@@ -23,5 +23,9 @@ export async function POST() {
   const { error: utenzeError } = await service.rpc("reseed_demo_utenze");
   if (utenzeError) console.error("[demo/reset] reseed_demo_utenze failed:", utenzeError.message);
 
+  // Obiettivi e accantonamenti nei loro salvadanai (migration 043): senza, la demo resta quella di prima.
+  const { error: potsError } = await service.rpc("reseed_demo_salvadanai");
+  if (potsError) console.error("[demo/reset] reseed_demo_salvadanai failed:", potsError.message);
+
   return NextResponse.json({ ok: true });
 }

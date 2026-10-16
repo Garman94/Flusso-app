@@ -8,6 +8,7 @@ import { periodContaining, periodName, totals, type RecapTx } from "@/lib/recap"
 import type { RecapTeaser } from "./recap-banner";
 import { DashboardClient } from "./dashboard-client";
 import type { Transaction, Goal } from "@/lib/calculations";
+import { withPotBalances } from "@/lib/goals";
 
 // ─── Server component ─────────────────────────────────────────────────────────
 
@@ -43,12 +44,12 @@ async function DashboardContent() {
         .eq("user_id", userId).gte("date", closed.from).lte("date", closed.to)
     : null;
 
-  const [currentTxsRes, goalsRes, totalCountRes, lastTxRes, uncategorizedCountRes, closedTxsRes] = await Promise.all([
+  const [currentTxsRes, goalsRes, totalCountRes, lastTxRes, uncategorizedCountRes, closedTxsRes, goalPotsRes] = await Promise.all([
     supabase.from("transactions")
       .select("id, amount, date, description, category_id, categories(name, color, icon)")
       .eq("user_id", userId).gte("date", mFrom).lte("date", mTo).order("date", { ascending: true }),
     supabase.from("goals")
-      .select("id, name, target_amount, current_amount, deadline, icon, monthly_contribution")
+      .select("id, name, target_amount, current_amount, deadline, icon, monthly_contribution, savings_pot_id")
       .eq("user_id", userId).order("created_at", { ascending: false }).limit(3),
     supabase.from("transactions")
       .select("id", { count: "exact", head: true }).eq("user_id", userId),
@@ -57,6 +58,8 @@ async function DashboardContent() {
     supabase.from("transactions")
       .select("id", { count: "exact", head: true }).eq("user_id", userId).is("category_id", null),
     closedTxsQuery,
+    // un obiettivo collegato vale il saldo del suo salvadanaio (lib/goals.ts)
+    supabase.from("savings_pots").select("id, current_balance").eq("user_id", userId),
   ]);
 
   const closedTxs = (closedTxsRes?.data ?? []) as unknown as RecapTx[];
@@ -78,7 +81,7 @@ async function DashboardContent() {
         piggy_balance: Number(profileRes.data?.piggy_balance ?? 0),
       }}
       currentTxs={(currentTxsRes.data ?? []) as unknown as Transaction[]}
-      goals={(goalsRes.data ?? []) as unknown as (Goal & { monthly_contribution: number | null })[]}
+      goals={withPotBalances((goalsRes.data ?? []) as unknown as (Goal & { monthly_contribution: number | null; savings_pot_id: string | null })[], goalPotsRes.data ?? [])}
       totalTxCount={totalCountRes.count ?? 0}
       uncategorizedCount={uncategorizedCountRes.count ?? 0}
       lastTxDate={lastTxRes.data?.date ?? null}
