@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { track } from "@/lib/track";
+import { track, trackBeforeLeaving } from "@/lib/track";
 import { useDemoGuard } from "@/components/demo-context";
 import { prepareImage } from "@/lib/image-prepare";
 import { classifyRows, type DedupStatus } from "@/lib/import-dedup";
@@ -142,7 +142,8 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
       void track("screenshot_failed", { reason: "save" });
     } else {
       toast.success(`${selected.length} transazioni importate!`);
-      void track("screenshot_import_completed", { rows: selected.length });
+      // onImported ricarica la pagina: prima va salvato l'evento
+      await trackBeforeLeaving("screenshot_import_completed", { rows: selected.length });
       onImported(data ?? []);
       onClose();
     }

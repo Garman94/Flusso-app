@@ -21,6 +21,15 @@ export async function track(name: string, props: EventProps = {}): Promise<void>
   }
 }
 
+/**
+ * Come track(), ma da aspettare prima di ricaricare la pagina o andare altrove: con `void track()`
+ * seguito da `window.location.reload()` la richiesta si perde (succedeva a import_completed).
+ * Non aspetta mai più di `maxMs`.
+ */
+export function trackBeforeLeaving(name: string, props: EventProps = {}, maxMs = 1500): Promise<void> {
+  return Promise.race([track(name, props), new Promise<void>(r => setTimeout(r, maxMs))]);
+}
+
 /** Come track(), ma al massimo una volta ogni `everyMs` per browser e per chiave. */
 export function trackThrottled(name: string, props: EventProps, everyMs: number, key: string = name): void {
   try {

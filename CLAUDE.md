@@ -7,6 +7,16 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Admin nel database, benvenuto e metriche degli import (2026-10-17)
+
+Trovati guardando i numeri del 17/10 (migration 045).
+- **Feedback**: la policy "Founder full access" (020) faceva leggere e scrivere i feedback di tutti a OGNI account founder, e i founder sono quasi tutti utenti con Premium regalato. Ora la policy è "Admin full access" con `is_app_admin()` (security definer) sulla tabella `app_admins` (nessuna policy: solo funzione e service role). `app_admins` si riempie a mano, perché il repo è pubblico: `insert into public.app_admins (user_id) select id from auth.users where email = '<email admin>';`. Da tenere allineata con `ADMIN_EMAILS` (che resta la regola per il codice). Il piano founder non dà più nessun accesso admin.
+- **Benvenuto**: `/onboarding` non lo vedeva nessuno (la conferma della mail porta a /dashboard). Ora `app/dashboard/layout.tsx` ci manda chi ha `profiles.onboarded_at` null; la pagina lo compila alla fine. Chi era già iscritto è stato segnato come passato (`onboarded_at = created_at`). Senza la colonna il layout non fa niente.
+- **Metriche degli import**: `import_completed` e `screenshot_import_completed` si perdevano perché subito dopo `handleImported` fa `window.location.reload()`. Ora i modali fanno `await trackBeforeLeaving(...)` (lib/track.ts, massimo 1,5 s). Da usare ogni volta che dopo un evento si ricarica o si cambia sito. I conteggi di import prima del 17/10 sono più bassi del vero.
+- Rollback: prima il codice, poi `supabase/rollback/045_admin_e_benvenuto_down.sql` (rimette la vecchia policy, con la falla).
+
+---
+
 ## Dizionario condiviso dei negozi (2026-10-17)
 
 Categorizzazione automatica uguale per tutti, sopra la quale ognuno ha le sue regole. Ordine in `categorize()` (lib/categorize.ts): **1. regole personali** (`category_rules`: "Ricorda" dopo un cambio di categoria e pannello Regole, anche verso categorie personali) → **2. dizionario condiviso** (tabella `merchant_dictionary`, migration 044) → **3. categoria scritta dalla banca** (`BANK_CATEGORY_MAP`) → **4. parole del codice** (`KEYWORDS`). Un cambio a mano su un movimento resta sempre.
@@ -713,7 +723,7 @@ Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valo
 ```
 free      → max 1 obiettivo, max 3 import Excel/mese, Smart bloccato
 premium   → obiettivi illimitati, import illimitati, Smart completo
-founder   → tutto premium + accesso admin + lettura/risposta feedback utenti
+founder   → tutto premium (l'admin lo decidono ADMIN_EMAILS nel codice e app_admins nel database, migration 045)
 ```
 
 La colonna `plan` è blindata da trigger (migration 016): solo service role può modificarla.

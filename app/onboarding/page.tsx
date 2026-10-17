@@ -56,6 +56,9 @@ function OnboardingInner() {
         await supabase.from("profiles").update({ usage_type: usage }).eq("id", session.user.id);
       }
 
+      // Benvenuto fatto: la dashboard non ci rimanda più qui (migration 045)
+      await supabase.from("profiles").update({ onboarded_at: new Date().toISOString() }).eq("id", session.user.id);
+
       void track("onboarding_completed", { usage: usage || null, dest });
       router.push(href);
     } catch {
