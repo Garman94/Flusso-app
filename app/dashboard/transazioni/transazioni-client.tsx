@@ -1,7 +1,7 @@
 "use client";
 
 import { todayISO } from "@/lib/dates";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { ImportExcelModal } from "./import-excel-modal";
@@ -112,6 +112,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
   const [savingCat, setSavingCat] = useState(false);
   const [editMode, setEditMode] = useState(initialEditMode);
   const [filter, setFilter] = useState<FilterType>(initialFilter);
+  const listRef = useRef<HTMLDivElement>(null);
   const [displayRules, setDisplayRules] = useState<DisplayRule[]>(initialDisplayRules);
   const [newFind, setNewFind] = useState("");
   const [newReplace, setNewReplace] = useState("");
@@ -249,6 +250,30 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
       setTransactions(prev => prev.filter(t => t.id !== id));
       toast.success("Transazione eliminata.");
     }
+  }
+
+  /** Filtro "Senza cat." e scroll alla lista (banner "Categorizza") */
+  function showUncategorized() {
+    setFilter("senza_cat");
+    setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+
+  // Movimento senza categoria: si sceglie sulla riga, senza passare dalla matita.
+  // Passa da handleCategoryChange, quindi propone anche "Ricorda" per i movimenti simili.
+  function pickCategory(t: Transaction, className = "") {
+    return (
+      <select
+        defaultValue=""
+        onChange={e => { if (e.target.value) handleCategoryChange(t.id, e.target.value); }}
+        aria-label="Scegli la categoria"
+        className={`border border-amber-500/60 bg-amber-500/10 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 ${className}`}
+      >
+        <option value="">🏷️ Scegli categoria…</option>
+        {categories.map(c => (
+          <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+        ))}
+      </select>
+    );
   }
 
   async function handleCategoryChange(txId: string, newCategoryId: string) {
@@ -465,6 +490,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
       <AutoCategorizeBanner
         uncategorized={transactions.filter(t => !t.category_id).length}
         categories={categories}
+        onShow={showUncategorized}
         onAssigned={assigned => {
           const byId = new Map(assigned.map(a => [a.id, a.category_id]));
           setTransactions(prev => prev.map(t => {
@@ -1040,11 +1066,11 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           <p className="text-muted-foreground text-sm">Nessuna transazione trovata.</p>
         </div>
       ) : (
-        <div className="rounded-xl border overflow-hidden">
+        <div ref={listRef} className="rounded-xl border overflow-hidden scroll-mt-20">
           {/* Mobile: card list */}
           <div className="sm:hidden flex flex-col divide-y">
             {filtered.map(t => (
-              <div key={t.id} className="flex items-start justify-between px-4 py-3 hover:bg-muted/30 transition-colors gap-3">
+              <div key={t.id} className={`flex items-start justify-between px-4 py-3 hover:bg-muted/30 transition-colors gap-3 ${!t.category_id ? "bg-amber-500/5 border-l-4 border-l-amber-500" : ""}`}>
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-xl shrink-0">{t.categories?.icon ?? "📦"}</span>
                   <div className="min-w-0">
@@ -1076,6 +1102,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                         )}
                       </div>
                     )}
+                    {!editMode && !t.category_id && pickCategory(t, "mt-1.5 w-full max-w-[200px]")}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 pt-0.5">
@@ -1104,7 +1131,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
               </thead>
               <tbody>
                 {filtered.map(t => (
-                  <tr key={t.id} className="border-b last:border-b-0 hover:bg-muted/30 transition-colors">
+                  <tr key={t.id} className={`border-b last:border-b-0 hover:bg-muted/30 transition-colors ${!t.category_id ? "bg-amber-500/5" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                       {new Date(t.date).toLocaleDateString("it-IT")}
                     </td>
@@ -1137,9 +1164,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                         <span className="inline-flex items-center gap-1 text-xs border rounded-full px-2 py-0.5">
                           {t.categories.icon} {t.categories.name}
                         </span>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
+                      ) : pickCategory(t)}
                     </td>
                     <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${Number(t.amount) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
                       {Number(t.amount) >= 0 ? "+" : ""}{formatEuro(Number(t.amount))}
