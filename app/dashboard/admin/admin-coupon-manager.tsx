@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import type { Plan } from "@/lib/plans";
+import { deleteCoupon } from "./coupon-actions";
 
 interface Coupon {
   id: string;
@@ -40,6 +41,9 @@ export function AdminCouponManager({ initialCoupons }: { initialCoupons: Coupon[
   const [maxUses, setMaxUses] = useState("1");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  // Eliminazione in due tocchi: "Elimina" → "Sì, elimina"
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function handleCreate() {
     setLoading(true);
@@ -62,6 +66,46 @@ export function AdminCouponManager({ initialCoupons }: { initialCoupons: Coupon[
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleDelete(c: Coupon) {
+    setDeleting(true);
+    const res = await deleteCoupon(c.id);
+    setDeleting(false);
+    setConfirmId(null);
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    setCoupons((prev) => prev.filter((x) => x.id !== c.id));
+    toast.success(`Coupon ${c.code} eliminato`);
+  }
+
+  function deleteControl(c: Coupon) {
+    if (confirmId !== c.id) {
+      return (
+        <button
+          onClick={() => setConfirmId(c.id)}
+          className="text-xs text-muted-foreground hover:text-destructive px-2 py-1"
+        >
+          Elimina
+        </button>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1">
+        <button
+          onClick={() => handleDelete(c)}
+          disabled={deleting}
+          className="text-xs rounded px-2 py-1 bg-destructive text-white hover:bg-destructive/90 disabled:opacity-50"
+        >
+          {deleting ? "…" : "Sì, elimina"}
+        </button>
+        <button onClick={() => setConfirmId(null)} className="text-xs text-muted-foreground px-1">
+          No
+        </button>
+      </span>
+    );
   }
 
   function copyToClipboard(code: string) {
@@ -189,7 +233,8 @@ export function AdminCouponManager({ initialCoupons }: { initialCoupons: Coupon[
                         <td className="px-4 py-2 text-xs text-muted-foreground hidden md:table-cell">
                           {new Date(c.created_at).toLocaleDateString("it-IT")}
                         </td>
-                        <td className="px-4 py-2 text-right">
+                        <td className="px-4 py-2 text-right whitespace-nowrap">
+                          {deleteControl(c)}
                           <button
                             onClick={() => copyToClipboard(c.code)}
                             className="text-xs border rounded px-2 py-1 hover:bg-muted/50 transition-colors"
@@ -218,6 +263,7 @@ export function AdminCouponManager({ initialCoupons }: { initialCoupons: Coupon[
                       <th className="text-left px-4 py-2 font-medium text-xs">Piano</th>
                       <th className="text-left px-4 py-2 font-medium text-xs hidden md:table-cell">Note</th>
                       <th className="text-left px-4 py-2 font-medium text-xs hidden md:table-cell">Usato il</th>
+                      <th className="px-4 py-2 text-xs" />
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -236,6 +282,7 @@ export function AdminCouponManager({ initialCoupons }: { initialCoupons: Coupon[
                         <td className="px-4 py-2 text-xs text-muted-foreground hidden md:table-cell">
                           {c.used_at ? new Date(c.used_at).toLocaleDateString("it-IT") : "—"}
                         </td>
+                        <td className="px-4 py-2 text-right whitespace-nowrap opacity-100">{deleteControl(c)}</td>
                       </tr>
                     ))}
                   </tbody>
