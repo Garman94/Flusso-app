@@ -7,6 +7,15 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Pronti per i tester (2026-10-17)
+
+Per cercare persone che provino Flusso (piano e testi in `docs/10-cercare-tester.md`).
+- **Coupon a tempo e per più persone** (migration 046): `coupon_codes.days` (null = piano per sempre, come prima; se valorizzato dà Premium per N giorni allungando `trial_ends_at`, il piano resta free e `resolvePlan` lo tratta da Premium), `max_uses` / `uses` (`used` = esaurito), `coupon_redemptions` (una volta a testa). Il riscatto è tutto in `redeem_coupon(p_code, p_user)` (security definer, eseguibile solo dal service role), chiamata da `/api/coupon/redeem`: ritorna `{plan, days, until}` o `{error}` (`not_found`, `used`, `sold_out`, `already_redeemed`, `already_founder`, `already_premium`). Giorni = da oggi, ma se la prova in corso dura di più resta quella. In Admin: campi "Giorni di Premium" (solo Premium) e "Quante persone possono usarlo". Per i tester: Premium, PROVA90, 90 giorni, 30 persone.
+- **Guida per scaricare il file dalla banca** dentro l'import (`transazioni/bank-export-guide.tsx`): Intesa Sanpaolo, Poste, Revolut, N26 e "Altra banca", solo passi presi da guide ufficiali o affidabili; rimanda alla chat "Scrivi a Marco". Evento `bank_guide_opened` (`bank`): dice quali banche aggiungere.
+- Rollback: prima il codice, poi `supabase/rollback/046_coupon_a_tempo_down.sql` (chi ha già riscattato tiene i giorni).
+
+---
+
 ## Admin nel database, benvenuto e metriche degli import (2026-10-17)
 
 Trovati guardando i numeri del 17/10 (migration 045).

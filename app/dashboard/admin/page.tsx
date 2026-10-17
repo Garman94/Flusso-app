@@ -46,7 +46,7 @@ async function AdminContent() {
       .order("created_at", { ascending: false }),
     service
       .from("coupon_codes")
-      .select("id, code, plan, used, used_by, used_at, notes, created_at")
+      .select("id, code, plan, used, used_by, used_at, notes, created_at, days, max_uses, uses")
       .order("created_at", { ascending: false }),
     getPreviewPlan(),
     pendingChanges(),
@@ -96,7 +96,7 @@ async function AdminContent() {
         <div>
           <h2 className="text-lg font-semibold">Coupon di upgrade</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Genera codici monouso da inviare manualmente agli utenti.
+            Codici per una persona o per tante (es. PROVA90 per chi prova Flusso), per sempre o per un numero di giorni.
           </p>
         </div>
         <AdminCouponManager initialCoupons={coupons ?? []} />

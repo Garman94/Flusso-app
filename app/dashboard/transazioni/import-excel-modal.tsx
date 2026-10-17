@@ -18,6 +18,7 @@ import {
 } from "@/lib/import-parse";
 import { readGrid } from "@/lib/import-read";
 import { track, trackBeforeLeaving } from "@/lib/track";
+import { BankExportGuide } from "./bank-export-guide";
 import {
   hashFile,
   classifyRows,
@@ -433,19 +434,7 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
                 </>
               )}
 
-              <div className="rounded-lg bg-muted/40 p-4 text-xs text-muted-foreground flex flex-col gap-1">
-                <p className="font-medium text-foreground">Come esportare il file dalla banca</p>
-                <p>Nell&apos;home banking cerca <em>Movimenti</em> (o <em>Estratto conto</em>) e poi <em>Esporta</em> in Excel o CSV.</p>
-                <p>Va bene qualsiasi file con una colonna data e un importo, anche con <em>Entrate</em> e <em>Uscite</em> separate.</p>
-                <p>
-                  <strong className="text-foreground">Postepay:</strong>
-                  {" dall'app non si può scaricare il file. Usa il sito ("}
-                  <em>Movimenti</em>
-                  {" → "}
-                  <em>Scarica elenco su file</em>
-                  {" → Excel) oppure, dall'app, l'import da screenshot."}
-                </p>
-              </div>
+              <BankExportGuide />
             </div>
           )}
 
