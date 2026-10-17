@@ -8,6 +8,8 @@ Eventi: `app_open` (max 1 ogni 6 ore), `page_view` (max 1 ogni 30 min per pagina
 `read_error`, `insert_error`), `import_map_saved`, `import_completed`, `screenshot_import_completed`,
 `smart_locked_viewed`, `upgrade_clicked`, `feedback_sent`.
 
+Dal 17/10: `import_completed` e `screenshot_import_completed` prima si perdevano spesso (la pagina si ricaricava prima che partisse l'evento): i conteggi precedenti sono più bassi del vero; per gli import vecchi conta le righe di `transactions` con `source` = `excel`/`import` per giorno. `onboarding_completed` prima era sempre 0 perché nessuno arrivava a `/onboarding`.
+
 `auth.users.last_sign_in_at` **non** dice chi torna: non si aggiorna finché la sessione resta valida. Usa `app_open`.
 
 Le query vanno lanciate da Supabase → SQL Editor (nessuna policy di lettura per gli utenti).

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { LogoutButton } from "@/components/logout-button";
@@ -66,6 +67,9 @@ export default async function DashboardLayout({
   if (claimsData?.claims && !isDemo) {
     const { data: profile } = await supabase
       .from("profiles").select("*").eq("id", claimsData.claims.sub).maybeSingle();
+    // Nuovi iscritti: prima il benvenuto, una volta sola (migration 045; chi c'era già risulta passato).
+    // Senza la colonna la chiave manca e non succede niente.
+    if (profile && "onboarded_at" in profile && profile.onboarded_at === null) redirect("/onboarding");
     const trialEndsAt = await startTrialIfNeeded(profile, claimsData.claims.sub as string);
     if ((profile?.plan ?? "free") === "free") trialLeft = trialDaysLeft(trialEndsAt);
   }

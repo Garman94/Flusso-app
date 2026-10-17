@@ -17,7 +17,7 @@ import {
   type RawRow,
 } from "@/lib/import-parse";
 import { readGrid } from "@/lib/import-read";
-import { track } from "@/lib/track";
+import { track, trackBeforeLeaving } from "@/lib/track";
 import {
   hashFile,
   classifyRows,
@@ -312,7 +312,8 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
     toast.success(skipped > 0
       ? `${toInsert.length} movimenti importati, ${skipped} saltati.`
       : `${toInsert.length} movimenti importati!`);
-    void track("import_completed", { rows: toInsert.length, skipped, how: mappingHowRef.current, bank: detectedBank ?? "generic" });
+    // onImported ricarica la pagina: prima va salvato l'evento
+    await trackBeforeLeaving("import_completed", { rows: toInsert.length, skipped, how: mappingHowRef.current, bank: detectedBank ?? "generic" });
     onImported(toInsert.length);
     onClose();
   }
