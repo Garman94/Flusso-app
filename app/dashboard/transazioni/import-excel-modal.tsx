@@ -394,6 +394,9 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
                 Le categorie vengono assegnate in automatico. Se non riconosco le colonne, mi dici tu dove sono (una volta sola).
               </p>
 
+              {/* In cima: chi non sa come scaricare il file dalla banca si ferma qui (prove del 17/10) */}
+              <BankExportGuide />
+
               {dupFile ? (
                 <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-4 flex flex-col gap-3">
                   <p className="text-sm">
@@ -433,8 +436,6 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
                   <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
                 </>
               )}
-
-              <BankExportGuide />
             </div>
           )}
 
