@@ -8,6 +8,17 @@ function getServiceClient() {
   return createServiceClient(url, key, { auth: { persistSession: false } });
 }
 
+// Risposte di redeem_coupon (migration 046) → messaggio e stato HTTP
+const ERRORS: Record<string, [string, number]> = {
+  not_found: ["Coupon non valido", 404],
+  used: ["Questo coupon è già stato utilizzato", 409],
+  sold_out: ["I posti per questo codice sono finiti", 409],
+  already_redeemed: ["Hai già usato questo codice", 409],
+  already_founder: ["Hai già il piano Founder", 409],
+  already_premium: ["Hai già il piano Premium", 409],
+  no_profile: ["Profilo non trovato", 404],
+};
+
 export async function POST(request: NextRequest) {
   // Authenticate user
   const supabase = await createClient();
@@ -23,66 +34,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Codice coupon mancante" }, { status: 400 });
   }
 
-  const service = getServiceClient();
-
-  // Fetch coupon (case-insensitive match via stored uppercase)
-  const { data: coupon, error: fetchError } = await service
-    .from("coupon_codes")
-    .select("id, plan, used, used_by")
-    .eq("code", code)
-    .maybeSingle();
-
-  if (fetchError) {
-    console.error("[coupon/redeem] fetch error:", fetchError);
-    return NextResponse.json({ error: "Errore interno" }, { status: 500 });
-  }
-  if (!coupon) {
-    return NextResponse.json({ error: "Coupon non valido" }, { status: 404 });
-  }
-  if (coupon.used) {
-    return NextResponse.json({ error: "Questo coupon è già stato utilizzato" }, { status: 409 });
-  }
-
-  // Check user already has same or better plan
-  const { data: profile } = await service
-    .from("profiles")
-    .select("plan")
-    .eq("id", userId)
-    .single();
-
-  if (profile?.plan === "founder") {
-    return NextResponse.json({ error: "Hai già il piano Founder" }, { status: 409 });
-  }
-  if (profile?.plan === "premium" && coupon.plan === "premium") {
-    return NextResponse.json({ error: "Hai già il piano Premium" }, { status: 409 });
-  }
-
-  // Mark coupon as used and upgrade plan in a single transaction-like sequence
-  const { error: markError } = await service
-    .from("coupon_codes")
-    .update({ used: true, used_by: userId, used_at: new Date().toISOString() })
-    .eq("id", coupon.id)
-    .eq("used", false); // guard against race condition
-
-  if (markError) {
-    console.error("[coupon/redeem] mark error:", markError);
+  // Tutto il riscatto in una funzione del database: controlli, posti, una volta a testa, piano o giorni di Premium
+  const { data: result, error } = await getServiceClient().rpc("redeem_coupon", { p_code: code, p_user: userId });
+  if (error) {
+    console.error("[coupon/redeem]", error);
     return NextResponse.json({ error: "Errore nel riscatto del coupon" }, { status: 500 });
   }
 
-  const { error: planError } = await service
-    .from("profiles")
-    .update({ plan: coupon.plan })
-    .eq("id", userId);
-
-  if (planError) {
-    console.error("[coupon/redeem] plan update error:", planError);
-    // Roll back coupon mark — best effort
-    await service
-      .from("coupon_codes")
-      .update({ used: false, used_by: null, used_at: null })
-      .eq("id", coupon.id);
-    return NextResponse.json({ error: "Errore nell'aggiornamento del piano" }, { status: 500 });
+  const r = (result ?? {}) as { error?: string; plan?: string; days?: number; until?: string };
+  if (r.error) {
+    const [message, status] = ERRORS[r.error] ?? ["Coupon non valido", 400];
+    return NextResponse.json({ error: message }, { status });
   }
 
-  return NextResponse.json({ plan: coupon.plan });
+  return NextResponse.json({ plan: r.plan, days: r.days ?? null, until: r.until ?? null });
 }

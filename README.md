@@ -104,6 +104,7 @@ Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 | `043_demo_obiettivi_salvadanai.sql` | Solo demo: `reseed_demo_salvadanai()` (ogni obiettivo col suo salvadanaio, accantonamenti nel salvadanaio "Accantonamenti") |
 | `044_dizionario_negozi.sql` | `merchant_dictionary`: dizionario condiviso parola del negozio → categoria per la categorizzazione automatica (364 voci di partenza). Lettura per tutti, scrittura dall'admin. Rollback in `supabase/rollback/` |
 | `045_admin_e_benvenuto.sql` | `app_admins` + `is_app_admin()`: i feedback di tutti li legge solo l'admin (prima ogni founder); `profiles.onboarded_at` per mandare i nuovi iscritti al benvenuto una volta. Rollback in `supabase/rollback/`. |
+| `046_coupon_a_tempo.sql` | `coupon_codes.days` / `max_uses` / `uses`, `coupon_redemptions` e `redeem_coupon()`: codici per più persone e Premium per N giorni (es. PROVA90 per chi prova Flusso). Rollback in `supabase/rollback/`. |
 
 **Via CLI:**
 ```bash

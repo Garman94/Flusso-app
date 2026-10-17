@@ -24,6 +24,14 @@ export function CouponForm({ onUpgrade }: { onUpgrade: (plan: string) => void })
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Errore");
+      if (json.days) {
+        // Codice a tempo (migration 046): Premium fino a una data, il piano resta Gratuito.
+        // Si ricarica la pagina così badge, banner e funzioni Premium si aggiornano.
+        const until = new Date(json.until).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" });
+        toast.success(`Codice attivato! Hai Premium fino al ${until}.`);
+        setTimeout(() => window.location.reload(), 1500);
+        return;
+      }
       toast.success(`Coupon riscattato! Piano aggiornato a ${PLAN_LABELS[json.plan] ?? json.plan}.`);
       onUpgrade(json.plan);
       setCode("");

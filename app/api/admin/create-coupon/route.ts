@@ -34,9 +34,22 @@ export async function POST(request: NextRequest) {
   const plan = body?.plan as Plan | undefined;
   const notes = (body?.notes as string | undefined) ?? null;
   const customCode = (body?.code as string | undefined)?.trim().toUpperCase() || null;
+  // Migration 046: giorni di Premium (vuoto = per sempre) e quante persone possono usarlo
+  const days = body?.days ? Math.round(Number(body.days)) : null;
+  const maxUses = body?.max_uses ? Math.round(Number(body.max_uses)) : 1;
 
   if (!plan || !["premium", "founder"].includes(plan)) {
     return NextResponse.json({ error: "Piano non valido (premium o founder)" }, { status: 400 });
+  }
+
+  if (days !== null && (!Number.isFinite(days) || days < 1 || days > 730)) {
+    return NextResponse.json({ error: "Giorni non validi (da 1 a 730)" }, { status: 400 });
+  }
+  if (days !== null && plan !== "premium") {
+    return NextResponse.json({ error: "I giorni valgono solo per Premium" }, { status: 400 });
+  }
+  if (!Number.isFinite(maxUses) || maxUses < 1 || maxUses > 1000) {
+    return NextResponse.json({ error: "Numero di persone non valido (da 1 a 1000)" }, { status: 400 });
   }
 
   const code = customCode ?? generateCode();
@@ -44,8 +57,8 @@ export async function POST(request: NextRequest) {
 
   const { data: coupon, error } = await service
     .from("coupon_codes")
-    .insert({ code, plan, notes })
-    .select("id, code, plan, notes, created_at")
+    .insert({ code, plan, notes, days, max_uses: maxUses })
+    .select("id, code, plan, used, used_by, used_at, notes, created_at, days, max_uses, uses")
     .single();
 
   if (error) {
