@@ -105,6 +105,7 @@ Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 | `044_dizionario_negozi.sql` | `merchant_dictionary`: dizionario condiviso parola del negozio → categoria per la categorizzazione automatica (364 voci di partenza). Lettura per tutti, scrittura dall'admin. Rollback in `supabase/rollback/` |
 | `045_admin_e_benvenuto.sql` | `app_admins` + `is_app_admin()`: i feedback di tutti li legge solo l'admin (prima ogni founder); `profiles.onboarded_at` per mandare i nuovi iscritti al benvenuto una volta. Rollback in `supabase/rollback/`. |
 | `046_coupon_a_tempo.sql` | `coupon_codes.days` / `max_uses` / `uses`, `coupon_redemptions` e `redeem_coupon()`: codici per più persone e Premium per N giorni (es. PROVA90 per chi prova Flusso). Rollback in `supabase/rollback/`. |
+| `047_carburante.sql` | `vehicles`, `vehicle_refuels`, `vehicle_routines`, `vehicle_pauses`: auto e carburante in Pianifica (consumi da pieno a pieno, costo al km, km abituali ed extra). RLS per utente, demo in sola lettura. Rollback in `supabase/rollback/`. |
 | `048_conti.sql` | `accounts` (saldo ancorato alla banca), `transactions.account_id`, `savings_pots.account_id`, trigger `default_transaction_account`: saldo per conto e "Quadra" con la banca. Rollback in `supabase/rollback/`. |
 
 **Via CLI:**

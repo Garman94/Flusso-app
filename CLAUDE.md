@@ -7,6 +7,20 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Auto e carburante (2026-10-22)
+
+Pianifica → "⛽ Auto e carburante" (sezione "La tua auto", Premium: `PREMIUM_VIEWS` contiene "carburante"). Pannello `app/dashboard/smart/carburante-panel.tsx` (legge e scrive col client Supabase come Luce e gas), calcoli in `lib/fuel.ts` (test `tests/carburante.test.ts`, col pieno di Marco del 22/10: 35,65 € a 2,26 €/l per 285 km = 18,1 km/l, 12,5 cent/km). Tabelle nella migration 047.
+- **Veicoli** (`vehicles`): nome, alimentazione (benzina, diesel, GPL, metano in kg, elettrico in kWh: `FUEL`).
+- **Rifornimenti** (`vehicle_refuels`): euro, quantità e prezzo, ne bastano due (`completeRefuel`, al distributore si leggono euro e prezzo); km come "km fatti dall'ultimo rifornimento" (`trip_km`) o contachilometri (`odometer_km`, la differenza col precedente); pieno sì/no.
+- **Consumo da pieno a pieno** (`fullToFull`): dopo un pieno, il carburante messo fino al pieno successivo (compreso, anche i parziali) diviso i km in mezzo; un tratto vale solo se si conoscono i km di tutti i suoi rifornimenti. Un primo pieno con i km "dall'ultimo pieno" basta già. `fuelSummary` fa la media pesata; senza tratti dà solo il costo al km.
+- **Dai movimenti della banca**: `isFuelPurchase` riconosce i distributori (ENI, Q8, IP, Esso, Tamoil…; parole corte solo intere, niente "api" che sono anche gli insetti) tra le uscite degli ultimi 120 giorni; "Usa" compila data ed euro e salva `transaction_id`, così il movimento non viene riproposto. La spesa resta una sola (il rifornimento non è un movimento).
+- **Tragitti abituali** (`vehicle_routines`): km (con "andata e ritorno"), giorni fissi (`weekdays`, 1 = lunedì) o N volte a settimana (spalmate sui 7 giorni). **Pause** (`vehicle_pauses`): ferie, malattia, smart working, in quei giorni gli abituali non contano.
+- **Km abituali ed extra** (`monthlyComparison`): i km di ogni rifornimento sono spalmati sui giorni dal rifornimento precedente (`dailyKm`), e per ogni mese si confrontano con gli abituali **negli stessi giorni** (dopo l'ultimo rifornimento i km non si conoscono ancora). Extra × costo al km = quanto costano i km in più.
+- Eventi: `fuel_vehicle_added`, `fuel_refuel_added` (`from_bank`, `full`, `km`), `fuel_routine_added`.
+- Rollback: prima il codice, poi `supabase/rollback/047_carburante_down.sql`.
+
+---
+
 ## Conti e saldo che quadra (2026-10-22)
 
 Richiesta di Marco: il saldo di Flusso deve tornare con la banca e si deve sapere quanto c'è su ogni conto. Prima c'era un saldo solo (`profiles.period_starting_balance`), e il 22/10 Flusso diceva 1.544,60 € contro i 766,42 € veri dei due conti. Migration 048, calcoli in `lib/accounts.ts` (test `tests/conti.test.ts` con i conti di Marco).

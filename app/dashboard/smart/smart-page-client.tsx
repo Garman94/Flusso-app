@@ -18,6 +18,7 @@ import { goalMismatch, potChoicesForGoal, withPotBalances } from "@/lib/goals";
 import { BudgetPanel } from "./budget-panel";
 import { FixedExpensesPanel, fixedSuggestions, useDismissedSuggestions } from "./fixed-expenses-panel";
 import { UtenzePanel } from "./utenze-panel";
+import { CarburantePanel } from "./carburante-panel";
 import { isFixedExpense } from "@/lib/fixed-expenses";
 import { EmergencyButton } from "../emergency-button";
 import { useDemoGuard } from "@/components/demo-context";
@@ -64,7 +65,7 @@ type View =
   | "cover" | "add-recurring" | "edit-recurring" | "list-recurring"
   | "add-goal" | "list-goals" | "goal-detail" | "previsioni"
   | "impegni" | "accantonamenti" | "accantonamento-form" | "budget" | "rate" | "rate-form"
-  | "spese-fisse" | "spesa-fissa-form" | "utenze";
+  | "spese-fisse" | "spesa-fissa-form" | "utenze" | "carburante";
 
 type CategoryBudget = { category_id: string; monthly_budget: number };
 type CategoryBudgetNote = { category_id: string; year: number; month: number; note: string };
@@ -282,7 +283,7 @@ const ACCANTONAMENTO_FREQ_OPTIONS: { value: Frequency; label: string }[] = [
 const VIEWS: readonly View[] = [
   "cover", "add-recurring", "edit-recurring", "list-recurring", "add-goal", "list-goals", "goal-detail",
   "previsioni", "impegni", "accantonamenti", "accantonamento-form", "budget", "rate", "rate-form",
-  "spese-fisse", "spesa-fissa-form", "utenze",
+  "spese-fisse", "spesa-fissa-form", "utenze", "carburante",
 ];
 function parseView(v: string | null): View {
   if (!v || !(VIEWS as readonly string[]).includes(v)) return "cover";
@@ -295,7 +296,7 @@ const viewHref = (v: View) => (v === "cover" ? "/dashboard/smart" : `/dashboard/
 /** Funzioni solo Premium: al piano gratuito restano Spese fisse e Obiettivi (1). */
 const PREMIUM_VIEWS: ReadonlySet<View> = new Set<View>([
   "budget", "rate", "rate-form", "accantonamenti", "accantonamento-form",
-  "edit-recurring", "add-recurring", "previsioni",
+  "edit-recurring", "add-recurring", "previsioni", "carburante",
 ]);
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -880,6 +881,13 @@ export function SmartPageClient({
         ],
       },
       {
+        title: "La tua auto",
+        items: [
+          { icon: "⛽", label: "Auto e carburante", desc: "Consumo, costo al km e quanti km fai oltre ai tragitti di tutti i giorni", premium: true,
+            onClick: () => setView("carburante") },
+        ],
+      },
+      {
         title: "I tuoi risparmi",
         items: [
           { icon: "🎯", label: "Obiettivi", desc: "Una cifra da raggiungere entro una data: vacanza, fondo emergenza, un acquisto", premium: false, tour: "smart-obiettivi",
@@ -1002,6 +1010,10 @@ export function SmartPageClient({
   }
 
   // Calcolatore luce e gas (utenze-panel.tsx): gratis; la lettura delle bollette con l'AI è Premium.
+  if (view === "carburante") {
+    return <CarburantePanel userId={userId} onBack={() => goBack("cover")} />;
+  }
+
   if (view === "utenze") {
     return (
       <UtenzePanel
