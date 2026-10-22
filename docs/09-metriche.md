@@ -6,7 +6,7 @@ Regola: **mai importi né descrizioni dei movimenti** nei `props`. La demo (`NEX
 Eventi: `app_open` (max 1 ogni 6 ore), `page_view` (max 1 ogni 30 min per pagina), `onboarding_completed`,
 `checklist_click`, `import_opened`, `import_failed` (`reason`: `empty`, `columns_not_found`, `no_valid_rows`,
 `read_error`, `insert_error`), `import_map_saved`, `import_completed`, `screenshot_import_completed`,
-`smart_locked_viewed`, `upgrade_clicked`, `feedback_sent`, `bank_guide_opened` (`bank`: quale banca guardano nella guida dell'import), `fuel_vehicle_added`, `fuel_refuel_added` (`from_bank`: partito da un movimento della banca), `fuel_routine_added`.
+`smart_locked_viewed`, `upgrade_clicked`, `feedback_sent`, `bank_guide_opened` (`bank`: quale banca guardano nella guida dell'import), `fuel_vehicle_added`, `fuel_refuel_added` (`from_bank`: partito da un movimento della banca), `fuel_routine_added`, `account_created`, `account_checked` (`ok`: il saldo tornava con la banca).
 I codici usati da chi prova Flusso si contano in `coupon_codes.uses` e `coupon_redemptions` (migration 046).
 
 Dal 17/10: `import_completed` e `screenshot_import_completed` prima si perdevano spesso (la pagina si ricaricava prima che partisse l'evento): i conteggi precedenti sono più bassi del vero; per gli import vecchi conta le righe di `transactions` con `source` = `excel`/`import` per giorno. `onboarding_completed` prima era sempre 0 perché nessuno arrivava a `/onboarding`.

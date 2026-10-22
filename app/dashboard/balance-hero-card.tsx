@@ -1,6 +1,7 @@
 "use client";
 
-import { todayISO } from "@/lib/dates";
+import { addDaysISO, todayISO } from "@/lib/dates";
+import { balanceAt, neededRange, totalAtStartOf, type Account, type AccountTx } from "@/lib/accounts";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -63,6 +64,7 @@ type Tx = {
   amount: number; date: string;
   description?: string | null; merchant?: string | null;
   member_id?: string | null;
+  account_id?: string | null;
   categories?: { name: string } | null;
 };
 
@@ -98,6 +100,28 @@ async function fetchAmounts(userId: string, from: string, to: string): Promise<{
       .range(offset, offset + PAGE - 1);
     if (error || !data) break;
     out.push(...(data as { date: string; amount: number }[]));
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
+/** Movimenti dei conti (data, importo, conto) in [from, to], estremi compresi: a pagine. */
+async function fetchAccountAmounts(userId: string, from: string, to: string): Promise<AccountTx[]> {
+  const supabase = createClient();
+  const out: AccountTx[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("date, amount, account_id")
+      .eq("user_id", userId)
+      .not("account_id", "is", null)
+      .gte("date", from)
+      .lte("date", to)
+      .order("date", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error || !data) break;
+    out.push(...(data as AccountTx[]));
     if (data.length < PAGE) break;
   }
   return out;
@@ -275,6 +299,10 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   const [membersIncome, setMembersIncome] = useState<MemberIncome[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [editing, setEditing] = useState(false);
+  /** Conti (migration 048): se ci sono, il saldo è la loro somma e si corregge da /dashboard/conti */
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  /** saldo di ogni conto a inizio periodo */
+  const [accountStart, setAccountStart] = useState<Map<string, number>>(new Map());
   const [expanded, setExpanded] = useState<ExpandKey | null>(null);
 
   function toggle(key: ExpandKey) {
@@ -286,7 +314,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     let cancelled = false;
 
     (async () => {
-      const [profileRes, recRes, periodTxRes, memRes, budgetRes] = await Promise.all([
+      const [profileRes, recRes, periodTxRes, memRes, budgetRes, accRes] = await Promise.all([
         supabase.from("profiles").select(`period_starting_balance, period_starting_balance_date, ${INCOME_COLS}`).eq("id", userId).single(),
         supabase.from("recurring_expenses")
           // "*": comprende saving_offset (migration 041) e regge anche se la colonna non c'è ancora
@@ -294,13 +322,16 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
           .eq("user_id", userId),
         // Filtro per data: senza, il limite di default di 1000 righe potrebbe tagliare il periodo corrente.
         supabase.from("transactions")
-          .select("amount, date, description, merchant, member_id, categories(name)")
+          .select("*, categories(name)")
           .eq("user_id", userId).gte("date", periodFrom).lte("date", periodTo),
         supabase.from("family_members").select(`id, name, color, is_owner, ${INCOME_COLS}`).eq("user_id", userId),
         // categories(name) per escludere "Accantonamenti": quella quota è già contata
         // separatamente via aggregateSinkingFunds, sommarla anche qui la conterebbe due volte.
         supabase.from("category_budgets").select("monthly_budget, categories(name)").eq("user_id", userId),
+        // senza la migration 048 la query fallisce: si resta col saldo unico di prima
+        supabase.from("accounts").select("id, name, member_id, anchor_balance, anchor_date, checked_at").eq("archived", false).order("created_at"),
       ]);
+      const accs = accRes.error ? [] : ((accRes.data ?? []).map(a => ({ ...a, anchor_balance: Number(a.anchor_balance) })) as Account[]);
 
       // Saldo a inizio periodo: quello inserito per questo periodo, oppure l'ultimo inserito
       // riportato in avanti con i movimenti registrati nel frattempo.
@@ -308,7 +339,15 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       const knownDate = profileRes.data?.period_starting_balance_date as string | null | undefined;
       let start: number | null = null;
       let carried: string | null = null;
-      if (known != null && knownDate) {
+      const startByAccount = new Map<string, number>();
+      if (accs.length) {
+        // Con i conti: somma dei saldi dei conti a fine del giorno prima dell'inizio periodo
+        const before = addDaysISO(periodFrom, -1);
+        const range = neededRange(accs, before)!;
+        const gapTxs = await fetchAccountAmounts(userId, range.from, range.to);
+        start = totalAtStartOf(accs, gapTxs, periodFrom);
+        for (const a of accs) startByAccount.set(a.id, balanceAt(a, gapTxs, before));
+      } else if (known != null && knownDate) {
         if (knownDate === periodFrom) {
           start = Number(known);
         } else {
@@ -322,6 +361,8 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
       if (cancelled) return;
       setStartingBalance(start);
       setCarriedFrom(carried);
+      setAccounts(accs);
+      setAccountStart(startByAccount);
       setOwnerIncome((profileRes.data ?? null) as Partial<IncomeInfo> | null);
       setItems((recRes.data ?? []) as RecurringRow[]);
       setPeriodTxs((periodTxRes.data ?? []) as unknown as Tx[]);
@@ -506,9 +547,15 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
           <span className="text-xs text-muted-foreground flex items-center gap-1">Saldo di oggi <Chevron open={expanded === "saldo"} /></span>
           <span className="text-3xl sm:text-4xl font-bold tabular-nums">{formatEuro(actualToday)}</span>
         </button>
-        <button onClick={() => setEditing(true)} className="text-xs text-muted-foreground hover:text-foreground underline shrink-0 mt-1">
-          Correggi
-        </button>
+        {accounts.length ? (
+          <Link href="/dashboard/conti" className="text-xs text-muted-foreground hover:text-foreground underline shrink-0 mt-1">
+            Quadra con la banca
+          </Link>
+        ) : (
+          <button onClick={() => setEditing(true)} className="text-xs text-muted-foreground hover:text-foreground underline shrink-0 mt-1">
+            Correggi
+          </button>
+        )}
       </div>
       {carriedFrom && expanded !== "saldo" && (
         <p className="text-[11px] text-muted-foreground -mt-4">
@@ -522,6 +569,27 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
             <Line label={`Saldo a inizio periodo (${fmtDay(periodFrom)})`} value={formatEuro(startingBalance)} />
             <Line label="+ movimenti fino a oggi" value={formatEuro(txSumToToday)} />
             <Line label="= Saldo di oggi" value={formatEuro(actualToday)} strong className="pt-1 border-t" />
+            {accounts.length > 0 && (
+              <div className="flex flex-col gap-1 pt-2 mt-1 border-t">
+                {accounts.map(a => (
+                  <Line key={a.id} label={`🏦 ${a.name}`}
+                    value={formatEuro((accountStart.get(a.id) ?? 0) + periodTxs.filter(t => t.account_id === a.id && t.date <= iso).reduce((s, t) => s + Number(t.amount), 0))} />
+                ))}
+                {(() => {
+                  const loose = periodTxs.filter(t => !t.account_id && t.date <= iso).length;
+                  return loose > 0 ? (
+                    <p className="text-amber-600 dark:text-amber-400">
+                      {loose} {loose === 1 ? "movimento" : "movimenti"} di questo periodo senza conto: il totale potrebbe non tornare.{" "}
+                      <Link href="/dashboard/conti" className="underline">Assegnali</Link>
+                    </p>
+                  ) : null;
+                })()}
+                <Link href="/dashboard/conti" className="text-primary hover:underline pt-1">I tuoi conti →</Link>
+              </div>
+            )}
+            {accounts.length === 0 && (
+              <Link href="/dashboard/conti" className="text-primary hover:underline pt-1">Hai più di un conto (tuo, del partner)? Tieni il saldo di ognuno →</Link>
+            )}
             {carriedFrom && (
               <p className="text-muted-foreground pt-1">
                 Il saldo a inizio periodo è calcolato dall&apos;ultimo che hai inserito ({fmtDay(carriedFrom)}) più i movimenti caricati da allora.

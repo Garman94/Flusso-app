@@ -21,6 +21,22 @@ Pianifica → "⛽ Auto e carburante" (sezione "La tua auto", Premium: `PREMIUM_
 
 ---
 
+## Conti e saldo che quadra (2026-10-22)
+
+Richiesta di Marco: il saldo di Flusso deve tornare con la banca e si deve sapere quanto c'è su ogni conto. Prima c'era un saldo solo (`profiles.period_starting_balance`), e il 22/10 Flusso diceva 1.544,60 € contro i 766,42 € veri dei due conti. Migration 048, calcoli in `lib/accounts.ts` (test `tests/conti.test.ts` con i conti di Marco).
+- **Conto** (`accounts`): nome, persona (`member_id`, null = in comune), **ancora** = saldo letto in banca a fine giornata di `anchor_date`, movimenti di quel giorno compresi. Saldo in un giorno = ancora ± movimenti del conto in mezzo (`balanceAt`). I movimenti con data fino all'ancora caricati dopo non cambiano il saldo (erano già nel saldo della banca).
+- **Movimenti**: `transactions.account_id`. L'import Excel chiede "Da quale conto viene il file?" (la persona segue il conto); gli altri movimenti nuovi senza conto li mette il trigger `default_transaction_account` sul conto della persona, poi su quello del titolare, poi sul primo (e rifiuta i conti di altri utenti). Quelli vecchi si assegnano per persona da /dashboard/conti (`assignUnassigned`): non cambia nessun saldo.
+- **Quadra** (`reconcile`): l'utente scrive il saldo dell'app della banca. Se coincide si segna `checked_at`, altrimenti si mostrano la differenza e gli indizi: ultimo movimento caricato del conto, possibili doppioni (stesso giorno, importo e descrizione, ultimi 120 giorni), pagamenti in attesa. "La banca ha ragione" mette una nuova ancora oggi, **senza movimenti finti** (entrate e uscite restano vere).
+- **Salvadanai nel conto**: `savings_pots.account_id` dice dove stanno i soldi (es. il salvadanaio Intesa di Samira, gli accantonamenti di Marco). La pagina mostra "Conto + salvadanai" e i totali sui conti, nei salvadanai e in tutto.
+- **Dashboard** (`balance-hero-card.tsx`): con almeno un conto il saldo a inizio periodo è la somma dei conti (`totalAtStartOf`). "Correggi" diventa "Quadra con la banca", e il dettaglio del saldo ha una riga per conto e l'avviso dei movimenti del periodo senza conto. Senza conti (o senza la migration) tutto come prima, con il link "Hai più di un conto?".
+- Eventi: `account_created` (`first`, `owner`), `account_checked` (`ok`, `days_since_last`, `duplicates`).
+- **Numero del conto nel file** (`accounts.bank_ref`, `detectAccountRef`): i file Intesa ("Lista Operazione", anche quelli di Marco e Samira) hanno "Conto 1000 / 00013046" in alto e nella colonna "Conto o carta". Al primo import il conto scelto impara il numero; dai successivi, se il file è di un altro conto, l'anteprima avvisa e propone "Mettilo su …". Nella pagina Conti si vedono solo le ultime 4 cifre (`maskRef`).
+- **Saldo dal file: non si può** con Intesa. I file del 22/10 non hanno né il saldo in alto né una colonna saldo, e finiscono il giorno prima ("Data fine periodo"); le righe "non contabilizzate" l'import le salta. Per questo il controllo resta "Quadra" a mano.
+- Da fare: mostrare il conto nella lista dei movimenti.
+- Rollback: prima il codice, poi `supabase/rollback/048_conti_down.sql` (i movimenti restano, senza conto).
+
+---
+
 ## Pronti per i tester (2026-10-17)
 
 Per cercare persone che provino Flusso (piano e testi in `docs/10-cercare-tester.md`).

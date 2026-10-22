@@ -19,6 +19,7 @@ import {
 import { readGrid } from "@/lib/import-read";
 import { track, trackBeforeLeaving } from "@/lib/track";
 import { BankExportGuide } from "./bank-export-guide";
+import { detectAccountRef, maskRef } from "@/lib/accounts";
 import {
   hashFile,
   classifyRows,
@@ -44,6 +45,8 @@ type Props = {
   userRules?: UserRule[];
   /** dizionario condiviso dei negozi: dopo le regole personali */
   dictionary?: DictionaryEntry[];
+  /** conti (migration 048): se ci sono, si sceglie il conto e la persona segue il conto */
+  accounts?: { id: string; name: string; member_id: string | null; bank_ref?: string | null }[];
   onClose: () => void;
   onImported: (count: number) => void;
 };
@@ -62,15 +65,20 @@ function formatEuro(n: number) {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export function ImportExcelModal({ userId, categories, familyMembers = [], userRules = [], dictionary = [], onClose, onImported }: Props) {
+export function ImportExcelModal({ userId, categories, familyMembers = [], userRules = [], dictionary = [], accounts = [], onClose, onImported }: Props) {
   const hasMembers = familyMembers.length > 0;
+  const hasAccounts = accounts.length > 0;
+  const needsChoice = hasMembers || hasAccounts;
   const demoGuard = useDemoGuard();
 
-  const [step, setStep] = useState<"person" | "upload" | "map" | "preview">(hasMembers ? "person" : "upload");
+  const [step, setStep] = useState<"person" | "upload" | "map" | "preview">(needsChoice ? "person" : "upload");
 
   // Feature 1 — selezione persona
   const [personId, setPersonId] = useState<string | null>(null); // null = titolare
-  const [personConfirmed, setPersonConfirmed] = useState(!hasMembers);
+  const [personConfirmed, setPersonConfirmed] = useState(!needsChoice);
+  const [accountId, setAccountId] = useState<string | null>(null);
+  /** numero del conto scritto nel file (lib/accounts.ts → detectAccountRef) */
+  const [fileAccountRef, setFileAccountRef] = useState<string | null>(null);
 
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [classified, setClassified] = useState<ClassifiedRow<ParsedRow>[]>([]);
@@ -88,7 +96,8 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
   const pendingRef = useRef<{ rows: ParsedRow[]; hash: string; filename: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const personLabel = familyMembers.find(m => m.id === personId)?.name ?? "—";
+  const chosenAccount = accounts.find(a => a.id === accountId);
+  const personLabel = chosenAccount?.name ?? familyMembers.find(m => m.id === personId)?.name ?? "—";
 
   // ── Parsing ────────────────────────────────────────────────────────────────
   // Griglia grezza del file e mappatura proposta all'utente quando le colonne non si riconoscono da sole
@@ -122,6 +131,7 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
       }
 
       setDetectedBank(detectBank(json));
+      setFileAccountRef(detectAccountRef(json));
       fileMetaRef.current = { hash: await hashFile(buffer), filename: file.name };
 
       // Una mappatura già confermata per questo tipo di file ha la precedenza
@@ -278,6 +288,8 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
         description: c.row.description,
         category_id: c.row.category_id || null,
         member_id: personId || null,
+        // senza conto scelto il database usa quello della persona (trigger default_transaction_account)
+        ...(accountId ? { account_id: accountId } : {}),
         source: "excel" as const,
       }));
 
@@ -310,6 +322,11 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
       });
     }
 
+    const owner = fileAccountRef ? accounts.find(a => a.bank_ref === fileAccountRef) : undefined;
+    if (fileAccountRef && chosenAccount && !chosenAccount.bank_ref && !owner) {
+      await supabase.from("accounts").update({ bank_ref: fileAccountRef }).eq("id", chosenAccount.id);
+    }
+
     toast.success(skipped > 0
       ? `${toInsert.length} movimenti importati, ${skipped} saltati.`
       : `${toInsert.length} movimenti importati!`);
@@ -337,14 +354,14 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div className="flex flex-col">
             <h2 className="font-semibold text-lg">
-              {step === "person" ? "Chi ha fatto questi movimenti?"
+              {step === "person" ? (hasAccounts ? "Da quale conto viene il file?" : "Chi ha fatto questi movimenti?")
                 : step === "upload" ? "Carica l'estratto conto"
                 : step === "map" ? "Indica le colonne"
                 : `Anteprima — ${rows.length} movimenti`}
             </h2>
-            {step !== "person" && hasMembers && (
+            {step !== "person" && needsChoice && (
               <span className="text-xs text-muted-foreground">
-                Stai importando movimenti per: <strong>{personLabel}</strong>
+                {chosenAccount ? "Conto: " : "Stai importando movimenti per: "}<strong>{personLabel}</strong>
               </span>
             )}
           </div>
@@ -354,8 +371,37 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
 
+          {/* STEP CONTO (con i conti la persona segue il conto) */}
+          {step === "person" && hasAccounts && (
+            <div className="flex flex-col gap-5">
+              <p className="text-sm text-muted-foreground">
+                <strong>Da quale conto viene questo file?</strong> I movimenti andranno su quel conto e sulla persona che lo usa.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {accounts.map(a => {
+                  const active = personConfirmed && accountId === a.id;
+                  const owner = familyMembers.find(m => m.id === a.member_id);
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => { setAccountId(a.id); setPersonId(a.member_id); setPersonConfirmed(true); }}
+                      className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${active ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                    >
+                      <span className="text-2xl">🏦</span>
+                      <span className="flex flex-col min-w-0">
+                        <span className="text-sm font-medium truncate">{a.name}</span>
+                        <span className="text-xs text-muted-foreground">{owner?.name ?? "In comune"}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* STEP PERSON */}
-          {step === "person" && (
+          {step === "person" && !hasAccounts && (
             <div className="flex flex-col gap-5">
               <p className="text-sm text-muted-foreground">
                 <strong>A chi appartengono questi movimenti?</strong> Seleziona la persona: tutte le
@@ -581,6 +627,28 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
           {/* STEP PREVIEW */}
           {step === "preview" && (
             <div className="flex flex-col gap-4">
+              {hasAccounts && fileAccountRef && (() => {
+                const owner = accounts.find(a => a.bank_ref === fileAccountRef);
+                if (owner && owner.id !== accountId) {
+                  return (
+                    <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-sm flex flex-col gap-2">
+                      <p>⚠️ Questo file è del conto {maskRef(fileAccountRef)}, cioè <strong>{owner.name}</strong>, non di {chosenAccount?.name ?? "quello scelto"}.</p>
+                      <button onClick={() => { setAccountId(owner.id); setPersonId(owner.member_id); }}
+                        className="bg-primary text-primary-foreground rounded-md px-3 py-1.5 text-sm font-medium w-fit">
+                        Mettilo su {owner.name}
+                      </button>
+                    </div>
+                  );
+                }
+                if (!owner && chosenAccount?.bank_ref && chosenAccount.bank_ref !== fileAccountRef) {
+                  return (
+                    <p className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+                      ⚠️ Il file è del conto {maskRef(fileAccountRef)}, ma {chosenAccount.name} è il {maskRef(chosenAccount.bank_ref)}. Sicuro che sia il conto giusto?
+                    </p>
+                  );
+                }
+                return null;
+              })()}
               <div className="grid grid-cols-3 gap-3 text-sm">
                 <div className="rounded-lg border p-3 flex flex-col gap-0.5">
                   <span className="text-xs text-muted-foreground">Entrate</span>
@@ -689,7 +757,7 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
           {step === "person" && (
             <>
               <span className="text-xs text-muted-foreground">
-                {personConfirmed ? `Selezionato: ${personLabel}` : "Tocca una persona per continuare"}
+                {personConfirmed ? `Selezionato: ${personLabel}` : hasAccounts ? "Tocca un conto per continuare" : "Tocca una persona per continuare"}
               </span>
               <button
                 onClick={() => setStep("upload")}
@@ -701,9 +769,9 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
             </>
           )}
 
-          {step === "upload" && hasMembers && (
+          {step === "upload" && needsChoice && (
             <button onClick={() => setStep("person")} className="text-sm text-muted-foreground hover:text-foreground">
-              ← Cambia persona
+              {hasAccounts ? "← Cambia conto" : "← Cambia persona"}
             </button>
           )}
 

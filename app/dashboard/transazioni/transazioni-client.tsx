@@ -88,6 +88,8 @@ type Props = {
   familyMembers?: FamilyMember[];
   /** dizionario condiviso dei negozi (migration 044) */
   dictionary?: DictionaryEntry[];
+  /** conti (migration 048) */
+  accounts?: { id: string; name: string; member_id: string | null; bank_ref?: string | null }[];
   powerUser?: boolean;
   initialFilter?: FilterType;
   initialEditMode?: boolean;
@@ -96,7 +98,7 @@ type Props = {
   periodMonth?: number;
 };
 
-export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], dictionary = [], powerUser = false, initialFilter = "all", initialEditMode = false, payDay = 0, periodYear, periodMonth }: Props) {
+export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], dictionary = [], accounts = [], powerUser = false, initialFilter = "all", initialEditMode = false, payDay = 0, periodYear, periodMonth }: Props) {
   const demoGuard = useDemoGuard();
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
@@ -567,6 +569,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           familyMembers={familyMembers}
           userRules={categoryRules}
           dictionary={dictionary}
+          accounts={accounts}
           onClose={() => setShowImport(false)}
           onImported={handleExcelImported}
         />
