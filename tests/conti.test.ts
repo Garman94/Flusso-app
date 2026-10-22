@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { balanceAt, totalAtStartOf, neededRange, reconcile, possibleDuplicates, type Account, type AccountTx } from "../lib/accounts";
+import { balanceAt, totalAtStartOf, neededRange, reconcile, possibleDuplicates, detectAccountRef, maskRef, type Account, type AccountTx } from "../lib/accounts";
 
 // I conti di Marco al 22/10/2026: 728,42 € sul suo, 38 € su quello di Samira.
 const marco: Account = { id: "m", name: "Conto Marco", member_id: "pm", anchor_balance: 728.42, anchor_date: "2026-10-22", checked_at: null };
@@ -56,4 +56,20 @@ test("possibili doppioni nello stesso conto", () => {
   assert.equal(d.length, 1);
   assert.equal(d[0].count, 2);
   assert.equal(d[0].amount, -40);
+});
+
+test("numero del conto nel file Intesa: dal riquadro in alto, non carta né salvadanaio", () => {
+  const grid = [
+    ["", "", "", "", "", "", "", "", "PF"],
+    ["", "Conti e Carte:", "Carta 5411 / 11112222"],
+    ["", "", "Salvadanaio 1100 / 00001234"],
+    ["", "", "Conto 1000 / 00099999"],
+    ["Data", "Operazione", "Dettagli", "Conto o carta", "Contabilizzazione", "Categoria", "Valuta", "Importo"],
+    ["2026-10-20", "Tamoil", "Pagamento POS", "Conto 1000/00099999", "SI", "Carburanti", "EUR", -53.01],
+  ];
+  assert.equal(detectAccountRef(grid), "1000/00099999");
+  // senza riquadro in alto basta la colonna "Conto o carta"
+  assert.equal(detectAccountRef([grid[4], grid[5]]), "1000/00099999");
+  assert.equal(detectAccountRef([["Data", "Descrizione", "Importo"], ["2026-10-01", "ESSELUNGA", -20]]), null);
+  assert.equal(maskRef("1000/00099999"), "…9999");
 });

@@ -19,6 +19,7 @@ import {
 import { readGrid } from "@/lib/import-read";
 import { track, trackBeforeLeaving } from "@/lib/track";
 import { BankExportGuide } from "./bank-export-guide";
+import { detectAccountRef, maskRef } from "@/lib/accounts";
 import {
   hashFile,
   classifyRows,
@@ -45,7 +46,7 @@ type Props = {
   /** dizionario condiviso dei negozi: dopo le regole personali */
   dictionary?: DictionaryEntry[];
   /** conti (migration 048): se ci sono, si sceglie il conto e la persona segue il conto */
-  accounts?: { id: string; name: string; member_id: string | null }[];
+  accounts?: { id: string; name: string; member_id: string | null; bank_ref?: string | null }[];
   onClose: () => void;
   onImported: (count: number) => void;
 };
@@ -76,6 +77,8 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
   const [personId, setPersonId] = useState<string | null>(null); // null = titolare
   const [personConfirmed, setPersonConfirmed] = useState(!needsChoice);
   const [accountId, setAccountId] = useState<string | null>(null);
+  /** numero del conto scritto nel file (lib/accounts.ts → detectAccountRef) */
+  const [fileAccountRef, setFileAccountRef] = useState<string | null>(null);
 
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [classified, setClassified] = useState<ClassifiedRow<ParsedRow>[]>([]);
@@ -128,6 +131,7 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
       }
 
       setDetectedBank(detectBank(json));
+      setFileAccountRef(detectAccountRef(json));
       fileMetaRef.current = { hash: await hashFile(buffer), filename: file.name };
 
       // Una mappatura già confermata per questo tipo di file ha la precedenza
@@ -316,6 +320,11 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
         transaction_count: toInsert.length,
         member_id: personId || null,
       });
+    }
+
+    const owner = fileAccountRef ? accounts.find(a => a.bank_ref === fileAccountRef) : undefined;
+    if (fileAccountRef && chosenAccount && !chosenAccount.bank_ref && !owner) {
+      await supabase.from("accounts").update({ bank_ref: fileAccountRef }).eq("id", chosenAccount.id);
     }
 
     toast.success(skipped > 0
@@ -618,6 +627,28 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
           {/* STEP PREVIEW */}
           {step === "preview" && (
             <div className="flex flex-col gap-4">
+              {hasAccounts && fileAccountRef && (() => {
+                const owner = accounts.find(a => a.bank_ref === fileAccountRef);
+                if (owner && owner.id !== accountId) {
+                  return (
+                    <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-sm flex flex-col gap-2">
+                      <p>⚠️ Questo file è del conto {maskRef(fileAccountRef)}, cioè <strong>{owner.name}</strong>, non di {chosenAccount?.name ?? "quello scelto"}.</p>
+                      <button onClick={() => { setAccountId(owner.id); setPersonId(owner.member_id); }}
+                        className="bg-primary text-primary-foreground rounded-md px-3 py-1.5 text-sm font-medium w-fit">
+                        Mettilo su {owner.name}
+                      </button>
+                    </div>
+                  );
+                }
+                if (!owner && chosenAccount?.bank_ref && chosenAccount.bank_ref !== fileAccountRef) {
+                  return (
+                    <p className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+                      ⚠️ Il file è del conto {maskRef(fileAccountRef)}, ma {chosenAccount.name} è il {maskRef(chosenAccount.bank_ref)}. Sicuro che sia il conto giusto?
+                    </p>
+                  );
+                }
+                return null;
+              })()}
               <div className="grid grid-cols-3 gap-3 text-sm">
                 <div className="rounded-lg border p-3 flex flex-col gap-0.5">
                   <span className="text-xs text-muted-foreground">Entrate</span>

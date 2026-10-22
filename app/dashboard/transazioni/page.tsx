@@ -65,7 +65,7 @@ async function TransazioniContent({
     // Dizionario condiviso dei negozi (migration 044): per la categorizzazione negli import
     supabase.from("merchant_dictionary").select("keyword, category_name"),
     // Conti (migration 048): l'import chiede da quale conto viene il file
-    supabase.from("accounts").select("id, name, member_id").eq("archived", false).order("created_at"),
+    supabase.from("accounts").select("id, name, member_id, bank_ref").eq("archived", false).order("created_at"),
   ]);
 
   const payDay: number = profileRes.data?.pay_day ?? 0;

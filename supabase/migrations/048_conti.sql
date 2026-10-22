@@ -3,6 +3,8 @@
 --                         (anchor_balance a fine giornata di anchor_date, movimenti di quel giorno compresi):
 --                         il saldo di oggi è l'ancora più i movimenti del conto dopo quel giorno.
 --                         checked_at = ultimo "Quadra" con la banca andato a buon fine.
+--                         bank_ref = numero del conto come lo scrive la banca nel file (es. Intesa "1000/00013046"):
+--                         l'import riconosce di quale conto è il file e avvisa se lo si carica sul conto sbagliato.
 -- transactions.account_id il conto del movimento. Senza conti resta tutto come prima (un saldo solo, profiles).
 -- savings_pots.account_id dove stanno davvero i soldi del salvadanaio (es. il salvadanaio dentro il conto).
 -- default_transaction_account: un movimento nuovo senza conto (screenshot, a mano) va sul conto della sua
@@ -18,6 +20,7 @@ create table if not exists public.accounts (
   anchor_balance numeric not null default 0,
   anchor_date    date not null default current_date,
   checked_at     date,
+  bank_ref       text check (bank_ref is null or char_length(bank_ref) <= 40),
   archived       boolean not null default false,
   created_at     timestamptz not null default now()
 );

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { formatEuro } from "@/lib/calculations";
 import { parseAmount } from "@/lib/import-parse";
 import { track } from "@/lib/track";
-import { balanceAt, reconcile, type Account, type AccountTx, type Reconciliation } from "@/lib/accounts";
+import { balanceAt, maskRef, reconcile, type Account, type AccountTx, type Reconciliation } from "@/lib/accounts";
 import { assignUnassigned, confirmBankBalance, createAccount, deleteAccount, linkPot } from "./actions";
 
 // Pagina Conti (migration 048). Calcoli in lib/accounts.ts.
@@ -125,7 +125,10 @@ export function ContiClient({ accounts, txs, members, pots, unassigned, today }:
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-semibold truncate">🏦 {a.name}</p>
-                <p className="text-xs text-muted-foreground">{owner ?? "In comune"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {owner ?? "In comune"}
+                  {a.bank_ref ? ` · conto ${maskRef(a.bank_ref)}` : " · il numero lo impara dal primo file della banca"}
+                </p>
               </div>
               <p className="text-2xl font-bold tabular-nums shrink-0">{formatEuro(balance)}</p>
             </div>

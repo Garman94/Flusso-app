@@ -14,6 +14,7 @@ export type Account = {
   anchor_balance: number;
   anchor_date: string;
   checked_at: string | null;
+  bank_ref?: string | null;
 };
 
 export type AccountTx = { date: string; amount: number; account_id: string | null; description?: string | null };
@@ -85,4 +86,27 @@ export function reconcile(a: Account, txs: AccountTx[], bank: number, today: str
     lastMovement, daysSinceLast: lastMovement ? daysBetween(lastMovement, today) : null,
     duplicates: possibleDuplicates(a, txs, addDaysISO(today, -120)),
   };
+}
+
+// ── Numero del conto nel file della banca ────────────────────────────────────
+
+/**
+ * Numero del conto scritto nel file della banca. Intesa (anche isybank) lo mette in alto
+ * ("Conti e Carte: Conto 1000 / 00013046", accanto a carte e salvadanaio) e in ogni riga
+ * ("Conto o carta": "Conto 1000/00013046"). Solo il conto, non carte e salvadanaio.
+ */
+export function detectAccountRef(grid: unknown[][]): string | null {
+  const re = /\bconto\s+(\d{3,5})\s*\/\s*(\d{5,12})\b/i;
+  for (const row of grid.slice(0, 60)) {
+    for (const cell of row ?? []) {
+      const m = typeof cell === "string" ? cell.match(re) : null;
+      if (m) return `${m[1]}/${m[2]}`;
+    }
+  }
+  return null;
+}
+
+/** "…3046": abbastanza per riconoscerlo, senza mostrare tutto il numero. */
+export function maskRef(ref: string): string {
+  return "…" + ref.replace(/\D/g, "").slice(-4);
 }

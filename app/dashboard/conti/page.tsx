@@ -17,7 +17,7 @@ async function ContiContent() {
   const today = todayISO();
 
   const [accRes, membersRes, potsRes] = await Promise.all([
-    supabase.from("accounts").select("id, name, member_id, anchor_balance, anchor_date, checked_at").eq("archived", false).order("created_at"),
+    supabase.from("accounts").select("id, name, member_id, anchor_balance, anchor_date, checked_at, bank_ref").eq("archived", false).order("created_at"),
     supabase.from("family_members").select("id, name, color, is_owner").eq("user_id", userId).order("created_at"),
     supabase.from("savings_pots").select("id, name, emoji, current_balance, account_id").eq("user_id", userId).order("created_at"),
   ]);

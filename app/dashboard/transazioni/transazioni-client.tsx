@@ -89,7 +89,7 @@ type Props = {
   /** dizionario condiviso dei negozi (migration 044) */
   dictionary?: DictionaryEntry[];
   /** conti (migration 048) */
-  accounts?: { id: string; name: string; member_id: string | null }[];
+  accounts?: { id: string; name: string; member_id: string | null; bank_ref?: string | null }[];
   powerUser?: boolean;
   initialFilter?: FilterType;
   initialEditMode?: boolean;

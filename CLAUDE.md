@@ -16,7 +16,9 @@ Richiesta di Marco: il saldo di Flusso deve tornare con la banca e si deve saper
 - **Salvadanai nel conto**: `savings_pots.account_id` dice dove stanno i soldi (es. il salvadanaio Intesa di Samira, gli accantonamenti di Marco). La pagina mostra "Conto + salvadanai" e i totali sui conti, nei salvadanai e in tutto.
 - **Dashboard** (`balance-hero-card.tsx`): con almeno un conto il saldo a inizio periodo è la somma dei conti (`totalAtStartOf`). "Correggi" diventa "Quadra con la banca", e il dettaglio del saldo ha una riga per conto e l'avviso dei movimenti del periodo senza conto. Senza conti (o senza la migration) tutto come prima, con il link "Hai più di un conto?".
 - Eventi: `account_created` (`first`, `owner`), `account_checked` (`ok`, `days_since_last`, `duplicates`).
-- Da fare: leggere il saldo dal file della banca all'import (serve vedere i file di Intesa e della banca di Marco), mostrare il conto nella lista dei movimenti.
+- **Numero del conto nel file** (`accounts.bank_ref`, `detectAccountRef`): i file Intesa ("Lista Operazione", anche quelli di Marco e Samira) hanno "Conto 1000 / 00013046" in alto e nella colonna "Conto o carta". Al primo import il conto scelto impara il numero; dai successivi, se il file è di un altro conto, l'anteprima avvisa e propone "Mettilo su …". Nella pagina Conti si vedono solo le ultime 4 cifre (`maskRef`).
+- **Saldo dal file: non si può** con Intesa. I file del 22/10 non hanno né il saldo in alto né una colonna saldo, e finiscono il giorno prima ("Data fine periodo"); le righe "non contabilizzate" l'import le salta. Per questo il controllo resta "Quadra" a mano.
+- Da fare: mostrare il conto nella lista dei movimenti.
 - Rollback: prima il codice, poi `supabase/rollback/048_conti_down.sql` (i movimenti restano, senza conto).
 
 ---
