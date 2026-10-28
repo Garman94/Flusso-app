@@ -7,6 +7,13 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Id abbonamento protetto (2026-10-28)
+
+Trovato nell'analisi di sicurezza del 28/10: `profiles.lemon_squeezy_subscription_id` era modificabile dall'utente (policy "Users can update own profile"), e `/api/subscription/cancel` annulla su Lemon Squeezy l'abbonamento con l'id scritto nel profilo. Quindi un utente Premium poteva annullare l'abbonamento di un altro cliente (gli id sono numeri in sequenza). La migration 049 estende `prevent_plan_self_change` (016, 036) a quella colonna: la scrive solo il service role (webhook). Provato in transazione annullata: prima l'utente riusciva a scrivere "999999", dopo il valore resta com'era; il nome si cambia ancora e il service role scrive l'id. **Ogni colonna nuova di `profiles` che riguarda piano, pagamenti o permessi va aggiunta a quel trigger.**
+- Rollback: `supabase/rollback/049_abbonamento_protetto_down.sql` (riapre la falla).
+
+---
+
 ## Auto e carburante (2026-10-22)
 
 Pianifica → "⛽ Auto e carburante" (sezione "La tua auto", Premium: `PREMIUM_VIEWS` contiene "carburante"). Pannello `app/dashboard/smart/carburante-panel.tsx` (legge e scrive col client Supabase come Luce e gas), calcoli in `lib/fuel.ts` (test `tests/carburante.test.ts`, col pieno di Marco del 22/10: 35,65 € a 2,26 €/l per 285 km = 18,1 km/l, 12,5 cent/km). Tabelle nella migration 047.

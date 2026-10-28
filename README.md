@@ -107,6 +107,7 @@ Applica tutte le migrazioni in ordine (Supabase Studio → SQL Editor):
 | `046_coupon_a_tempo.sql` | `coupon_codes.days` / `max_uses` / `uses`, `coupon_redemptions` e `redeem_coupon()`: codici per più persone e Premium per N giorni (es. PROVA90 per chi prova Flusso). Rollback in `supabase/rollback/`. |
 | `047_carburante.sql` | `vehicles`, `vehicle_refuels`, `vehicle_routines`, `vehicle_pauses`: auto e carburante in Pianifica (consumi da pieno a pieno, costo al km, km abituali ed extra). RLS per utente, demo in sola lettura. Rollback in `supabase/rollback/`. |
 | `048_conti.sql` | `accounts` (saldo ancorato alla banca), `transactions.account_id`, `savings_pots.account_id`, trigger `default_transaction_account`: saldo per conto e "Quadra" con la banca. Rollback in `supabase/rollback/`. |
+| `049_abbonamento_protetto.sql` | `prevent_plan_self_change` blocca anche `lemon_squeezy_subscription_id`: l'id dell'abbonamento lo scrive solo il webhook. Rollback in `supabase/rollback/`. |
 
 **Via CLI:**
 ```bash
