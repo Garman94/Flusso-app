@@ -36,7 +36,8 @@ const OTHER = {
   steps: [
     "Meglio dal computer: spesso il tasto per scaricare c'è solo sul sito.",
     "Apri «Movimenti» o «Lista movimenti» e cerca «Esporta», «Scarica» o l'icona di Excel.",
-    "Scegli Excel o CSV, non PDF. Per iniziare bastano gli ultimi 2-3 mesi.",
+    "Scegli Excel o CSV. Per iniziare bastano gli ultimi 2-3 mesi.",
+    "Se la banca ti dà solo il PDF dell'estratto conto, caricalo da «Foto o PDF» (Premium): Flusso legge anche i saldi.",
   ],
 } as const;
 

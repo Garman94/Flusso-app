@@ -7,6 +7,17 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Estratto conto PDF letto dall'AI (2026-10-28)
+
+Intervento 1 della top 5 (`docs/analisi-concorrenti.md`): import italiano senza attrito. In Transazioni → Aggiungi la voce "Foto o PDF" (Premium, `screenshot-modal.tsx`) accetta anche l'estratto conto in PDF di qualsiasi banca.
+- `extractTransactionsFromPdf` (`screenshot-action.ts`): stessi controlli dello screenshot (`guard`: login, Premium, chiave), stesso limite di 20 analisi al giorno (evento `screenshot_extract`), PDF fino a ~2,9 MB (limite delle server action 4 MB, base64). Modello `claude-haiku-4-5-20251001` con blocco `document`, `max_tokens` 8192.
+- `buildStatementPrompt` e `parseStatementExtraction` (`lib/screenshot-extract.ts`, test in `tests/screenshot-extract.test.ts`): risposta `{opening_balance, closing_balance, closing_date, transactions}`; tagliata → si salvano i movimenti completi e i saldi; solo array → va bene lo stesso.
+- **Controllo della lettura** (`checkStatement`): saldo iniziale + movimenti letti = saldo finale ⇒ "✅ non manca niente"; altrimenti dice quanto manca. Il saldo finale si mostra con il link a Conti → Quadra.
+- Un PDF trascinato nell'import Excel spiega dove caricarlo; la guida "Altra banca" lo suggerisce. Eventi: `screenshot_extracted` e `screenshot_failed` con `kind` (`pdf` o `image`), `pdf_statement_read` (`has_balances`, `complete`).
+- In locale e in anteprima la chiave `ANTHROPIC_API_KEY` non c'è (su Vercel vale solo per Production): la lettura vera di un PDF si prova online o aggiungendo la chiave al branch `anteprima`.
+
+---
+
 ## Id abbonamento protetto (2026-10-28)
 
 Trovato nell'analisi di sicurezza del 28/10: `profiles.lemon_squeezy_subscription_id` era modificabile dall'utente (policy "Users can update own profile"), e `/api/subscription/cancel` annulla su Lemon Squeezy l'abbonamento con l'id scritto nel profilo. Quindi un utente Premium poteva annullare l'abbonamento di un altro cliente (gli id sono numeri in sequenza). La migration 049 estende `prevent_plan_self_change` (016, 036) a quella colonna: la scrive solo il service role (webhook). Provato in transazione annullata: prima l'utente riusciva a scrivere "999999", dopo il valore resta com'era; il nome si cambia ancora e il service role scrive l'id. **Ogni colonna nuova di `profiles` che riguarda piano, pagamenti o permessi va aggiunta a quel trigger.**

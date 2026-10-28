@@ -239,6 +239,10 @@ export function ImportExcelModal({ userId, categories, familyMembers = [], userR
   }
 
   function handleFile(file: File) {
+    if (/\.pdf$/i.test(file.name)) {
+      toast.info("I PDF dell'estratto conto si caricano da «Foto o PDF» nel menu Aggiungi (Premium): Flusso legge movimenti e saldi.", { duration: 8000 });
+      return;
+    }
     if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
       toast.error("Formato non supportato. Usa .xlsx, .xls o .csv");
       return;

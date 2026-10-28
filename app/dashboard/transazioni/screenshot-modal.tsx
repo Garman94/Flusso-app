@@ -9,8 +9,30 @@ import { prepareImage } from "@/lib/image-prepare";
 import { classifyRows, type DedupStatus } from "@/lib/import-dedup";
 import { categorize, type DictionaryEntry, type UserRule } from "@/lib/categorize";
 import { parseAmount } from "@/lib/import-parse";
-import type { ExtractedTransaction } from "@/lib/screenshot-extract";
-import { extractTransactionsFromScreenshot } from "./screenshot-action";
+import Link from "next/link";
+import { formatEuro } from "@/lib/calculations";
+import type { ExtractedTransaction, StatementBalances, StatementCheck } from "@/lib/screenshot-extract";
+import { extractTransactionsFromPdf, extractTransactionsFromScreenshot } from "./screenshot-action";
+
+// Import da foto o PDF (Premium): screenshot della lista movimenti, oppure estratto conto PDF di
+// qualsiasi banca. Dal PDF si leggono anche i saldi: se saldo iniziale + movimenti = saldo finale,
+// la lettura è completa (lib/screenshot-extract.ts → checkStatement).
+
+/** Il limite delle server action è 4 MB: in base64 un PDF cresce di un terzo. */
+const MAX_PDF_BYTES = 2_900_000;
+
+const isPdf = (file: File) => file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+const fmtDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" });
 
 type Category = { id: string; name: string; color: string; icon: string };
 
@@ -38,34 +60,55 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
   const demoGuard = useDemoGuard();
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  /** nome del PDF caricato (al posto dell'anteprima dell'immagine) */
+  const [pdfName, setPdfName] = useState<string | null>(null);
+  /** saldi letti dal PDF e controllo della lettura */
+  const [statement, setStatement] = useState<{ balances: StatementBalances; check: StatementCheck | null } | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function handleFile(file: File) {
-    if (!file.type.startsWith("image/")) {
-      toast.error("Carica un'immagine (PNG, JPG, WebP).");
+    const pdf = isPdf(file);
+    if (!pdf && !file.type.startsWith("image/")) {
+      toast.error("Carica un'immagine (PNG, JPG, WebP) o il PDF dell'estratto conto.");
+      return;
+    }
+    if (pdf && file.size > MAX_PDF_BYTES) {
+      toast.error("Il PDF è troppo grande (massimo circa 3 MB). Scarica un periodo più corto, per esempio un mese.");
       return;
     }
     setRows(null);
+    setStatement(null);
     setExtracting(true);
     try {
-      // Riduce e converte in JPEG: gli screenshot del telefono pesano più del limite di invio
-      let prepared;
-      try {
-        prepared = await prepareImage(file);
-      } catch {
-        toast.error("Non riesco ad aprire questa immagine. Prova con un PNG o un JPG.");
-        void track("screenshot_failed", { reason: "decode" });
-        return;
+      let result: Awaited<ReturnType<typeof extractTransactionsFromPdf>>;
+      if (pdf) {
+        setPreview(null);
+        setPdfName(file.name);
+        result = await extractTransactionsFromPdf(await fileToBase64(file));
+      } else {
+        // Riduce e converte in JPEG: gli screenshot del telefono pesano più del limite di invio
+        let prepared;
+        try {
+          prepared = await prepareImage(file);
+        } catch {
+          toast.error("Non riesco ad aprire questa immagine. Prova con un PNG o un JPG.");
+          void track("screenshot_failed", { reason: "decode" });
+          return;
+        }
+        setPdfName(null);
+        setPreview(prepared.dataUrl);
+        result = await extractTransactionsFromScreenshot(prepared.base64, prepared.mediaType);
       }
-      setPreview(prepared.dataUrl);
-
-      const result = await extractTransactionsFromScreenshot(prepared.base64, prepared.mediaType);
       if (result.error) {
         toast.error(result.error);
-        void track("screenshot_failed", { reason: "server" });
+        void track("screenshot_failed", { reason: "server", kind: pdf ? "pdf" : "image" });
         return;
+      }
+      if (pdf && result.balances) {
+        setStatement({ balances: result.balances, check: result.check ?? null });
+        void track("pdf_statement_read", { has_balances: !!result.check, complete: result.check?.complete ?? null });
       }
       const found = result.transactions ?? [];
       if (found.length === 0) {
@@ -98,7 +141,7 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
           };
         }),
       );
-      void track("screenshot_extracted", { rows: found.length });
+      void track("screenshot_extracted", { rows: found.length, kind: pdf ? "pdf" : "image" });
     } catch {
       toast.error("Qualcosa è andato storto. Riprova.");
       void track("screenshot_failed", { reason: "exception" });
@@ -159,7 +202,7 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
       <div className="bg-background border rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-          <h2 className="font-semibold text-lg">Importa da screenshot</h2>
+          <h2 className="font-semibold text-lg">Importa da foto o PDF</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xl leading-none">✕</button>
         </div>
 
@@ -173,18 +216,23 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
               className="border-2 border-dashed rounded-xl p-10 flex flex-col items-center gap-3 cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors text-center"
             >
               <span className="text-4xl">📷</span>
-              <p className="font-medium text-sm">Trascina uno screenshot qui oppure clicca per scegliere</p>
+              <p className="font-medium text-sm">Trascina qui uno screenshot o il PDF dell&apos;estratto conto, oppure clicca per scegliere</p>
               <p className="text-xs text-muted-foreground">
-                Screenshot della lista movimenti (PNG, JPG, WebP). Se l&apos;elenco è lungo, fanne più di uno.
+                Screenshot della lista movimenti (PNG, JPG, WebP) oppure l&apos;estratto conto in PDF di qualsiasi banca.
+                Dal PDF Flusso legge anche i saldi e controlla che non manchi nessun movimento.
               </p>
               <input
                 ref={inputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf,.pdf"
                 className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
               />
             </div>
+          )}
+
+          {pdfName && !rows && (
+            <p className="text-sm rounded-lg border px-3 py-2">📄 {pdfName}</p>
           )}
 
           {/* Preview immagine */}
@@ -203,11 +251,34 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
 
           {!rows && (
             <p className="text-xs text-muted-foreground">
-              L&apos;immagine viene letta da un&apos;AI (Anthropic) e non viene conservata da Flusso. Prima di salvare controlli tu date e importi.
+              Immagini e PDF vengono letti da un&apos;AI (Anthropic) e non vengono conservati da Flusso. Prima di salvare controlli tu date e importi.
             </p>
           )}
 
           {/* Tabella anteprima */}
+          {rows && statement && (statement.balances.closing !== null || statement.check) && (
+            <div className={`rounded-xl border p-3 text-sm flex flex-col gap-1 ${statement.check && !statement.check.complete ? "border-amber-500/50 bg-amber-500/10" : "bg-muted/30"}`}>
+              {statement.balances.closing !== null && (
+                <p>
+                  Saldo finale nell&apos;estratto conto: <strong>{formatEuro(statement.balances.closing)}</strong>
+                  {statement.balances.closingDate ? <> al {fmtDate(statement.balances.closingDate)}</> : null}.
+                </p>
+              )}
+              {statement.check?.complete && <p>✅ I movimenti letti tornano con i saldi del PDF: non manca niente.</p>}
+              {statement.check && !statement.check.complete && (
+                <p>
+                  ⚠️ Saldo iniziale più movimenti letti non fa il saldo finale: mancano <strong>{formatEuro(Math.abs(statement.check.missing))}</strong> di
+                  {statement.check.missing < 0 ? " uscite" : " entrate"}. Controlla nel PDF se è sfuggita qualche riga e aggiungila a mano.
+                </p>
+              )}
+              {statement.balances.closing !== null && (
+                <p className="text-xs text-muted-foreground">
+                  Dopo il salvataggio puoi usare questo saldo in <Link href="/dashboard/conti" className="underline">Conti → Quadra con la banca</Link>.
+                </p>
+              )}
+            </div>
+          )}
+
           {rows && (
             <>
               <div className="flex items-center justify-between">
@@ -218,12 +289,12 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
                     onClick={() => inputRef.current?.click()}
                     className="text-xs text-muted-foreground hover:text-foreground underline"
                   >
-                    Cambia immagine
+                    Cambia file
                   </button>
                   <input
                     ref={inputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,application/pdf,.pdf"
                     className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
                   />
