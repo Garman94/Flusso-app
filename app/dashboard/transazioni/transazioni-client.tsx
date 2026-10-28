@@ -543,9 +543,9 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                 className="flex flex-col items-center gap-3 border rounded-xl p-4 hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="text-3xl">{canUploadScreenshot ? "📷" : "🔒"}</span>
-                <span className="text-sm font-medium">Screenshot</span>
+                <span className="text-sm font-medium">Foto o PDF</span>
                 <span className="text-xs text-muted-foreground text-center">
-                  {canUploadScreenshot ? "Analisi AI dell'immagine" : "Piano Premium"}
+                  {canUploadScreenshot ? "L'AI legge foto e PDF" : "Piano Premium"}
                 </span>
               </button>
               <button
