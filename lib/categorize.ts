@@ -154,6 +154,10 @@ const NOT_A_MERCHANT = new Set([
   "del", "della", "dello", "dei", "di", "da", "a", "al", "alla", "in", "il", "la", "lo", "le",
   "e", "per", "favore", "ordinante", "beneficiario", "eur", "euro", "data", "ora", "ore",
   "www", "n", "nr", "num", "rif", "tran", "trx", "cod", "id",
+  // Frasi fisse delle banche ("Bonifico istantaneo da voi disposto a favore di…", "Addebito diretto
+  // disposto a favore di…"): una regola "disposto" ha messo bollette e finanziamenti in Stipendio.
+  "disposto", "disposta", "disposti", "istantaneo", "istantanea", "voi", "vostro", "vs", "ns",
+  "mandato", "mand", "mnd", "ricevuto", "ricevuta", "eseguito", "eseguita", "sct", "inst",
 ]);
 
 /**
