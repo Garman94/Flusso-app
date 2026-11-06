@@ -137,6 +137,19 @@ test("parola chiave proposta: il negozio, non il modo di pagamento", () => {
   assert.equal(ruleKeyword("12/09/2026 1234"), null);
 });
 
+test("parola chiave proposta: mai le frasi fisse della banca", () => {
+  // "disposto" proposto da "Bonifico disposto da INPS" finiva su tutti gli addebiti diretti
+  assert.equal(ruleKeyword("Bonifico disposto da INPS"), "inps");
+  assert.equal(ruleKeyword("Addebito diretto disposto a favore di ENEL ENERGIA S P A MANDATO MND123"), "enel");
+  assert.equal(ruleKeyword("Bonifico istantaneo da voi disposto a favore di Samira Gangemi"), "samira");
+  assert.equal(ruleKeyword("Stipendio O Pensione"), "stipendio");
+  // senza un nome vero meglio nessuna proposta che una regola su tutti i pagamenti
+  assert.equal(ruleKeyword("Pagamento Tramite Pos"), null);
+  assert.equal(ruleKeyword("Trasferimento Denaro BANCOMAT Pay"), null);
+  assert.equal(ruleKeyword("Pagamento tramite POS FARMACIA COMUNALE"), "farmacia");
+  assert.equal(ruleKeyword("Movimento Salvadanaio"), "salvadanaio");
+});
+
 test("importi: il punto delle migliaia c'è sempre, come nel browser", () => {
   // Node con le regole italiane recenti scriveva "2100,00 €" e il browser "2.100,00 €":
   // React segnalava la differenza (hydration) su ogni pagina con importi sopra i 1.000 €.
