@@ -158,6 +158,9 @@ const NOT_A_MERCHANT = new Set([
   // disposto a favore di…"): una regola "disposto" ha messo bollette e finanziamenti in Stipendio.
   "disposto", "disposta", "disposti", "istantaneo", "istantanea", "voi", "vostro", "vs", "ns",
   "mandato", "mand", "mnd", "ricevuto", "ricevuta", "eseguito", "eseguita", "sct", "inst",
+  // "Pagamento Tramite Pos" → regola "tramite" in Salute; "Trasferimento Denaro BANCOMAT Pay" →
+  // regola "trasferimento" in Tecnologia: avrebbero preso ogni pagamento POS e ogni Bancomat Pay.
+  "tramite", "trasferimento", "denaro", "pay", "movimento", "importo",
 ]);
 
 /**
