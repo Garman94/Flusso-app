@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { askConfirm } from "@/components/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { formatEuro } from "@/lib/calculations";
 import { parseAmount } from "@/lib/import-parse";
@@ -175,6 +176,8 @@ export function CarburantePanel({ userId, onBack }: { userId: string; onBack: ()
   }
 
   async function deleteRefuel(id: string) {
+    const r = refuels.find(x => x.id === id);
+    if (!(await askConfirm({ title: r ? `Eliminare il rifornimento del ${dateIT(r.date)}?` : "Eliminare questo rifornimento?" }))) return;
     const { error } = await createClient().from("vehicle_refuels").delete().eq("id", id);
     if (error) { toast.error(errorText(error.message)); return; }
     setRefuels(prev => prev.filter(r => r.id !== id));
@@ -202,6 +205,8 @@ export function CarburantePanel({ userId, onBack }: { userId: string; onBack: ()
   }
 
   async function deleteRoutine(id: string) {
+    const r = routines.find(x => x.id === id);
+    if (!(await askConfirm({ title: r ? `Togliere il tragitto "${r.name}"?` : "Togliere questo tragitto?", confirmLabel: "Togli" }))) return;
     const { error } = await createClient().from("vehicle_routines").delete().eq("id", id);
     if (error) { toast.error(errorText(error.message)); return; }
     setRoutines(prev => prev.filter(r => r.id !== id));
@@ -220,6 +225,8 @@ export function CarburantePanel({ userId, onBack }: { userId: string; onBack: ()
   }
 
   async function deletePause(id: string) {
+    const p = pauses.find(x => x.id === id);
+    if (!(await askConfirm({ title: p ? `Togliere la pausa ${dateIT(p.from_date)} → ${dateIT(p.to_date)}?` : "Togliere questa pausa?", confirmLabel: "Togli" }))) return;
     const { error } = await createClient().from("vehicle_pauses").delete().eq("id", id);
     if (error) { toast.error(errorText(error.message)); return; }
     setPauses(prev => prev.filter(p => p.id !== id));

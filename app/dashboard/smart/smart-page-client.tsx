@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { TrackOnMount } from "@/components/track-on-mount";
 import { PageTour } from "@/components/tour/page-tour";
 import { toast } from "sonner";
+import { askConfirm } from "@/components/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { aggregateSinkingFunds, addMonths, monthsPerCycle, monthsBetween, estimateGoalCompletion, computeDebtProgress, potsForSinkingFunds, sinkingFundInput } from "@/lib/calculations";
 import type { SinkingFundInput, SinkingFundProjection } from "@/lib/calculations";
@@ -706,6 +707,11 @@ export function SmartPageClient({
   }
 
   async function handleDeleteRecurring(id: string) {
+    const item = recurringItems.find(it => it.id === id);
+    const ok = await askConfirm(item?.debt_type
+      ? { title: `Eliminare la rata "${item.name}"?`, message: "Perdi anche importo totale, data di inizio e avanzamento del debito." }
+      : { title: item ? `Eliminare "${item.name}"?` : "Eliminare questa voce?" });
+    if (!ok) return;
     const { error } = await createClient().from("recurring_expenses").delete().eq("id", id);
     if (error) toast.error("Errore.");
     else { setRecurringItems(prev => prev.filter(it => it.id !== id)); toast.success("Rimossa."); }
@@ -804,14 +810,20 @@ export function SmartPageClient({
     setGSaving(false);
   }
 
-  async function handleDeleteGoal(id: string) {
-    const linked = goals.find(g => g.id === id)?.in_pot;
+  /** true se l'obiettivo è stato eliminato (l'utente può annullare dalla conferma). */
+  async function handleDeleteGoal(id: string): Promise<boolean> {
+    const goal = goals.find(g => g.id === id);
+    const linked = goal?.in_pot;
+    const ok = await askConfirm({
+      title: goal ? `Eliminare l'obiettivo "${goal.name}"?` : "Eliminare questo obiettivo?",
+      message: linked ? "Il salvadanaio e i suoi soldi restano." : undefined,
+    });
+    if (!ok) return false;
     const { error } = await createClient().from("goals").delete().eq("id", id);
-    if (error) toast.error("Errore.");
-    else {
-      setGoals(prev => prev.filter(g => g.id !== id));
-      toast.success(linked ? "Obiettivo eliminato: il salvadanaio e i suoi soldi restano." : "Eliminato.");
-    }
+    if (error) { toast.error("Errore."); return false; }
+    setGoals(prev => prev.filter(g => g.id !== id));
+    toast.success(linked ? "Obiettivo eliminato: il salvadanaio e i suoi soldi restano." : "Eliminato.");
+    return true;
   }
 
   // ── Transaction name suggestions ──────────────────────────────────────────
@@ -2810,7 +2822,7 @@ export function SmartPageClient({
           <BackButton onClick={() => goBack("list-goals")} />
           <h1 className="text-xl font-bold flex-1">{g.icon} {g.name}</h1>
           <button onClick={() => goEditGoal(g)} className="text-xs border rounded-lg px-2 py-1 hover:bg-muted/50">✏️</button>
-          <button onClick={() => { handleDeleteGoal(g.id); goBack("list-goals"); }} className="text-xs border rounded-lg px-2 py-1 hover:text-destructive">🗑</button>
+          <button onClick={async () => { if (await handleDeleteGoal(g.id)) goBack("list-goals"); }} className="text-xs border rounded-lg px-2 py-1 hover:text-destructive">🗑</button>
         </div>
 
         <div className="rounded-2xl border-2 p-5 flex flex-col gap-3">

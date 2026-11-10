@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { askConfirm } from "@/components/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { computePeriodRange, getCurrentPeriodAnchor } from "@/lib/period";
 
@@ -135,6 +136,8 @@ export function SmartClient({ userId, categories, transactions, payDay = 0, peri
   }
 
   async function handleDelete(id: string) {
+    const item = items.find(it => it.id === id);
+    if (!(await askConfirm({ title: item ? `Eliminare "${item.name}"?` : "Eliminare questa voce?" }))) return;
     setDeletingId(id);
     const supabase = createClient();
     const { error } = await supabase.from("budget_items").delete().eq("id", id);

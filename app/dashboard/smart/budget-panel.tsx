@@ -4,6 +4,7 @@ import { computePeriodRange, currentPeriod, previousPeriods } from "@/lib/period
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { askConfirm } from "@/components/confirm-dialog";
 import { formatEuro, classifyCategoryMonths, aggregateSinkingFunds, sinkingFundInput, type MonthSpend } from "@/lib/calculations";
 import { expectedAmount, isFixedExpense, planPayments, type PlanItem } from "@/lib/fixed-expenses";
 import { categoryKind } from "@/lib/money";
@@ -231,6 +232,7 @@ export function BudgetPanel({
   }
 
   async function removeNote(catId: string, year: number, month: number) {
+    if (!(await askConfirm({ title: "Rimuovere questa nota?", confirmLabel: "Rimuovi" }))) return;
     const key = noteKey(catId, year, month);
     const { error } = await createClient()
       .from("category_budget_notes")

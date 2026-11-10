@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { askConfirm } from "@/components/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { useDemoGuard } from "@/components/demo-context";
 import Link from "next/link";
@@ -105,6 +106,8 @@ export function ObiettiviClient({ userId, plan, initialGoals }: Props) {
 
   async function handleDelete(id: string) {
     if (demoGuard()) return;
+    const goal = goals.find(g => g.id === id);
+    if (!(await askConfirm({ title: goal ? `Eliminare l'obiettivo "${goal.name}"?` : "Eliminare questo obiettivo?" }))) return;
     const supabase = createClient();
     const { error } = await supabase.from("goals").delete().eq("id", id);
     if (error) {

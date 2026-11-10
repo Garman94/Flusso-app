@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { askConfirm } from "@/components/confirm-dialog";
 import { formatEuro } from "@/lib/calculations";
 import { useDemoGuard } from "@/components/demo-context";
 import {
@@ -116,7 +117,7 @@ export function SalvadanaiClient({ initialPots, familyMembers, potMembers, initi
 
   async function handleDelete(id: string) {
     if (demoGuard()) return;
-    if (!confirm("Eliminare questo salvadanaio? I movimenti verranno persi.")) return;
+    if (!(await askConfirm({ title: "Eliminare questo salvadanaio?", message: "I movimenti verranno persi." }))) return;
     setBusy(true);
     const res = await deletePot(id);
     setBusy(false);

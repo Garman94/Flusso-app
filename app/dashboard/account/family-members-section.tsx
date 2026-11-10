@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { askConfirm } from "@/components/confirm-dialog";
 import { IncomeWizard } from "@/components/income-wizard";
 import { useDemoGuard } from "@/components/demo-context";
 import { formatEuro, hasIncomeInfo, type IncomeInfo } from "@/lib/calculations";
@@ -125,6 +126,8 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
 
   async function handleDelete(id: string) {
     if (demoGuard()) return;
+    const m = members.find(x => x.id === id);
+    if (!(await askConfirm({ title: m ? `Togliere ${m.name} dalla famiglia?` : "Togliere questo membro?", confirmLabel: "Togli" }))) return;
     setDeletingId(id);
     const supabase = createClient();
     const { error } = await supabase.from("family_members").delete().eq("id", id);
