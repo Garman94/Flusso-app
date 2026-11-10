@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { askConfirm } from "@/components/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -405,6 +406,8 @@ export function BudgetClient({ userId, categories, transactions, payDay: _payDay
   }
 
   async function handleDelete(id: string) {
+    const item = items.find(it => it.id === id);
+    if (!(await askConfirm({ title: item ? `Eliminare "${item.name}"?` : "Eliminare questa voce?" }))) return;
     setDeletingId(id);
     const { error } = await createClient().from("recurring_expenses").delete().eq("id", id);
     if (error) toast.error("Errore nella cancellazione.");

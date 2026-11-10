@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { askConfirm } from "@/components/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { todayISO } from "@/lib/dates";
 import { formatEuro, monthsPerCycle } from "@/lib/calculations";
@@ -178,7 +179,7 @@ function FixedList({
   }
 
   async function remove(it: PlanItem) {
-    if (!window.confirm(`Eliminare "${it.name}"?`)) return;
+    if (!(await askConfirm({ title: `Eliminare "${it.name}"?` }))) return;
     const { error } = await createClient().from("recurring_expenses").delete().eq("id", it.id);
     if (error) { toast.error("Errore."); return; }
     setItems(prev => prev.filter(x => x.id !== it.id));

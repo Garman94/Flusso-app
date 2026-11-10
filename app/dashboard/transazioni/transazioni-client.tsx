@@ -3,6 +3,7 @@
 import { todayISO } from "@/lib/dates";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { askConfirm } from "@/components/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { ImportExcelModal } from "./import-excel-modal";
 import { ScreenshotModal } from "./screenshot-modal";
@@ -244,6 +245,11 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
 
   async function handleDelete(id: string) {
     if (demoGuard()) return;
+    const tx = transactions.find(t => t.id === id);
+    if (!(await askConfirm({
+      title: "Eliminare questo movimento?",
+      message: tx?.description ? `"${tx.description}"` : undefined,
+    }))) return;
     const supabase = createClient();
     const { error } = await supabase.from("transactions").delete().eq("id", id);
     if (error) {
@@ -419,6 +425,8 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
   }
 
   async function handleDeleteRule(id: string) {
+    const rule = displayRules.find(r => r.id === id);
+    if (!(await askConfirm({ title: rule ? `Eliminare la regola "${rule.find_text}"?` : "Eliminare questa regola?" }))) return;
     const supabase = createClient();
     const { error } = await supabase.from("display_rules").delete().eq("id", id);
     if (error) {
@@ -461,6 +469,8 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
   }
 
   async function handleDeleteCatRule(id: string) {
+    const rule = categoryRules.find(r => r.id === id);
+    if (!(await askConfirm({ title: rule ? `Eliminare la regola "${rule.value}"?` : "Eliminare questa regola?" }))) return;
     const result = await deleteCategoryRule(id);
     if (result.error) {
       toast.error("Errore nella cancellazione.");
