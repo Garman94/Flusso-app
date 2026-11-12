@@ -613,7 +613,8 @@ export type DebtProgress = {
  */
 export function computeDebtProgress(input: DebtInput, today: Date = new Date()): DebtProgress {
   const monthly = Math.max(input.monthlyAmount, 0.01);
-  const totalMonths = Math.max(1, Math.ceil(input.totalAmount / monthly));
+  // 1e-9: 150,15 / 50,05 in virgola mobile fa 3,0000000000000004 e darebbe una rata in più.
+  const totalMonths = Math.max(1, Math.ceil(input.totalAmount / monthly - 1e-9));
   const start = new Date(input.startDate + "T00:00:00");
   const endDate = addMonths(start, totalMonths - 1);
 

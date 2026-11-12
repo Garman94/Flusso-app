@@ -173,7 +173,7 @@ export function ContiClient({ accounts, txs, members, pots, unassigned, today }:
             {checking === a.id ? (
               <div className="flex flex-col gap-3 border-t pt-3">
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  Quanto c&apos;è oggi sul conto nell&apos;app della banca (senza salvadanai e accantonamenti, se la banca li tiene a parte)
+                  Quanto c&apos;è oggi sul conto nell&apos;app della banca (senza salvadanai e spese dell&apos;anno, se la banca li tiene a parte)
                   <input autoFocus inputMode="decimal" className={inputClass} placeholder="728,42" value={bankInput}
                     onChange={e => { setBankInput(e.target.value); setCheck(null); }} />
                 </label>
@@ -286,7 +286,7 @@ export function ContiClient({ accounts, txs, members, pots, unassigned, today }:
             </div>
           )}
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Quanto c&apos;è oggi sul conto (dall&apos;app della banca, senza salvadanai e accantonamenti se li tiene a parte)
+            Quanto c&apos;è oggi sul conto (dall&apos;app della banca, senza salvadanai e spese dell&apos;anno, se la banca li tiene a parte)
             <input inputMode="decimal" className={inputClass} placeholder="728,42" value={form.balance}
               onChange={e => setForm({ ...form, balance: e.target.value })} />
           </label>

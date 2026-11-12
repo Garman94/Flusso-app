@@ -7,6 +7,17 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Pianifica più chiara (2026-11-10)
+
+Dalla ricerca UX di novembre (fase 1, parte "Pianifica e parole"). Solo codice, nessuna migration e nessun dato cambiato.
+- **Copertina con lo stato**: ogni voce di Pianifica dice a che punto sei invece di cosa serve ("Prossima: Luce e gas il 21 nov", "606 € rimasti", "Vacanza tra 5 mesi", "Nuovo laptop: 60%", "2.800 € messi da parte"; Rate: quante sono in corso e quando finisce l'ultima). Calcoli in `lib/plan-cover.ts` (test `tests/plan-cover.test.ts`). Senza dati resta la riga "a cosa serve". Auto e Luce e gas non hanno ancora una riga di stato.
+- **Rate "quanto pago al mese e fino a quando"** (`lib/debt-plan.ts`, test `tests/debt-plan.test.ts`): il modulo chiede la rata e il mese dell'ultima (la prima è facoltativa); da lì ricava `debt_total_amount` (rata × numero di rate) e `debt_start_date` (giorno 1), così `computeDebtProgress` e il resto non cambiano. Senza la prima rata, pagato e totale contano da questo mese. Resta la scelta "So l'importo totale" (il vecchio modo). Una rata vecchia si apre in "fino a quando" se i numeri tornano; risalvandola il totale diventa rata × rate. `end_date` ora è il giorno di scadenza dell'ultimo mese. In `computeDebtProgress` una tolleranza di 1e-9 evita una rata in più per gli arrotondamenti (50,05 × 3).
+- **Parole**: "Accantonamenti" si legge «Spese dell'anno (assicurazione, bollo…)» in Pianifica, card in dashboard, riepilogo, Budget e Conti; recupero = «Stai recuperando: questo mese metti un po' di più», quota a regime = «Dal mese prossimo / Da mag 2027: X € al mese» (`steadyFrom`: l'ultima scadenza in recupero), «Dovresti avere X · ne hai Y (+Z)» al posto di Previsto/Delta. **La categoria nel database e i nomi nel codice restano "Accantonamenti"**: in Transazioni e nell'elenco del Budget la categoria si chiama ancora così. "Sei tu" → «Questa persona sono io», "Modalità smanettone" → «Funzioni avanzate». Restano con le vecchie parole `emergency-button.tsx` e i passi del tour (`lib/tour-steps.ts`), di altre sessioni.
+- **Altro**: luce ⚡ → 💡 (l'auto resta ⛽); refuso in Conti ("se la banca li tiene a parte"); i pulsanti toccati sono alti almeno 44 px (`min-h-11`), anche l'interruttore di Funzioni avanzate (area di tocco più grande, disegno uguale).
+- Rollback: revert della PR (nessuna migration).
+
+---
+
 ## Estratto conto PDF letto dall'AI (2026-10-28)
 
 Intervento 1 della top 5 (`docs/analisi-concorrenti.md`): import italiano senza attrito. In Transazioni → Aggiungi la voce "Foto o PDF" (Premium, `screenshot-modal.tsx`) accetta anche l'estratto conto in PDF di qualsiasi banca.
