@@ -67,13 +67,14 @@ export function NotificationsBell() {
     <div ref={wrapRef} className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className="relative flex items-center justify-center h-8 w-8 rounded-md hover:bg-muted/60 transition-colors"
-        aria-label="Notifiche"
+        className="relative flex items-center justify-center h-11 w-11 rounded-md hover:bg-muted/60 transition-colors"
+        aria-label={count > 0 ? `Notifiche: ${count} da leggere` : "Notifiche"}
+        aria-expanded={open}
         data-tour="notifications-bell"
       >
-        <Bell size={16} className="text-muted-foreground" />
+        <Bell size={16} className="text-muted-foreground" aria-hidden="true" />
         {count > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center">
+          <span aria-hidden="true" className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center">
             {count}
           </span>
         )}
@@ -96,7 +97,7 @@ export function NotificationsBell() {
               <ul className="divide-y">
                 {items.map(n => (
                   <li key={n.id} className="p-3 flex gap-2.5">
-                    <span className="text-lg leading-none mt-0.5">{NOTIFICATION_ICON[n.type]}</span>
+                    <span className="text-lg leading-none mt-0.5" aria-hidden="true">{NOTIFICATION_ICON[n.type]}</span>
                     <div className="flex-1 min-w-0 flex flex-col gap-1">
                       <p className="text-sm font-semibold">{n.title}</p>
                       <p className="text-xs text-muted-foreground">{n.message}</p>
@@ -112,8 +113,8 @@ export function NotificationsBell() {
                     </div>
                     <button
                       onClick={() => dismiss(n.id)}
-                      className="text-muted-foreground hover:text-foreground text-xs shrink-0"
-                      aria-label="Ignora"
+                      className="-mr-2 -mt-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground text-xs"
+                      aria-label={`Ignora: ${n.title}`}
                     >
                       ✕
                     </button>

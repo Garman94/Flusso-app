@@ -17,7 +17,11 @@ function formatPrice(price: number): string {
   return price.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-export function PricingCard({ plan }: { plan: PricingPlan }) {
+/**
+ * `note`: riga in evidenza sotto il prezzo (per il Founder i posti: "Solo per i primi 50").
+ * `soldOut`: offerta finita, al posto del pulsante una scritta.
+ */
+export function PricingCard({ plan, note, soldOut }: { plan: PricingPlan; note?: string; soldOut?: boolean }) {
   return (
     <div
       className={cn(
@@ -58,17 +62,28 @@ export function PricingCard({ plan }: { plan: PricingPlan }) {
         {plan.price > 0 && (
           <p className="text-xs text-muted-foreground">IVA inclusa</p>
         )}
+        {note && (
+          <p className="self-start rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+            {note}
+          </p>
+        )}
         <p className="text-sm text-muted-foreground">{plan.description}</p>
       </div>
 
       {/* CTA */}
-      <Button
-        asChild
-        variant={plan.highlighted ? "default" : "outline"}
-        className="w-full"
-      >
-        <Link href={plan.href}>{plan.cta}</Link>
-      </Button>
+      {soldOut ? (
+        <p className="w-full rounded-md border border-dashed px-4 py-2.5 text-center text-sm text-muted-foreground">
+          Posti esauriti
+        </p>
+      ) : (
+        <Button
+          asChild
+          variant={plan.highlighted ? "default" : "outline"}
+          className="w-full min-h-11"
+        >
+          <Link href={plan.href}>{plan.cta}</Link>
+        </Button>
+      )}
 
       {/* Features */}
       <ul className="flex flex-col gap-3">

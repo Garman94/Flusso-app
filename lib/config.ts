@@ -5,6 +5,9 @@
 /** Giorni di Premium inclusi alla registrazione (vedi migration 036 e lib/plans.ts). */
 export const TRIAL_DAYS = 14;
 
+/** L'offerta Founder vale solo per i primi N account (conteggio dal server: lib/founder-seats-server.ts). */
+export const FOUNDER_SEATS = 50;
+
 export const siteConfig = {
   name: "Flusso",
   tagline: "Controlla le tue finanze, raggiungi i tuoi obiettivi",
@@ -21,13 +24,15 @@ export const siteConfig = {
       price: 0,
       description: `Inizia subito. Nessuna carta di credito richiesta. Per i primi ${TRIAL_DAYS} giorni hai anche Premium.`,
       features: [
+        "Import del file Excel o CSV della banca (3 al mese)",
         "Transazioni manuali illimitate",
-        "Import dell'estratto conto (3 file al mese)",
-        "Dashboard con saldo, entrate e uscite",
+        "Dashboard: saldo, entrate, uscite e quanto puoi spendere",
         "Spese fisse: affitto, bollette, abbonamenti",
-        "Categorie e regole personalizzate",
-        "1 obiettivo di risparmio",
-        "Esporta i tuoi movimenti in CSV",
+        "Conti: il saldo che torna con quello della banca",
+        "Salvadanai e 1 obiettivo di risparmio",
+        "Categorie automatiche e regole tue",
+        "Riepilogo di ogni mese ed export in CSV",
+        "Chat diretta con me",
       ],
       cta: "Comincia ora — è gratis",
       href: "/auth/sign-up",
@@ -39,10 +44,12 @@ export const siteConfig = {
       description: "Per tenere sotto controllo anche le spese future.",
       features: [
         "Tutto del piano Gratuito",
-        "Import illimitati dell'estratto conto",
-        "Import da screenshot (AI)",
+        "Import illimitati del file della banca",
+        "Estratto conto in PDF o foto, letto dall'AI",
         "Pianifica: budget per categoria, rate e accantonamenti",
-        "Obiettivi e salvadanai illimitati",
+        "Bollette di luce e gas lette dall'AI",
+        "Auto e carburante: consumi e costo al km",
+        "Obiettivi illimitati",
         "30 giorni soddisfatti o rimborsati",
       ],
       cta: `Prova ${TRIAL_DAYS} giorni gratis`,
@@ -54,10 +61,9 @@ export const siteConfig = {
       price: 49,
       description: "Accesso a vita. Su richiesta, attivato a mano da me.",
       features: [
-        "Tutto di Premium",
-        "Accesso a vita — paghi una volta",
+        "Tutto di Premium, per sempre",
+        "Paghi una volta sola",
         "Accesso anticipato alle nuove funzionalità",
-        "Supporto diretto con me",
         "Voto sulle nuove funzionalità",
         "Registrati e scrivimi dalla chat in Account",
       ],

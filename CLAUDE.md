@@ -7,6 +7,20 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Si capisce subito: benvenuto, landing, prezzi, barra e campanella (2026-11-10)
+
+Fase 1 della ricerca sull'usabilità: chi arriva deve capire in un minuto cosa fa Flusso e vedere subito un numero suo.
+- **Benvenuto** (`app/onboarding/page.tsx`): nome, poi tre domande che si possono saltare: banca (riusa `bank-export-guide.tsx` senza modificarlo, il clic sulla banca la segna), giorno dello stipendio (0 = mese solare) e saldo di oggi. Alla fine "Puoi spendere circa X fino al …" e il tasto per caricare il file. La domanda "Come userai Flusso?" non c'è più: `profiles.usage_type` resta ma non si scrive.
+  - Stima in `lib/first-estimate.ts` (`firstSpendEstimate`, test in `tests/first-estimate.test.ts`): periodo di paga da `currentPeriod`, tiene da parte il 10% (`ESTIMATE_RESERVE_SHARE`), arrotonda per difetto alle decine, euro al giorno per i giorni che restano. Non conosce spese fisse né entrate in arrivo, e la pagina lo dice.
+  - Salva `full_name`, `pay_day` e il saldo come la card della dashboard (`balanceAtPeriodStart`: quello di oggi riportato a inizio periodo togliendo i movimenti già registrati, in `period_starting_balance`/`_date`), poi `onboarded_at`. Restano `?preview=1` (nessuna scrittura), la demo che non scrive e l'evento `onboarding_completed` (`bank`, `has_payday`, `has_balance`, `dest`: mai importi). "Scrivi a Marco" della guida chiude il benvenuto prima di andare in Account, altrimenti il layout lo rimanderebbe qui.
+- **Landing e prezzi** (`app/page.tsx`, `app/pricing/page.tsx`, `components/pricing-card.tsx`, liste in `lib/config.ts`): le funzioni elencate sono quelle vere di ogni piano (Conti, Salvadanai, Riepilogo e chat sono gratis; PDF e foto letti dall'AI, bollette, carburante e Pianifica sono Premium). L'eroe non promette più gli accantonamenti a chi è sul piano gratuito.
+- **Posti Founder** (`lib/founder-seats.ts`, `lib/founder-seats-server.ts`, test in `tests/founder-seats.test.ts`): l'offerta da 49 € vale per i primi `FOUNDER_SEATS` = 50. I posti presi si contano dal server (profili con `plan = 'founder'`, service role, `unstable_cache` di un'ora). Il numero si mostra solo quando ne restano meno di 10 (`FOUNDER_SEATS_SHOW_BELOW`), altrimenti "Solo per i primi 50"; esauriti, il tasto sparisce. **Da confermare con Marco**: soglia e conteggio (i founder comprendono anche i Premium regalati). Senza chiave o database il testo resta quello generico.
+- **Barra e campanella**: tasti di almeno 44 px (`h-11`/`min-h-11`) e nomi per i lettori di schermo in `navbar.tsx`, `auth-button.tsx`, `logout-button.tsx` (niente più pulsante dentro un link), `theme-switcher.tsx`, `notifications-bell.tsx` ("Notifiche: N da leggere", ✕ "Ignora: …") e `dashboard-nav-links.tsx` (solo misure, `aria-current` e nomi; i pallini delle guide hanno un'area di tocco più grande ma non 44 px). Il logo dentro `app/dashboard/layout.tsx` è rimasto com'era.
+- **Migration 050** (`050_campanella_pulita.sql`, **non ancora applicata**): spegne (`is_active = false`, niente cancellato) le due notifiche del 2026-09-11 che non dicono più il vero, il benvenuto con "tutti i formati Excel" e il consiglio sulla "sezione Smart". Quella che chiede un parere resta accesa. Provata solo con una SELECT in sola lettura (trova esattamente quelle due), non in transazione annullata. Va applicata al "pubblica".
+- Rollback: prima il codice (Vercel → Instant Rollback, o `git revert` del merge), poi `supabase/rollback/050_campanella_pulita_down.sql` (riaccende le due notifiche).
+
+---
+
 ## Estratto conto PDF letto dall'AI (2026-10-28)
 
 Intervento 1 della top 5 (`docs/analisi-concorrenti.md`): import italiano senza attrito. In Transazioni → Aggiungi la voce "Foto o PDF" (Premium, `screenshot-modal.tsx`) accetta anche l'estratto conto in PDF di qualsiasi banca.
@@ -833,6 +847,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `041_emergenza.sql` | Campo `saving_offset` (default 0) su `recurring_expenses` — già da parte all'inizio del piano, scritto solo dall'Emergenza |
 | `042_obiettivi_salvadanai.sql` | Trigger `sync_goal_from_pot`: gli obiettivi collegati e allineati seguono il saldo del salvadanaio. Nessun dato modificato |
 | `043_demo_obiettivi_salvadanai.sql` | Solo demo: `reseed_demo_salvadanai()`, ogni obiettivo col suo salvadanaio e accantonamenti nel salvadanaio "Accantonamenti" |
+| `050_campanella_pulita.sql` | Spegne (`is_active = false`) le due notifiche della campanella superate (formati Excel, "sezione Smart"). Nessun dato cancellato. Rollback: `supabase/rollback/050_campanella_pulita_down.sql` |
 
 ---
 
