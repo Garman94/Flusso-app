@@ -7,6 +7,19 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Modifica dei movimenti e pagina Transazioni (2026-11-10)
+
+Fase 1 della ricerca UX ("si capisce subito"). Solo la pagina Transazioni, nessuna migration.
+- **Pannello di modifica** (`transazioni/transaction-sheet.tsx`): si tocca una riga (telefono e computer) e si apre dal basso sul telefono, al centro sul computer (portale su `body`, `z-[60]`). Campi: Uscita/Entrata, importo (sempre positivo, il segno lo dà il tasto), categoria (le 6 più usate con lo stesso segno, `topCategories`, più "Altre categorie…"), data, descrizione, persona (solo se ci sono componenti), conto (solo se ci sono conti), nota. "Fatto" chiama `updateTransaction` (`transazioni/actions.ts`: controlla utente, categoria, persona e conto), poi, se è cambiata la categoria, compare il solito "Vuoi che Flusso se lo ricordi?". "Elimina movimento" in fondo chiede conferma (`askConfirm`). Errori con toast; nella demo `useDemoGuard` blocca il salvataggio.
+- **Conti e ancora**: il pannello dice come cambia il saldo di oggi del conto (`accountBalanceImpact`) e avvisa quando il movimento è del giorno dell'ancora o prima, quindi il saldo controllato con la banca non cambia (`beforeAnchor`). Cambiando conto la persona segue il conto, se seguiva quello di prima (come nell'import).
+- **Tolti** la ✕ su ogni riga (piccola, accanto all'importo, e ora che tutta la riga apre il pannello facile da toccare per sbaglio: si elimina dal pannello) e la "modalità modifica categorie" (`?edit=1` ora non fa niente): pannello, scelta della categoria sulla riga per i movimenti senza categoria, "Categorizza", "Ricorda" e Regole fanno già tutto.
+- **Testi**: "Netto" → "Ti restano X (entrate − uscite)"; "Neutra" → "Spostamento tra conti" (senza categoria va in Spostamenti, così non conta tra entrate e uscite). La categoria Spostamenti si mostra come "Giroconti e spostamenti" (`categoryLabel`), **solo in questa pagina e solo nel testo**: nel database il nome resta, la logica lo usa.
+- **Tocco e accessibilità**: tutto ciò che si tocca è alto almeno 44 px (`min-h-11`), i campi di testo hanno `text-base` sul telefono (niente zoom su iPhone), `aria-label` sui tasti con sola icona, `aria-pressed` sui filtri.
+- Calcoli in `lib/transaction-edit.ts`, test in `tests/modifica-movimento.test.ts`. Evento `transaction_edited` (`fields`: i nomi dei campi cambiati, mai i valori).
+- Rollback: revert della PR (solo codice, nessun dato toccato).
+
+---
+
 ## Pianifica più chiara (2026-11-10)
 
 Dalla ricerca UX di novembre (fase 1, parte "Pianifica e parole"). Solo codice, nessuna migration e nessun dato cambiato.

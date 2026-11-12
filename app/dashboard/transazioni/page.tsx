@@ -9,7 +9,7 @@ import { getCurrentPeriodAnchor } from "@/lib/period";
 async function TransazioniContent({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string; edit?: string }>;
+  searchParams: Promise<{ filter?: string }>;
 }) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
@@ -19,7 +19,6 @@ async function TransazioniContent({
   const params = await searchParams;
   const initialFilter =
     params.filter === "uncategorized" ? "senza_cat" : "all";
-  const initialEditMode = params.edit === "1";
 
   const monthStart = new Date();
   monthStart.setDate(1);
@@ -65,7 +64,7 @@ async function TransazioniContent({
     // Dizionario condiviso dei negozi (migration 044): per la categorizzazione negli import
     supabase.from("merchant_dictionary").select("keyword, category_name"),
     // Conti (migration 048): l'import chiede da quale conto viene il file
-    supabase.from("accounts").select("id, name, member_id, bank_ref").eq("archived", false).order("created_at"),
+    supabase.from("accounts").select("id, name, member_id, bank_ref, anchor_date").eq("archived", false).order("created_at"),
   ]);
 
   const payDay: number = profileRes.data?.pay_day ?? 0;
@@ -82,7 +81,6 @@ async function TransazioniContent({
       initialDisplayRules={(displayRulesRes.data ?? []) as unknown as DisplayRule[]}
       initialCategoryRules={(categoryRulesRes.data ?? []) as unknown as CategoryRule[]}
       initialFilter={initialFilter}
-      initialEditMode={initialEditMode}
       payDay={payDay}
       periodYear={periodYear}
       periodMonth={periodMonth}
