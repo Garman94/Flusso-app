@@ -125,11 +125,11 @@ export function RecapGroups({ groups, total }: { groups: SpendingGroups; total: 
 
   if (groups.accantonamenti) {
     list.push({
-      key: "accantonamenti", icon: "🏦", label: "Accantonamenti", color: "#10b981",
+      key: "accantonamenti", icon: "🏦", label: "Spese dell'anno", color: "#10b981",
       spent: groups.accantonamenti.spent, planned: null,
       status: groups.accantonamenti.spent >= 0
-        ? <span className="text-muted-foreground">messi da parte per le spese dell&apos;anno</span>
-        : <span className="text-muted-foreground">ripresi per pagare le spese dell&apos;anno: li avevi già contati quando li hai messi da parte</span>,
+        ? <span className="text-muted-foreground">messi da parte (assicurazione, bollo…)</span>
+        : <span className="text-muted-foreground">ripresi per pagarle: li avevi già contati quando li hai messi da parte</span>,
       details: null,
     });
   }

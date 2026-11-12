@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { askConfirm } from "@/components/confirm-dialog";
 import { formatEuro, classifyCategoryMonths, aggregateSinkingFunds, sinkingFundInput, type MonthSpend } from "@/lib/calculations";
 import { expectedAmount, isFixedExpense, planPayments, type PlanItem } from "@/lib/fixed-expenses";
-import { categoryKind } from "@/lib/money";
+import { isBudgetCategory, netSpent, budgetSpend, budgetTotals } from "@/lib/plan-cover";
 
 type Category = { id: string; name: string; color: string; icon: string };
 type Tx = { date: string; amount: number; category_id?: string | null; description?: string | null; merchant?: string | null };
@@ -34,16 +34,14 @@ type Props = {
   onBack: () => void;
   onOpenAccantonamenti?: () => void;
   onOpenFixed?: () => void;
+  /** dopo il salvataggio di un budget: la copertina di Pianifica aggiorna "X € rimasti" */
+  onBudgetSaved?: (categoryId: string, amount: number) => void;
 };
 
 const HISTORY_MONTHS = 12;
 const ACCANTONAMENTI_NAME = "accantonamenti";
-// Categorie di trasferimento interno e reddito: non hanno senso come voce di budget.
-// Categorie di entrata e di giroconto (lib/money.ts): non hanno senso come voce di budget.
-const isBudgetCategory = (name: string) => categoryKind(name) === "expense";
-
-/** Spesa netta: le spese meno i rimborsi della stessa categoria (vedi lib/money.ts), mai sotto zero. */
-const netSpent = (txs: Tx[]) => Math.max(0, txs.reduce((s, t) => s - Number(t.amount), 0));
+// isBudgetCategory, netSpent, budgetSpend e budgetTotals stanno in lib/plan-cover.ts:
+// la copertina di Pianifica fa lo stesso conto per "X € rimasti".
 
 /** Etichetta di un periodo dello storico (month 1-12): il mese, o l'intervallo se si parte dal giorno di paga. */
 function periodLabel(payDay: number, year: number, month: number) {
@@ -61,7 +59,7 @@ function noteKey(categoryId: string, year: number, month: number) {
 
 export function BudgetPanel({
   userId, categories, transactions, recurringItems, planItems = [], piggyBalance, payDay,
-  initialBudgets, initialNotes, onBack, onOpenAccantonamenti, onOpenFixed,
+  initialBudgets, initialNotes, onBack, onOpenAccantonamenti, onOpenFixed, onBudgetSaved,
 }: Props) {
   const budgetCategories = useMemo(
     () => categories.filter(c => isBudgetCategory(c.name)),
@@ -135,24 +133,14 @@ export function BudgetPanel({
     return map;
   }, [planItems]);
 
-  const currentSpend = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const c of budgetCategories) {
-      map[c.id] = netSpent(transactions.filter(t => t.category_id === c.id && t.date >= curFrom && t.date <= curTo && !planPaid.has(t)));
-    }
-    return map;
-  }, [budgetCategories, transactions, curFrom, curTo, planPaid]);
-
-  const totalBudget = useMemo(
-    () => budgetCategories.reduce((s, c) => {
-      const b = c.id === accantonamentiId ? sinkingSummary.this_month_total : (budgets[c.id] ?? 0);
-      return s + b;
-    }, 0),
-    [budgetCategories, budgets, accantonamentiId, sinkingSummary.this_month_total]
+  const currentSpend = useMemo(
+    () => budgetSpend(budgetCategories, transactions, curFrom, curTo, planPaid),
+    [budgetCategories, transactions, curFrom, curTo, planPaid],
   );
-  const totalSpent = useMemo(
-    () => budgetCategories.reduce((s, c) => s + (currentSpend[c.id] ?? 0), 0),
-    [budgetCategories, currentSpend]
+
+  const { budget: totalBudget, spent: totalSpent } = useMemo(
+    () => budgetTotals(budgetCategories, budgets, currentSpend, accantonamentiId, sinkingSummary.this_month_total),
+    [budgetCategories, budgets, currentSpend, accantonamentiId, sinkingSummary.this_month_total],
   );
 
   const category = budgetCategories.find(c => c.id === detailId) ?? null;
@@ -208,6 +196,7 @@ export function BudgetPanel({
     setSavingBudget(false);
     if (error) { toast.error(`Errore: ${error.message}`); return; }
     setBudgets(prev => ({ ...prev, [catId]: amt }));
+    onBudgetSaved?.(catId, amt);
     setEditingBudget(false);
     toast.success("Budget aggiornato!");
   }
@@ -260,7 +249,7 @@ export function BudgetPanel({
             {!isAccantonamenti && !editingBudget && (
               <button
                 onClick={() => { setEditingBudget(true); setBudgetInput(budget > 0 ? String(budget).replace(".", ",") : ""); }}
-                className="text-xs text-primary underline hover:no-underline"
+                className="min-h-11 px-2 text-xs text-primary underline hover:no-underline"
               >
                 Modifica
               </button>
@@ -270,11 +259,11 @@ export function BudgetPanel({
             <>
               <span className="text-2xl font-bold tabular-nums">{formatEuro(budget)}</span>
               <p className="text-xs text-muted-foreground">
-                🔒 Calcolato automaticamente dalla quota mensile consigliata in Smart → Accantonamenti — non è modificabile qui, per evitare due numeri diversi per la stessa cosa.
-                {onOpenAccantonamenti && (
-                  <>{" "}<button type="button" onClick={onOpenAccantonamenti} className="text-primary underline hover:no-underline">Vai ad Accantonamenti →</button></>
-                )}
+                🔒 Lo calcola Flusso: è quello che ti consiglia di mettere da parte ogni mese in Pianifica → Spese dell&apos;anno. Non si cambia qui, così non ci sono due numeri diversi per la stessa cosa.
               </p>
+              {onOpenAccantonamenti && (
+                <button type="button" onClick={onOpenAccantonamenti} className="min-h-11 self-start text-sm text-primary underline hover:no-underline">Vai a Spese dell&apos;anno →</button>
+              )}
             </>
           ) : editingBudget ? (
             <div className="flex flex-col gap-2">

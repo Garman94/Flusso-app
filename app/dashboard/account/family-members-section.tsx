@@ -157,7 +157,7 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
         {!showForm && (
           <button
             onClick={() => { setEditingId(null); setShowForm(true); }}
-            className="text-sm bg-primary text-primary-foreground rounded-md px-3 py-1.5 hover:bg-primary/90 transition-colors shrink-0"
+            className="min-h-11 text-sm bg-primary text-primary-foreground rounded-md px-3 py-1.5 hover:bg-primary/90 transition-colors shrink-0"
           >
             + Aggiungi
           </button>
@@ -165,7 +165,7 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
       </div>
 
       <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-        💡 Aggiungi anche <strong>te stesso</strong>{" "}come primo componente e spunta &quot;Sei tu&quot;: da
+        💡 Aggiungi anche <strong>te stesso</strong>{" "}come primo componente e spunta &quot;Questa persona sono io&quot;: da
         quando esiste almeno un componente, l&apos;import di transazioni e i salvadanai condivisi chiedono
         sempre di scegliere una persona precisa, senza più un &quot;Io&quot; generico — e il tuo reddito si
         gestisce da lì invece che nella sezione &quot;Il tuo reddito&quot; qui sopra.
@@ -215,7 +215,7 @@ export function FamilyMembersSection({ userId }: { userId: string }) {
               className="mt-0.5 accent-primary"
             />
             <span>
-              <span className="font-medium">Sei tu</span>{" "}(il proprietario dell&apos;account)
+              <span className="font-medium">Questa persona sono io</span>{" "}(il proprietario dell&apos;account)
               <span className="block text-xs text-muted-foreground">
                 Il reddito si gestisce da qui invece che in &quot;Il tuo reddito&quot;. Solo un componente può esserlo.
               </span>
