@@ -15,6 +15,9 @@ import { computePeriodRange, getCurrentPeriodAnchor } from "@/lib/period";
 import { PageTour } from "@/components/tour/page-tour";
 import { useDemoGuard } from "@/components/demo-context";
 import { normalizeText, ruleKeyword } from "@/lib/categorize";
+import { categoryLabel } from "@/lib/transaction-edit";
+import type { EditableField } from "@/lib/transaction-edit";
+import { TransactionSheet } from "./transaction-sheet";
 
 export type Category = { id: string; name: string; color: string; icon: string };
 export type FamilyMember = { id: string; name: string; color: string; is_owner?: boolean | null };
@@ -27,6 +30,8 @@ export type Transaction = {
   notes: string | null;
   category_id: string | null;
   member_id: string | null;
+  /** conto (migration 048) */
+  account_id?: string | null;
   source: string;
   categories: Category | null;
   family_members: FamilyMember | null;
@@ -90,16 +95,15 @@ type Props = {
   /** dizionario condiviso dei negozi (migration 044) */
   dictionary?: DictionaryEntry[];
   /** conti (migration 048) */
-  accounts?: { id: string; name: string; member_id: string | null; bank_ref?: string | null }[];
+  accounts?: { id: string; name: string; member_id: string | null; bank_ref?: string | null; anchor_date?: string | null }[];
   powerUser?: boolean;
   initialFilter?: FilterType;
-  initialEditMode?: boolean;
   payDay?: number;
   periodYear?: number;
   periodMonth?: number;
 };
 
-export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], dictionary = [], accounts = [], powerUser = false, initialFilter = "all", initialEditMode = false, payDay = 0, periodYear, periodMonth }: Props) {
+export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initialTransactions, initialUncategorized: _initialUncategorized, initialDisplayRules, initialCategoryRules, categories: initialCategories, familyMembers = [], dictionary = [], accounts = [], powerUser = false, initialFilter = "all", payDay = 0, periodYear, periodMonth }: Props) {
   const demoGuard = useDemoGuard();
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
@@ -113,7 +117,8 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
   const [newCatIcon, setNewCatIcon] = useState("");
   const [newCatColor, setNewCatColor] = useState("#6366f1");
   const [savingCat, setSavingCat] = useState(false);
-  const [editMode, setEditMode] = useState(initialEditMode);
+  // Movimento aperto nel pannello di modifica (tocco su una riga)
+  const [editing, setEditing] = useState<Transaction | null>(null);
   const [filter, setFilter] = useState<FilterType>(initialFilter);
   const listRef = useRef<HTMLDivElement>(null);
   const [displayRules, setDisplayRules] = useState<DisplayRule[]>(initialDisplayRules);
@@ -213,6 +218,8 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
     const supabase = createClient();
     const raw = Math.abs(parseFloat(amount.replace(",", ".")));
     const numAmount = txType === "entrata" ? raw : txType === "uscita" ? -raw : raw;
+    // Uno spostamento tra conti senza categoria va in "Spostamenti": così non conta tra entrate e uscite.
+    const transferCategoryId = categories.find(c => normalizeText(c.name) === "spostamenti")?.id;
 
     const { data, error } = await supabase
       .from("transactions")
@@ -221,7 +228,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
         date,
         amount: numAmount,
         description: description.trim(),
-        category_id: categoryId || null,
+        category_id: categoryId || (txType === "neutra" ? transferCategoryId : null) || null,
         notes: notes.trim() || null,
         source: "manual",
       })
@@ -243,20 +250,32 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
     setSubmitting(false);
   }
 
-  async function handleDelete(id: string) {
-    if (demoGuard()) return;
+  /** Elimina un movimento (dal pannello di modifica). true se è stato eliminato. */
+  async function handleDelete(id: string): Promise<boolean> {
+    if (demoGuard()) return false;
     const tx = transactions.find(t => t.id === id);
     if (!(await askConfirm({
       title: "Eliminare questo movimento?",
       message: tx?.description ? `"${tx.description}"` : undefined,
-    }))) return;
+      confirmLabel: "Elimina",
+    }))) return false;
     const supabase = createClient();
     const { error } = await supabase.from("transactions").delete().eq("id", id);
     if (error) {
       toast.error("Errore nella cancellazione.");
-    } else {
-      setTransactions(prev => prev.filter(t => t.id !== id));
-      toast.success("Transazione eliminata.");
+      return false;
+    }
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    toast.success("Movimento eliminato.");
+    return true;
+  }
+
+  /** Il pannello ha salvato: aggiorna la riga e, se è cambiata la categoria, propone "Ricorda". */
+  function handleSheetSaved(updated: Transaction, changed: EditableField[]) {
+    setTransactions(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)));
+    setEditing(null);
+    if (changed.includes("category_id") && updated.category_id) {
+      proposeRemember(updated.id, updated.description, updated.category_id);
     }
   }
 
@@ -272,13 +291,14 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
     return (
       <select
         defaultValue=""
+        onClick={e => e.stopPropagation()}
         onChange={e => { if (e.target.value) handleCategoryChange(t.id, e.target.value); }}
-        aria-label="Scegli la categoria"
-        className={`border border-amber-500/60 bg-amber-500/10 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 ${className}`}
+        aria-label={`Scegli la categoria di ${t.description}`}
+        className={`min-h-11 border border-amber-500/60 bg-amber-500/10 rounded-lg px-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 ${className}`}
       >
         <option value="">🏷️ Scegli categoria…</option>
         {categories.map(c => (
-          <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+          <option key={c.id} value={c.id}>{c.icon} {categoryLabel(c.name)}</option>
         ))}
       </select>
     );
@@ -306,14 +326,18 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
 
     if (newCategoryId) {
       const tx = transactions.find(t => t.id === txId);
-      const kw = tx ? ruleKeyword(tx.description ?? "") : null;
-      const known = kw && categoryRules.some(r => normalizeText(r.value) === normalizeText(kw));
-      if (kw && !known) {
-        const nkw = normalizeText(kw);
-        const similar = transactions.filter(t => t.id !== txId && !t.category_id && normalizeText(t.description ?? "").includes(nkw)).length;
-        setRememberPrompt({ keyword: kw, categoryId: newCategoryId, similar });
-      }
+      if (tx) proposeRemember(txId, tx.description, newCategoryId);
     }
+  }
+
+  /** Dopo una categoria scelta a mano: "Vuoi che Flusso se lo ricordi?" per i movimenti simili. */
+  function proposeRemember(txId: string, description: string | null, categoryId: string) {
+    const kw = ruleKeyword(description ?? "");
+    if (!kw) return;
+    if (categoryRules.some(r => normalizeText(r.value) === normalizeText(kw))) return;
+    const nkw = normalizeText(kw);
+    const similar = transactions.filter(t => t.id !== txId && !t.category_id && normalizeText(t.description ?? "").includes(nkw)).length;
+    setRememberPrompt({ keyword: kw, categoryId, similar });
   }
 
   async function handleRemember() {
@@ -365,7 +389,8 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const matchesDesc = t.description.toLowerCase().includes(q);
-      const matchesCat  = t.categories?.name?.toLowerCase().includes(q) ?? false;
+      const matchesCat  = categoryLabel(t.categories?.name).toLowerCase().includes(q)
+        || (t.categories?.name?.toLowerCase().includes(q) ?? false);
       if (!matchesDesc && !matchesCat) return false;
     }
     return true;
@@ -479,14 +504,6 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
     }
   }
 
-  function enterEditMode() {
-    setEditMode(true);
-  }
-
-  function exitEditMode() {
-    setEditMode(false);
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <PageTour path="/dashboard/transazioni" />
@@ -518,7 +535,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           <div className="bg-background border rounded-xl p-6 max-w-sm w-full mx-4 flex flex-col gap-4 shadow-xl">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-lg">Aggiungi</h2>
-              <button onClick={() => setShowAddModal(false)} className="text-muted-foreground hover:text-foreground transition-colors text-xl leading-none">✕</button>
+              <button onClick={() => setShowAddModal(false)} aria-label="Chiudi" className="min-h-11 min-w-11 -mr-2 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors text-xl leading-none">✕</button>
             </div>
             <p className="text-sm text-muted-foreground">Cosa vuoi aggiungere?</p>
             <div className="grid grid-cols-2 gap-3">
@@ -597,6 +614,20 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
         />
       )}
 
+      {/* Pannello di modifica del movimento */}
+      {editing && (
+        <TransactionSheet
+          tx={editing}
+          categories={categories}
+          transactions={transactions}
+          familyMembers={familyMembers}
+          accounts={accounts}
+          onClose={() => setEditing(null)}
+          onSaved={handleSheetSaved}
+          onDelete={handleDelete}
+        />
+      )}
+
       {/* Ricorda la categoria per i movimenti simili */}
       {rememberPrompt && (() => {
         const cat = categories.find(c => c.id === rememberPrompt.categoryId);
@@ -604,21 +635,21 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           <div className="fixed bottom-20 md:bottom-6 left-4 right-4 md:left-auto md:right-6 md:w-96 z-40 rounded-xl border bg-background shadow-xl p-4 flex flex-col gap-3 animate-in slide-in-from-bottom-4 duration-200">
             <p className="text-sm font-semibold">Vuoi che Flusso se lo ricordi?</p>
             <p className="text-xs text-muted-foreground">
-              I movimenti che contengono questa parola andranno in <strong className="text-foreground">{cat?.icon} {cat?.name}</strong>, anche nei prossimi import.
+              I movimenti che contengono questa parola andranno in <strong className="text-foreground">{cat?.icon} {categoryLabel(cat?.name)}</strong>, anche nei prossimi import.
               {rememberPrompt.similar > 0 && <> Vale subito anche per <strong className="text-foreground">{rememberPrompt.similar}</strong> {rememberPrompt.similar === 1 ? "movimento" : "movimenti"} ancora senza categoria.</>}
             </p>
             <input
               value={rememberPrompt.keyword}
               onChange={e => setRememberPrompt(p => p && { ...p, keyword: e.target.value })}
-              className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              className="min-h-11 border rounded-md px-3 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
               aria-label="Parola da riconoscere"
             />
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setRememberPrompt(null)} className="text-sm text-muted-foreground px-3 py-2 hover:text-foreground">No, grazie</button>
+              <button onClick={() => setRememberPrompt(null)} className="min-h-11 text-sm text-muted-foreground px-3 hover:text-foreground">No, grazie</button>
               <button
                 onClick={handleRemember}
                 disabled={savingRemember}
-                className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50"
+                className="min-h-11 text-sm bg-primary text-primary-foreground rounded-md px-4 hover:bg-primary/90 disabled:opacity-50"
               >
                 {savingRemember ? "..." : "Sì, ricorda"}
               </button>
@@ -639,7 +670,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                 value={newCatIcon}
                 onChange={e => setNewCatIcon(e.target.value)}
                 placeholder="es. 🛒"
-                className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                className="min-h-11 border rounded-md px-3 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-1">
@@ -650,7 +681,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                 onChange={e => setNewCatName(e.target.value)}
                 placeholder="es. Supermercato"
                 required
-                className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                className="min-h-11 border rounded-md px-3 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-1">
@@ -660,7 +691,8 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                   type="color"
                   value={newCatColor}
                   onChange={e => setNewCatColor(e.target.value)}
-                  className="h-9 w-14 rounded border cursor-pointer bg-background"
+                  aria-label="Colore della categoria"
+                  className="h-11 w-14 rounded border cursor-pointer bg-background"
                 />
                 <span className="text-sm text-muted-foreground font-mono">{newCatColor}</span>
               </div>
@@ -668,11 +700,11 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           </div>
           <div className="flex gap-3">
             <button type="submit" disabled={savingCat}
-              className="bg-primary text-primary-foreground rounded-md px-5 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              className="min-h-11 bg-primary text-primary-foreground rounded-md px-5 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
               {savingCat ? "Salvataggio..." : "Salva"}
             </button>
             <button type="button" onClick={() => setShowCatForm(false)}
-              className="border rounded-md px-5 py-2 text-sm hover:bg-muted/50 transition-colors">
+              className="min-h-11 border rounded-md px-5 text-sm hover:bg-muted/50 transition-colors">
               Annulla
             </button>
           </div>
@@ -680,10 +712,10 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
       )}
 
       {/* Navigazione mese / anno */}
-      <div data-tour="tx-nav" className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
+      <div data-tour="tx-nav" className="flex items-center justify-between gap-1 sm:gap-3 rounded-xl border px-2 sm:px-4 py-1.5">
         <button
           onClick={goToPrev}
-          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted/50"
+          className="min-h-11 min-w-11 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted/50"
           aria-label="Periodo precedente"
         >
           ←
@@ -692,21 +724,23 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
         <button
           onClick={goToNext}
           disabled={isAtPresent}
-          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted/50 disabled:opacity-30 disabled:cursor-default"
+          className="min-h-11 min-w-11 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted/50 disabled:opacity-30 disabled:cursor-default"
           aria-label="Periodo successivo"
         >
           →
         </button>
-        <div className="flex rounded-md border overflow-hidden text-xs ml-2">
+        <div className="flex rounded-md border overflow-hidden text-xs ml-1 sm:ml-2">
           <button
             onClick={() => setNavView("mese")}
-            className={`px-3 py-1.5 transition-colors ${navView === "mese" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+            aria-pressed={navView === "mese"}
+            className={`min-h-11 px-3 transition-colors ${navView === "mese" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
           >
             Mese
           </button>
           <button
             onClick={() => setNavView("anno")}
-            className={`px-3 py-1.5 transition-colors ${navView === "anno" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+            aria-pressed={navView === "anno"}
+            className={`min-h-11 px-3 transition-colors ${navView === "anno" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
           >
             Anno
           </button>
@@ -717,102 +751,67 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Transazioni</h1>
         <div className="flex items-center gap-2">
-          {editMode ? (
+          {/* Desktop: tutti i tasti in fila */}
+          <div className="hidden sm:flex items-center gap-2">
+            {powerUser && (
+              <button
+                onClick={() => setRulesPanel(v => v ? null : "display")}
+                className={`min-h-11 text-sm border rounded-md px-4 transition-colors ${rulesPanel ? "bg-muted" : "hover:bg-muted/50"}`}
+              >
+                Regole
+              </button>
+            )}
             <button
-              onClick={exitEditMode}
-              className="text-sm bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 transition-colors font-medium"
+              data-tour="tx-add"
+              onClick={() => setShowAddModal(true)}
+              className="min-h-11 text-sm bg-primary text-primary-foreground rounded-md px-4 hover:bg-primary/90 transition-colors"
             >
-              ✓ Fatto
+              + Aggiungi
             </button>
-          ) : (
-            <>
-              {/* Desktop: tutti i tasti in fila */}
-              <div className="hidden sm:flex items-center gap-2">
-                {powerUser && (
-                  <button
-                    onClick={() => setRulesPanel(v => v ? null : "display")}
-                    className={`text-sm border rounded-md px-4 py-2 transition-colors ${rulesPanel ? "bg-muted" : "hover:bg-muted/50"}`}
-                  >
-                    Regole
-                  </button>
-                )}
-                <button
-                  onClick={() => enterEditMode()}
-                  className="text-sm border rounded-md px-4 py-2 hover:bg-muted/50 transition-colors"
-                >
-                  Modifica categorie
-                </button>
-                <button
-                  data-tour="tx-add"
-                  onClick={() => setShowAddModal(true)}
-                  className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 transition-colors"
-                >
-                  + Aggiungi
-                </button>
-              </div>
+          </div>
 
-              {/* Mobile: matita + Aggiungi + hamburger (hamburger solo per power user) */}
-              <div className="flex sm:hidden items-center gap-2">
-                <button
-                  onClick={() => enterEditMode()}
-                  className="border rounded-md p-2 hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-                  title="Modifica"
-                >
-                  ✏️
-                </button>
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 transition-colors"
-                >
-                  + Aggiungi
-                </button>
-                {powerUser && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowActionsMenu(v => !v)}
-                    className={`border rounded-md p-2 transition-colors ${showActionsMenu ? "bg-muted" : "hover:bg-muted/50"}`}
-                    title="Altre azioni"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
-                    </svg>
-                  </button>
-                  {showActionsMenu && (
-                    <>
-                      <div className="fixed inset-0 z-10" onClick={() => setShowActionsMenu(false)} />
-                      <div className="absolute right-0 top-full mt-1 z-20 bg-background border rounded-xl shadow-lg py-1 w-48 flex flex-col">
-                        <button
-                          onClick={() => { setRulesPanel(v => v ? null : "display"); setShowActionsMenu(false); }}
-                          className={`flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors text-left ${rulesPanel ? "text-primary font-medium" : ""}`}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                            <path d="M11 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5" />
-                            <path d="m15 14 2 2 4-4" />
-                          </svg>
-                          Regole
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-                )}
-              </div>
-            </>
-          )}
+          {/* Mobile: Aggiungi + menu (il menu solo per power user) */}
+          <div className="flex sm:hidden items-center gap-2">
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="min-h-11 text-sm bg-primary text-primary-foreground rounded-md px-4 hover:bg-primary/90 transition-colors"
+            >
+              + Aggiungi
+            </button>
+            {powerUser && (
+            <div className="relative">
+              <button
+                onClick={() => setShowActionsMenu(v => !v)}
+                className={`min-h-11 min-w-11 flex items-center justify-center border rounded-md transition-colors ${showActionsMenu ? "bg-muted" : "hover:bg-muted/50"}`}
+                aria-label="Altre azioni"
+                aria-expanded={showActionsMenu}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+              {showActionsMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowActionsMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 bg-background border rounded-xl shadow-lg py-1 w-48 flex flex-col">
+                    <button
+                      onClick={() => { setRulesPanel(v => v ? null : "display"); setShowActionsMenu(false); }}
+                      className={`min-h-11 flex items-center gap-3 px-4 text-sm hover:bg-muted/50 transition-colors text-left ${rulesPanel ? "text-primary font-medium" : ""}`}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                        <path d="M11 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5" />
+                        <path d="m15 14 2 2 4-4" />
+                      </svg>
+                      Regole
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            )}
+          </div>
         </div>
       </div>
-
-      {/* Banner edit mode attivo */}
-      {editMode && (
-        <div className="rounded-xl border border-primary/40 bg-primary/5 px-4 py-3 text-sm flex items-center justify-between gap-3">
-          <p className="text-primary">
-            <strong>Modalità modifica attiva</strong> — usa i dropdown per assegnare una categoria a ogni transazione.
-          </p>
-          <button onClick={exitEditMode} className="text-muted-foreground hover:text-foreground transition-colors text-xs shrink-0">
-            ✕ Esci
-          </button>
-        </div>
-      )}
 
       {/* Pannello regole unificato */}
       {rulesPanel && (
@@ -822,18 +821,20 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
             <div className="flex rounded-md border overflow-hidden text-xs">
               <button
                 onClick={() => setRulesPanel("display")}
-                className={`px-3 py-1.5 transition-colors ${rulesPanel === "display" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+                aria-pressed={rulesPanel === "display"}
+                className={`min-h-11 px-3 transition-colors ${rulesPanel === "display" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
               >
                 Regole display
               </button>
               <button
                 onClick={() => setRulesPanel("categorie")}
-                className={`px-3 py-1.5 transition-colors ${rulesPanel === "categorie" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+                aria-pressed={rulesPanel === "categorie"}
+                className={`min-h-11 px-3 transition-colors ${rulesPanel === "categorie" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
               >
                 Regole categorie
               </button>
             </div>
-            <button onClick={() => setRulesPanel(null)} className="text-muted-foreground hover:text-foreground text-xs transition-colors">✕ Chiudi</button>
+            <button onClick={() => setRulesPanel(null)} className="min-h-11 px-2 text-muted-foreground hover:text-foreground text-xs transition-colors">✕ Chiudi</button>
           </div>
 
           {/* Contenuto: Regole display */}
@@ -849,7 +850,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                   value={newFind}
                   onChange={e => setNewFind(e.target.value)}
                   placeholder='Testo da cercare (es. "Bonifico istantaneo da voi disposto a favore di")'
-                  className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
+                  className="border rounded-md px-3 min-h-11 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
                   required
                 />
                 <input
@@ -857,13 +858,13 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                   value={newReplace}
                   onChange={e => setNewReplace(e.target.value)}
                   placeholder='Sostituisci con (es. "B.I. verso")'
-                  className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
+                  className="border rounded-md px-3 min-h-11 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
                   required
                 />
                 <button
                   type="submit"
                   disabled={savingRule}
-                  className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors whitespace-nowrap"
+                  className="bg-primary text-primary-foreground rounded-md px-4 min-h-11 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors whitespace-nowrap"
                 >
                   {savingRule ? "..." : "+ Aggiungi"}
                 </button>
@@ -876,7 +877,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                       <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.find_text}>&quot;{r.find_text}&quot;</span>
                       <span className="text-muted-foreground shrink-0">→</span>
                       <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.replace_with}>&quot;{r.replace_with}&quot;</span>
-                      <button onClick={() => handleDeleteRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
+                      <button type="button" onClick={() => handleDeleteRule(r.id)} aria-label="Elimina regola" className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs min-h-11 min-w-11 -my-2 -mr-2 flex items-center justify-center rounded-lg">✕</button>
                     </div>
                   ))}
                 </div>
@@ -898,29 +899,29 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                     value={newCatKeyword}
                     onChange={e => setNewCatKeyword(e.target.value)}
                     placeholder='es. "steam"'
-                    className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary w-full"
+                    className="border rounded-md px-3 min-h-11 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary w-full"
                     required
                   />
                 </div>
-                <span className="text-muted-foreground pb-2 hidden sm:block">→</span>
+                <span className="text-muted-foreground pb-3 hidden sm:block" aria-hidden="true">→</span>
                 <div className="flex flex-col gap-1 flex-1">
                   <label className="text-xs text-muted-foreground font-medium">Allora categoria</label>
                   <select
                     value={newCatId}
                     onChange={e => setNewCatId(e.target.value)}
-                    className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary w-full"
+                    className="border rounded-md px-3 min-h-11 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary w-full"
                     required
                   >
                     <option value="">— Seleziona —</option>
                     {categories.map(c => (
-                      <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                      <option key={c.id} value={c.id}>{c.icon} {categoryLabel(c.name)}</option>
                     ))}
                   </select>
                 </div>
                 <button
                   type="submit"
                   disabled={savingCatRule}
-                  className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors whitespace-nowrap"
+                  className="bg-primary text-primary-foreground rounded-md px-4 min-h-11 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors whitespace-nowrap"
                 >
                   {savingCatRule ? "..." : "+ Aggiungi"}
                 </button>
@@ -933,9 +934,9 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                       <span className="font-mono text-xs truncate flex-1 min-w-0" title={r.value}>&quot;{r.value}&quot;</span>
                       <span className="text-muted-foreground shrink-0">→</span>
                       <span className="shrink-0 text-xs">
-                        {r.categories?.icon} {r.categories?.name ?? r.category_id}
+                        {r.categories?.icon} {r.categories?.name ? categoryLabel(r.categories.name) : r.category_id}
                       </span>
-                      <button onClick={() => handleDeleteCatRule(r.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs">✕</button>
+                      <button type="button" onClick={() => handleDeleteCatRule(r.id)} aria-label="Elimina regola" className="text-muted-foreground hover:text-destructive transition-colors shrink-0 text-xs min-h-11 min-w-11 -my-2 -mr-2 flex items-center justify-center rounded-lg">✕</button>
                     </div>
                   ))}
                 </div>
@@ -950,13 +951,14 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
         <form onSubmit={handleAddTransaction} className="rounded-xl border p-5 flex flex-col gap-4 bg-card">
           <h2 className="font-semibold">Nuova transazione</h2>
           {/* Toggle tipo */}
-          <div className="flex rounded-md border overflow-hidden text-sm w-fit">
+          <div className="flex flex-wrap rounded-md border overflow-hidden text-sm w-fit">
             {(["uscita", "entrata", "neutra"] as const).map(t => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setTxType(t)}
-                className={`px-4 py-2 transition-colors capitalize ${
+                aria-pressed={txType === t}
+                className={`min-h-11 px-4 transition-colors ${
                   txType === t
                     ? t === "entrata"
                       ? "bg-green-600 text-white"
@@ -966,7 +968,7 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                     : "hover:bg-muted/50"
                 }`}
               >
-                {t === "entrata" ? "↑ Entrata" : t === "uscita" ? "↓ Uscita" : "↔ Neutra"}
+                {t === "entrata" ? "↑ Entrata" : t === "uscita" ? "↓ Uscita" : "↔ Spostamento tra conti"}
               </button>
             ))}
           </div>
@@ -974,27 +976,27 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium">Data</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} required
-                className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary" />
+                className="border rounded-md px-3 min-h-11 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium">Importo (€)</label>
               <input type="text" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)}
                 placeholder="es. 25.50" required
-                className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary" />
+                className="border rounded-md px-3 min-h-11 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
               <label className="text-sm font-medium">Descrizione</label>
               <input type="text" value={description} onChange={e => setDescription(e.target.value)}
                 placeholder="es. Esselunga, Stipendio, Bolletta luce..."
-                className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary" />
+                className="border rounded-md px-3 min-h-11 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium">Categoria</label>
               <select value={categoryId} onChange={e => setCategoryId(e.target.value)}
-                className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary">
-                <option value="">— Nessuna categoria —</option>
+                className="border rounded-md px-3 min-h-11 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="">{txType === "neutra" ? `— ${categoryLabel("Spostamenti")} —` : "— Nessuna categoria —"}</option>
                 {categories.map(c => (
-                  <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                  <option key={c.id} value={c.id}>{c.icon} {categoryLabel(c.name)}</option>
                 ))}
               </select>
             </div>
@@ -1002,16 +1004,16 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
               <label className="text-sm font-medium">Note (opzionale)</label>
               <input type="text" value={notes} onChange={e => setNotes(e.target.value)}
                 placeholder="Note aggiuntive..."
-                className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary" />
+                className="border rounded-md px-3 min-h-11 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
           </div>
           <div className="flex gap-3">
             <button type="submit" disabled={submitting}
-              className="bg-primary text-primary-foreground rounded-md px-5 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              className="bg-primary text-primary-foreground rounded-md px-5 min-h-11 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
               {submitting ? "Salvataggio..." : "Salva"}
             </button>
             <button type="button" onClick={() => setShowForm(false)}
-              className="border rounded-md px-5 py-2 text-sm hover:bg-muted/50 transition-colors">
+              className="border rounded-md px-5 min-h-11 text-sm hover:bg-muted/50 transition-colors">
               Annulla
             </button>
           </div>
@@ -1026,17 +1028,18 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
           placeholder="Cerca transazioni o categoria..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
-          className="border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
+          aria-label="Cerca movimenti o categoria"
+          className="border rounded-md px-3 min-h-11 text-base sm:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary flex-1"
         />
         <datalist id="category-suggestions">
           {categories.map(c => (
-            <option key={c.id} value={c.name}>{c.icon} {c.name}</option>
+            <option key={c.id} value={categoryLabel(c.name)}>{c.icon} {categoryLabel(c.name)}</option>
           ))}
         </datalist>
         <div className="flex rounded-md border overflow-hidden text-sm">
           {(["all", "entrate", "uscite", "senza_cat"] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-4 py-2 transition-colors ${filter === f ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}>
+            <button key={f} type="button" onClick={() => setFilter(f)} aria-pressed={filter === f}
+              className={`min-h-11 px-3 sm:px-4 flex-1 sm:flex-none transition-colors ${filter === f ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}>
               {f === "all" ? "Tutte" : f === "entrate" ? "Entrate" : f === "uscite" ? "Uscite" : "🏷️ Senza cat."}
             </button>
           ))}
@@ -1065,7 +1068,8 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
             )}
             {fIncome > 0 && fExpenses > 0 && (
               <span className="flex items-center gap-1 border-l pl-3">
-                Netto: <span className={`font-semibold ml-1 ${fIncome - fExpenses >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{formatEuro(fIncome - fExpenses)}</span>
+                Ti restano <span className={`font-semibold ${fIncome - fExpenses >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{formatEuro(fIncome - fExpenses)}</span>
+                <span>(entrate − uscite)</span>
               </span>
             )}
           </div>
@@ -1082,52 +1086,48 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
         <div ref={listRef} className="rounded-xl border overflow-hidden scroll-mt-20">
           {/* Mobile: card list */}
           <div className="sm:hidden flex flex-col divide-y">
-            {filtered.map(t => (
-              <div key={t.id} className={`flex items-start justify-between px-4 py-3 hover:bg-muted/30 transition-colors gap-3 ${!t.category_id ? "bg-amber-500/5 border-l-4 border-l-amber-500" : ""}`}>
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-xl shrink-0">{t.categories?.icon ?? "📦"}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{applyDisplayRules(t.description, displayRules) || "—"}</p>
-                    {editMode ? (
-                      <select
-                        defaultValue={t.category_id ?? ""}
-                        onChange={e => handleCategoryChange(t.id, e.target.value)}
-                        className="mt-1 border rounded px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary w-full max-w-[180px]"
-                      >
-                        <option value="">— Nessuna —</option>
-                        {categories.map(c => (
-                          <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(t.date).toLocaleDateString("it-IT")}
-                          {t.categories && <span> · {t.categories.name}</span>}
-                        </p>
-                        {t.family_members && (
-                          <span
-                            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap"
-                            style={{ backgroundColor: t.family_members.color + "33", color: t.family_members.color }}
-                          >
-                            {t.family_members.name}
-                          </span>
-                        )}
+            {filtered.map(t => {
+              const desc = applyDisplayRules(t.description, displayRules) || "—";
+              return (
+                <div key={t.id} className={`flex flex-col hover:bg-muted/30 transition-colors ${!t.category_id ? "bg-amber-500/5 border-l-4 border-l-amber-500" : ""}`}>
+                  <button
+                    type="button"
+                    onClick={() => setEditing(t)}
+                    aria-label={`Modifica il movimento ${desc}`}
+                    className="flex items-start justify-between gap-3 px-4 py-3 min-h-11 w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-xl shrink-0" aria-hidden="true">{t.categories?.icon ?? "📦"}</span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{desc}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(t.date).toLocaleDateString("it-IT")}
+                            {t.categories && <span> · {categoryLabel(t.categories.name)}</span>}
+                          </p>
+                          {t.family_members && (
+                            <span
+                              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                              style={{ backgroundColor: t.family_members.color + "33", color: t.family_members.color }}
+                            >
+                              {t.family_members.name}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    )}
-                    {!editMode && !t.category_id && pickCategory(t, "mt-1.5 w-full max-w-[200px]")}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 pt-0.5">
-                  <span className={`text-sm font-semibold tabular-nums ${Number(t.amount) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
-                    {Number(t.amount) >= 0 ? "+" : ""}{formatEuro(Number(t.amount))}
-                  </span>
-                  {!editMode && (
-                    <button onClick={() => handleDelete(t.id)} className="text-muted-foreground hover:text-destructive transition-colors text-xs p-1">✕</button>
+                    </div>
+                    <span className={`text-sm font-semibold tabular-nums shrink-0 pt-0.5 ${Number(t.amount) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
+                      {Number(t.amount) >= 0 ? "+" : ""}{formatEuro(Number(t.amount))}
+                    </span>
+                  </button>
+                  {!t.category_id && (
+                    <div className="px-4 pb-3 pl-[3.25rem] -mt-1">
+                      {pickCategory(t, "w-full max-w-[220px]")}
+                    </div>
                   )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Desktop: table */}
@@ -1139,18 +1139,26 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                   <th className="text-left px-4 py-3 font-medium">Descrizione</th>
                   <th className="text-left px-4 py-3 font-medium">Categoria</th>
                   <th className="text-right px-4 py-3 font-medium">Importo</th>
-                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(t => (
-                  <tr key={t.id} className={`border-b last:border-b-0 hover:bg-muted/30 transition-colors ${!t.category_id ? "bg-amber-500/5" : ""}`}>
+                {filtered.map(t => {
+                  const desc = applyDisplayRules(t.description, displayRules) || "—";
+                  return (
+                  <tr key={t.id} onClick={() => setEditing(t)} className={`border-b last:border-b-0 hover:bg-muted/30 transition-colors cursor-pointer ${!t.category_id ? "bg-amber-500/5" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                       {new Date(t.date).toLocaleDateString("it-IT")}
                     </td>
-                    <td className="px-4 py-3 max-w-[200px]">
+                    <td className="px-4 py-3 max-w-[260px]">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="truncate">{applyDisplayRules(t.description, displayRules) || "—"}</span>
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); setEditing(t); }}
+                          aria-label={`Modifica il movimento ${desc}`}
+                          className="truncate text-left hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                        >
+                          {desc}
+                        </button>
                         {t.family_members && (
                           <span
                             className="text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0"
@@ -1162,36 +1170,18 @@ export function TransazioniClient({ userId, plan, excelUploadsThisMonth, initial
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {editMode ? (
-                        <select
-                          defaultValue={t.category_id ?? ""}
-                          onChange={e => handleCategoryChange(t.id, e.target.value)}
-                          className="border rounded px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                        >
-                          <option value="">— Nessuna —</option>
-                          {categories.map(c => (
-                            <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
-                          ))}
-                        </select>
-                      ) : t.categories ? (
+                      {t.categories ? (
                         <span className="inline-flex items-center gap-1 text-xs border rounded-full px-2 py-0.5">
-                          {t.categories.icon} {t.categories.name}
+                          {t.categories.icon} {categoryLabel(t.categories.name)}
                         </span>
                       ) : pickCategory(t)}
                     </td>
                     <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${Number(t.amount) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
                       {Number(t.amount) >= 0 ? "+" : ""}{formatEuro(Number(t.amount))}
                     </td>
-                    <td className="px-4 py-3">
-                      {!editMode && (
-                        <button onClick={() => handleDelete(t.id)}
-                          className="text-muted-foreground hover:text-destructive transition-colors text-xs">
-                          ✕
-                        </button>
-                      )}
-                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
