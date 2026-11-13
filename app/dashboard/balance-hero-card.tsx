@@ -626,10 +626,10 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, payDay, piggyBal
         )}
       </div>
 
-      {/* Salvadanai, con il tasto Emergenza accanto */}
-      <div className="pt-4 border-t flex items-center justify-between gap-3">
-        <Link href="/dashboard/salvadanai" className="flex flex-col gap-0.5 group min-w-0">
-          <span className="text-xs text-muted-foreground">Messi da parte nei salvadanai 🐷</span>
+      {/* Salvadanai, con dentro il tasto Emergenza */}
+      <div data-tour="salvadanai-emergenza" className="rounded-lg border bg-muted/30 px-3 py-2 flex items-center justify-between gap-3">
+        <Link href="/dashboard/salvadanai" className="min-h-11 flex flex-col justify-center gap-0.5 group min-w-0">
+          <span className="text-xs text-muted-foreground">Messi da parte nei <span className="whitespace-nowrap">salvadanai 🐷</span></span>
           <span className="text-lg font-semibold tabular-nums">
             {formatEuro(piggyBalance)}{" "}
             <span className="text-xs font-normal text-muted-foreground group-hover:text-foreground transition-colors">Apri →</span>
