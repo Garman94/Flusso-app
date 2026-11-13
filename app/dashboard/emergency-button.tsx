@@ -144,7 +144,7 @@ export function EmergencyButton({ userId, onDone, className }: {
       .eq("user_id", userId).not("next_due_date", "is", null);
     setLinking(false);
     if (error) { toast.error(error.message); return; }
-    toast.success("Accantonamenti collegati.");
+    toast.success("Spese dell'anno collegate al salvadanaio.");
     setAmounts({});
     setOverLimitOk(false);
     await load();
@@ -201,7 +201,7 @@ export function EmergencyButton({ userId, onDone, className }: {
           </div>
         )}
         {g.plan.uncovered && (
-          <p className="text-destructive font-medium">È più di quello che c&apos;è da parte per gli accantonamenti.</p>
+          <p className="text-destructive font-medium">È più di quello che c&apos;è da parte per le spese dell&apos;anno.</p>
         )}
       </div>
     );
@@ -220,9 +220,9 @@ export function EmergencyButton({ userId, onDone, className }: {
         {(g || goal || (p === firstFree && groups.length > 0)) && (
           <div className="flex flex-wrap gap-1.5 text-[11px]">
             {p === firstFree && !g && (
-              <span className="rounded-full bg-green-500/15 text-green-700 dark:text-green-400 px-2 py-0.5">Prendi prima da qui: non tocca accantonamenti né obiettivi</span>
+              <span className="rounded-full bg-green-500/15 text-green-700 dark:text-green-400 px-2 py-0.5">Prendi prima da qui: non tocca spese dell&apos;anno né obiettivi</span>
             )}
-            {g && <span className="rounded-full bg-muted px-2 py-0.5">🏦 Accantonamenti</span>}
+            {g && <span className="rounded-full bg-muted px-2 py-0.5">🏦 Spese dell&apos;anno</span>}
             {goal && <span className="rounded-full bg-muted px-2 py-0.5">🎯 Obiettivo &ldquo;{goal.name}&rdquo;: scende anche lui</span>}
           </div>
         )}
@@ -259,7 +259,7 @@ export function EmergencyButton({ userId, onDone, className }: {
       <button
         type="button"
         onClick={openDialog}
-        className={className ?? "shrink-0 whitespace-nowrap text-xs font-medium rounded-lg border border-red-500/40 text-red-600 dark:text-red-400 px-2.5 py-1.5 hover:bg-red-500/10 transition-colors"}
+        className={className ?? "min-h-11 shrink-0 whitespace-nowrap text-xs font-medium rounded-lg border border-red-500/40 text-red-600 dark:text-red-400 px-3 py-1.5 hover:bg-red-500/10 transition-colors"}
       >
         🚨 Emergenza
       </button>
@@ -275,7 +275,7 @@ export function EmergencyButton({ userId, onDone, className }: {
           >
             <div className="flex items-center justify-between">
               <h2 id="emergency-title" className="font-bold text-base">🚨 Emergenza</h2>
-              <button onClick={close} disabled={saving} aria-label="Chiudi" className="text-muted-foreground hover:text-foreground text-lg leading-none disabled:opacity-50">✕</button>
+              <button onClick={close} disabled={saving} aria-label="Chiudi" className="min-h-11 min-w-11 -mr-2 inline-flex items-center justify-center text-muted-foreground hover:text-foreground text-lg leading-none disabled:opacity-50">✕</button>
             </div>
 
             {done ? (
@@ -284,10 +284,10 @@ export function EmergencyButton({ userId, onDone, className }: {
                   <p className="font-semibold">Fatto: hai preso {formatEuro(done.total)}.</p>
                   {done.monthlyAfter > done.monthlyBefore + 0.005 ? (
                     <p>
-                      Per gli accantonamenti da ora metti da parte <strong>{formatEuro(done.monthlyAfter)} al mese</strong> (prima {formatEuro(done.monthlyBefore)}).
+                      Per le spese dell&apos;anno da ora metti da parte <strong>{formatEuro(done.monthlyAfter)} al mese</strong> (prima {formatEuro(done.monthlyBefore)}).
                     </p>
                   ) : done.refill.length === 0 ? (
-                    <p className="text-muted-foreground">Le quote degli accantonamenti non cambiano.</p>
+                    <p className="text-muted-foreground">Quello che metti da parte ogni mese per le spese dell&apos;anno non cambia.</p>
                   ) : null}
                   {done.refill.map(r => (
                     <p key={r.name}>Per {r.name} rimetti <strong>{formatEuro(r.amount)}</strong> entro il {dayMonth(r.due)}.</p>
@@ -310,18 +310,18 @@ export function EmergencyButton({ userId, onDone, className }: {
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Scrivi quanto prendi da ogni salvadanaio. Se lo prendi dagli accantonamenti, Flusso ricalcola quanto mettere da parte ogni mese.
+                  Scrivi quanto prendi da ogni salvadanaio. Se li prendi dai soldi delle spese dell&apos;anno (assicurazione, bollo…), Flusso ricalcola quanto mettere da parte ogni mese.
                 </p>
 
                 {unlinked && (
                   <div className="rounded-xl border px-3 py-2.5 text-xs flex flex-col gap-2">
                     <p>
-                      Gli accantonamenti non sono collegati a un salvadanaio, quindi Flusso li cerca in tutti
+                      I soldi delle spese dell&apos;anno non sono collegati a un salvadanaio, quindi Flusso li cerca in tutti
                       (tranne quelli degli obiettivi), anche nel fondo emergenze. Dove li tieni?
                     </p>
                     <div className="flex items-center gap-2">
                       <select
-                        aria-label="Salvadanaio degli accantonamenti"
+                        aria-label="Salvadanaio delle spese dell'anno"
                         value={linkPot} onChange={e => setLinkPot(e.target.value)}
                         className="flex-1 min-w-0 border-2 rounded-lg px-2 py-1.5 text-sm bg-background focus:outline-none focus:border-primary"
                       >
@@ -341,7 +341,7 @@ export function EmergencyButton({ userId, onDone, className }: {
                 <div className="flex flex-col gap-3">
                   {groups.filter(g => g.potIds.length > 1).map(g => (
                     <div key={g.potIds.join()} className="flex flex-col gap-2">
-                      <p className="text-xs text-muted-foreground">Questi salvadanai tengono anche i soldi degli accantonamenti:</p>
+                      <p className="text-xs text-muted-foreground">Questi salvadanai tengono anche i soldi delle spese dell&apos;anno:</p>
                       {sinkingNotice(g)}
                     </div>
                   ))}
@@ -380,7 +380,7 @@ export function EmergencyButton({ userId, onDone, className }: {
                         ))}
                       </>
                     ) : groups.some(g => g.taken > 0) ? (
-                      <p className="text-xs text-muted-foreground">Li prendi da quello che avevi messo da parte in più: le quote degli accantonamenti non cambiano.</p>
+                      <p className="text-xs text-muted-foreground">Li prendi da quello che avevi messo da parte in più: quello che metti da parte ogni mese per le spese dell&apos;anno non cambia.</p>
                     ) : null}
                   </div>
                 )}

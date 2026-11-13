@@ -1,11 +1,9 @@
 "use client";
 
-import { addDaysISO, todayISO } from "@/lib/dates";
-import { balanceAt, neededRange, totalAtStartOf, type Account, type AccountTx } from "@/lib/accounts";
-import { useEffect, useMemo, useState } from "react";
+import { todayISO } from "@/lib/dates";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import {
   formatEuro,
   aggregateExpectedIncome,
@@ -15,9 +13,7 @@ import {
   sinkingFundInput,
   computeDebtProgress,
   isTransferCategory,
-  rollBalance,
   projectPeriodEnd,
-  type IncomeInfo,
 } from "@/lib/calculations";
 import { parseAmount } from "@/lib/import-parse";
 import { isFixedExpense, planStatus, splitPlan, type PlanItem } from "@/lib/fixed-expenses";
@@ -25,6 +21,8 @@ import { flowOf, isSpending, moneyTotals } from "@/lib/money";
 import { updateStartingBalance } from "./saldo-action";
 import { EmergencyButton } from "./emergency-button";
 import { toast } from "sonner";
+import type { HeroData, HeroTx } from "./hero-data";
+import { periodEndLabel, shortDay, spendable, type Spendable } from "@/lib/spendable";
 
 // Card principale della dashboard. Tre domande, in quest'ordine:
 //   1. quanto ho oggi?            → Saldo di oggi
@@ -35,97 +33,27 @@ import { toast } from "sonner";
 // entrate previste − spese previste (il risparmio del mese, non un saldo): confrontato col
 // saldo reale dava differenze senza senso. Vedi projectPeriodEnd in lib/calculations.ts.
 
-const INCOME_COLS = "income_type, monthly_income, income_frequency, income_payday, income_variability, active_months";
-const PAGE = 1000;
-
-type RecurringRow = {
-  id: string;
-  name: string;
-  tipologia: "fissa" | "variabile" | "entrata";
-  frequency: string;
-  custom_days: number | null;
-  amount: number;
-  amount_max: number | null;
-  next_due_date: string | null;
-  saving_start_date: string | null;
-  saving_offset?: number | null;
-  debt_type: string | null;
-  debt_total_amount: number | null;
-  debt_start_date: string | null;
-  due_day: number | null;
-  due_month: number | null;
-  match_keywords: string[] | null;
-  secondary_name: string | null;
-  end_date: string | null;
-  last_paid_date: string | null;
-};
-
-type Tx = {
-  amount: number; date: string;
-  description?: string | null; merchant?: string | null;
-  member_id?: string | null;
-  account_id?: string | null;
-  categories?: { name: string } | null;
-};
-
-type MemberIncome = Partial<IncomeInfo> & { id: string; name: string; color: string; is_owner: boolean };
+type Tx = HeroTx;
 
 type Props = {
   userId: string;
   periodFrom: string;
   periodTo: string;
+  /** giorno di paga (0 = mese solare): per l'etichetta "Fino al prossimo stipendio" */
+  payDay: number;
   piggyBalance: number;
+  /** letti dal server (hero-data.ts): la card non fa richieste, dopo un salvataggio router.refresh() */
+  data: HeroData;
+  /** movimenti del periodo, gli stessi del resto della dashboard */
+  periodTxs: HeroTx[];
 };
 
 type ExpandKey = "saldo" | "fine" | "spese" | "entrate";
 
 const isTransfer = (t: Tx) => isTransferCategory(t.categories?.name);
 
-const fmtDay = (iso: string) =>
-  new Date(iso + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" });
-
-/** Movimenti (data, importo) in [from, to): a pagine, per non fermarsi al limite di 1000 righe. */
-async function fetchAmounts(userId: string, from: string, to: string): Promise<{ date: string; amount: number }[]> {
-  const supabase = createClient();
-  const out: { date: string; amount: number }[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("date, amount")
-      .eq("user_id", userId)
-      .gte("date", from)
-      .lt("date", to)
-      .order("date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(offset, offset + PAGE - 1);
-    if (error || !data) break;
-    out.push(...(data as { date: string; amount: number }[]));
-    if (data.length < PAGE) break;
-  }
-  return out;
-}
-
-/** Movimenti dei conti (data, importo, conto) in [from, to], estremi compresi: a pagine. */
-async function fetchAccountAmounts(userId: string, from: string, to: string): Promise<AccountTx[]> {
-  const supabase = createClient();
-  const out: AccountTx[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("date, amount, account_id")
-      .eq("user_id", userId)
-      .not("account_id", "is", null)
-      .gte("date", from)
-      .lte("date", to)
-      .order("date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(offset, offset + PAGE - 1);
-    if (error || !data) break;
-    out.push(...(data as AccountTx[]));
-    if (data.length < PAGE) break;
-  }
-  return out;
-}
+// "26 nov" uguale su server e browser (la card ora arriva già pronta dal server)
+const fmtDay = shortDay;
 
 // ─── Setup: primo utilizzo / correzione ─────────────────────────────────────
 // L'utente inserisce il saldo che ha OGGI sul conto. Per ancorare la proiezione
@@ -189,18 +117,19 @@ function SetupForm({
           onChange={e => setValue(e.target.value)}
           placeholder="Es. 1.913,00"
           inputMode="decimal"
-          className="border rounded-md px-3 py-2 text-sm bg-background w-40 focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Saldo di oggi sul conto"
+          className="min-h-11 border rounded-md px-3 py-2 text-base sm:text-sm bg-background w-40 focus:outline-none focus:ring-2 focus:ring-primary"
           autoFocus
         />
         <button
           type="submit"
           disabled={saving || !value}
-          className="text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          className="min-h-11 text-sm bg-primary text-primary-foreground rounded-md px-4 py-2 hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
           {saving ? "..." : "Salva"}
         </button>
         {onCancel && (
-          <button type="button" onClick={onCancel} className="text-sm text-muted-foreground px-2 hover:text-foreground">
+          <button type="button" onClick={onCancel} className="min-h-11 text-sm text-muted-foreground px-2 hover:text-foreground">
             Annulla
           </button>
         )}
@@ -285,96 +214,79 @@ function ProgressStat({
   );
 }
 
+/**
+ * Il numero grande: quanto si può spendere ancora fino alla fine del periodo (lib/spendable.ts).
+ * Frasi calme anche quando i conti non tornano: dicono cosa fare, non solo che va male.
+ */
+function SpendableHeadline({ s, committed }: { s: Spendable; committed: number }) {
+  if (s.kind === "ok") {
+    return (
+      <>
+        <span className="text-sm text-muted-foreground">Puoi spendere ancora</span>
+        <span className="text-4xl sm:text-5xl font-bold tabular-nums leading-tight">{formatEuro(s.amount)}</span>
+        <span className="text-sm text-muted-foreground">
+          {s.days > 1
+            ? <>circa <strong className="text-foreground">{formatEuro(s.perDay)}</strong> al giorno per {s.days} giorni</>
+            : <>oggi è l&apos;ultimo giorno del periodo</>}
+        </span>
+        {s.capped && (
+          <span className="text-xs text-amber-700 dark:text-amber-400">
+            È quello che resta sul conto: il budget ti lascerebbe di più, ma contando le entrate in arrivo
+            {committed > 0 ? " e le spese fisse ancora da pagare" : ""} non ci sono altri soldi.
+          </span>
+        )}
+      </>
+    );
+  }
+  if (s.kind === "over") {
+    return (
+      <>
+        <span className="text-2xl sm:text-3xl font-bold tabular-nums leading-tight text-amber-700 dark:text-amber-400">
+          Hai superato il budget di {formatEuro(s.amount)}
+        </span>
+        <span className="text-sm text-muted-foreground">
+          {s.days > 1 ? `Per i prossimi ${s.days} giorni conviene stringere.` : "Oggi è l'ultimo giorno del periodo: domani si riparte."}
+          {committed > 0 && <> Restano da pagare spese fisse e rate per {formatEuro(committed)}.</>}
+        </span>
+      </>
+    );
+  }
+  if (s.kind === "short") {
+    return (
+      <>
+        <span className="text-2xl sm:text-3xl font-bold tabular-nums leading-tight text-amber-700 dark:text-amber-400">
+          Mancano {formatEuro(s.amount)}
+        </span>
+        <span className="text-sm text-muted-foreground">
+          per le spese fisse e le rate ancora da pagare, contando le entrate in arrivo. Per le altre spese non resta niente:
+          se puoi, rimanda quelle che possono aspettare.
+        </span>
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="text-lg font-semibold">Quanto puoi spendere ancora?</span>
+      <span className="text-sm text-muted-foreground">
+        Imposta un budget per le spese di tutti i giorni (spesa, benzina, ristoranti): Flusso ti dirà quanto puoi spendere fino alla fine del periodo e quanto al giorno.
+      </span>
+      <Link href="/dashboard/smart?v=budget" className="min-h-11 inline-flex items-center self-start text-sm font-medium text-primary hover:underline">
+        Imposta il budget →
+      </Link>
+    </>
+  );
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
-export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: Props) {
+export function BalanceHeroCard({ userId, periodFrom, periodTo, payDay, piggyBalance, data, periodTxs }: Props) {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [startingBalance, setStartingBalance] = useState<number | null>(null);
-  /** data dell'ultimo saldo inserito a mano, se il saldo di questo periodo è stato riportato */
-  const [carriedFrom, setCarriedFrom] = useState<string | null>(null);
-  const [items, setItems] = useState<RecurringRow[]>([]);
-  const [periodTxs, setPeriodTxs] = useState<Tx[]>([]);
-  const [budgetTotal, setBudgetTotal] = useState(0);
-  const [ownerIncome, setOwnerIncome] = useState<Partial<IncomeInfo> | null>(null);
-  const [membersIncome, setMembersIncome] = useState<MemberIncome[]>([]);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const { startingBalance, carriedFrom, items, budgetTotal, ownerIncome, membersIncome, accounts, accountStart } = data;
   const [editing, setEditing] = useState(false);
-  /** Conti (migration 048): se ci sono, il saldo è la loro somma e si corregge da /dashboard/conti */
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  /** saldo di ogni conto a inizio periodo */
-  const [accountStart, setAccountStart] = useState<Map<string, number>>(new Map());
   const [expanded, setExpanded] = useState<ExpandKey | null>(null);
 
   function toggle(key: ExpandKey) {
     setExpanded(k => k === key ? null : key);
   }
-
-  useEffect(() => {
-    const supabase = createClient();
-    let cancelled = false;
-
-    (async () => {
-      const [profileRes, recRes, periodTxRes, memRes, budgetRes, accRes] = await Promise.all([
-        supabase.from("profiles").select(`period_starting_balance, period_starting_balance_date, ${INCOME_COLS}`).eq("id", userId).single(),
-        supabase.from("recurring_expenses")
-          // "*": comprende saving_offset (migration 041) e regge anche se la colonna non c'è ancora
-          .select("*")
-          .eq("user_id", userId),
-        // Filtro per data: senza, il limite di default di 1000 righe potrebbe tagliare il periodo corrente.
-        supabase.from("transactions")
-          .select("*, categories(name)")
-          .eq("user_id", userId).gte("date", periodFrom).lte("date", periodTo),
-        supabase.from("family_members").select(`id, name, color, is_owner, ${INCOME_COLS}`).eq("user_id", userId),
-        // categories(name) per escludere "Accantonamenti": quella quota è già contata
-        // separatamente via aggregateSinkingFunds, sommarla anche qui la conterebbe due volte.
-        supabase.from("category_budgets").select("monthly_budget, categories(name)").eq("user_id", userId),
-        // senza la migration 048 la query fallisce: si resta col saldo unico di prima
-        supabase.from("accounts").select("id, name, member_id, anchor_balance, anchor_date, checked_at").eq("archived", false).order("created_at"),
-      ]);
-      const accs = accRes.error ? [] : ((accRes.data ?? []).map(a => ({ ...a, anchor_balance: Number(a.anchor_balance) })) as Account[]);
-
-      // Saldo a inizio periodo: quello inserito per questo periodo, oppure l'ultimo inserito
-      // riportato in avanti con i movimenti registrati nel frattempo.
-      const known = profileRes.data?.period_starting_balance;
-      const knownDate = profileRes.data?.period_starting_balance_date as string | null | undefined;
-      let start: number | null = null;
-      let carried: string | null = null;
-      const startByAccount = new Map<string, number>();
-      if (accs.length) {
-        // Con i conti: somma dei saldi dei conti a fine del giorno prima dell'inizio periodo
-        const before = addDaysISO(periodFrom, -1);
-        const range = neededRange(accs, before)!;
-        const gapTxs = await fetchAccountAmounts(userId, range.from, range.to);
-        start = totalAtStartOf(accs, gapTxs, periodFrom);
-        for (const a of accs) startByAccount.set(a.id, balanceAt(a, gapTxs, before));
-      } else if (known != null && knownDate) {
-        if (knownDate === periodFrom) {
-          start = Number(known);
-        } else {
-          const [from, to] = knownDate < periodFrom ? [knownDate, periodFrom] : [periodFrom, knownDate];
-          const gap = await fetchAmounts(userId, from, to);
-          start = rollBalance(Number(known), knownDate, periodFrom, gap);
-          carried = knownDate;
-        }
-      }
-
-      if (cancelled) return;
-      setStartingBalance(start);
-      setCarriedFrom(carried);
-      setAccounts(accs);
-      setAccountStart(startByAccount);
-      setOwnerIncome((profileRes.data ?? null) as Partial<IncomeInfo> | null);
-      setItems((recRes.data ?? []) as RecurringRow[]);
-      setPeriodTxs((periodTxRes.data ?? []) as unknown as Tx[]);
-      setMembersIncome((memRes.data ?? []) as MemberIncome[]);
-      setBudgetTotal((budgetRes.data ?? [])
-        .filter(r => (r.categories as unknown as { name: string } | null)?.name?.toLowerCase() !== "accantonamenti")
-        .reduce((s, r) => s + Number(r.monthly_budget), 0));
-      setLoading(false);
-    })();
-
-    return () => { cancelled = true; };
-  }, [userId, periodFrom, periodTo, refreshKey]);
 
   const iso = todayISO();
 
@@ -467,21 +379,12 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     };
   }, [startingBalance, items, periodTxs, budgetTotal, ownerIncome, membersIncome, piggyBalance, txSumToToday, periodFrom, periodTo, iso]);
 
-  if (loading) {
-    return (
-      <div data-tour="hero" className="rounded-xl border p-5 animate-pulse">
-        <div className="h-4 w-56 bg-muted rounded mb-4" />
-        <div className="h-24 w-full bg-muted/60 rounded" />
-      </div>
-    );
-  }
-
   if (startingBalance == null || !result) {
     return (
       <SetupForm
         periodFrom={periodFrom}
         txSumInPeriod={txSumToToday}
-        onSaved={() => setRefreshKey(k => k + 1)}
+        onSaved={() => router.refresh()}
       />
     );
   }
@@ -499,7 +402,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
         periodFrom={periodFrom}
         txSumInPeriod={txSumToToday}
         initialValue={actualToday}
-        onSaved={() => { setEditing(false); setRefreshKey(k => k + 1); }}
+        onSaved={() => { setEditing(false); router.refresh(); }}
         onCancel={() => setEditing(false)}
       />
     );
@@ -515,22 +418,19 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   ].filter(s => s.amount > 0);
 
   const committed = projection.committedRemaining;
+  const spend = spendable({
+    flexiblePlanned,
+    leftToSpend: projection.leftToSpend,
+    endBalance: projection.endBalance,
+    today: iso,
+    periodTo,
+  });
+  // Sotto la barra delle spese: il numero grande dice già quanto resta, qui le spese fisse.
   const spendHint = !hasPlan
     ? <Link href="/dashboard/smart?v=spese-fisse" onClick={e => e.stopPropagation()} className="text-primary hover:underline">Aggiungi le spese fisse (affitto, bollette, abbonamenti) per avere una previsione →</Link>
-    : flexiblePlanned <= 0
-      // solo spese fisse e rate: senza un budget non si sa quanto si vuole spendere per il resto
-      ? <>
-          {committed > 0
-            ? <>Spese fisse e rate ancora da pagare: <strong className="text-foreground">{formatEuro(committed)}</strong>.</>
-            : <>Spese fisse e rate pagate ✓</>}{" "}
-          <Link href="/dashboard/smart?v=budget" onClick={e => e.stopPropagation()} className="text-primary hover:underline">Imposta un budget per sapere quanto puoi spendere per il resto →</Link>
-        </>
-      : projection.leftToSpend >= 0
-        ? <>
-            Puoi ancora spendere <strong className="text-foreground">{formatEuro(projection.leftToSpend)}</strong> senza uscire dalle previsioni
-            {committed > 0 && <> (le spese fisse ancora da pagare, {formatEuro(committed)}, sono già tolte)</>}
-          </>
-        : <span className="text-red-500">Hai superato le spese previste di <strong>{formatEuro(-projection.leftToSpend)}</strong></span>;
+    : committed > 0
+      ? <>Spese fisse e rate ancora da pagare: <strong className="text-foreground">{formatEuro(committed)}</strong>{flexiblePlanned > 0 ? " (già tolte da quanto puoi spendere)" : ""}</>
+      : <>Spese fisse e rate pagate ✓</>;
 
   const incomeHint = !hasIncome
     ? <Link href="/dashboard/account" onClick={e => e.stopPropagation()} className="text-primary hover:underline">Indica il tuo stipendio per la previsione →</Link>
@@ -541,25 +441,47 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
   return (
     <div data-tour="hero" className="rounded-xl border p-4 sm:p-6 flex flex-col gap-5">
 
-      {/* 1 — Saldo di oggi */}
-      <div className="flex items-start justify-between gap-3">
-        <button onClick={() => toggle("saldo")} className="flex flex-col gap-0.5 text-left hover:opacity-80 transition-opacity">
-          <span className="text-xs text-muted-foreground flex items-center gap-1">Saldo di oggi <Chevron open={expanded === "saldo"} /></span>
-          <span className="text-3xl sm:text-4xl font-bold tabular-nums">{formatEuro(actualToday)}</span>
+      {/* 1 — Quanto puoi spendere ancora */}
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{periodEndLabel(payDay, periodTo)}</span>
+        <SpendableHeadline s={spend} committed={committed} />
+      </div>
+
+      {/* 2 — Saldo di oggi · a fine periodo circa */}
+      <div className="pt-3 border-t flex flex-wrap items-center gap-x-5 gap-y-0">
+        <button onClick={() => toggle("saldo")} aria-expanded={expanded === "saldo"} className="min-h-11 inline-flex items-center gap-1.5 text-left hover:opacity-80 transition-opacity">
+          <span className="text-sm text-muted-foreground">Saldo di oggi</span>
+          <span className="text-base font-semibold tabular-nums">{formatEuro(actualToday)}</span>
+          <Chevron open={expanded === "saldo"} />
         </button>
+        {(hasPlan || hasIncome) && (
+          <button onClick={() => toggle("fine")} aria-expanded={expanded === "fine"} className="min-h-11 inline-flex items-center gap-1.5 text-left hover:opacity-80 transition-opacity">
+            <span className="text-sm text-muted-foreground">A fine periodo circa</span>
+            <span className={`text-base font-semibold tabular-nums ${projection.endBalance < 0 ? "text-red-500" : ""}`}>{formatEuro(projection.endBalance)}</span>
+            <Chevron open={expanded === "fine"} />
+          </button>
+        )}
         {accounts.length ? (
-          <Link href="/dashboard/conti" className="text-xs text-muted-foreground hover:text-foreground underline shrink-0 mt-1">
+          <Link href="/dashboard/conti" className="min-h-11 inline-flex items-center text-xs text-muted-foreground hover:text-foreground underline ml-auto">
             Quadra con la banca
           </Link>
         ) : (
-          <button onClick={() => setEditing(true)} className="text-xs text-muted-foreground hover:text-foreground underline shrink-0 mt-1">
-            Correggi
+          <button onClick={() => setEditing(true)} className="min-h-11 inline-flex items-center text-xs text-muted-foreground hover:text-foreground underline ml-auto">
+            Correggi il saldo
           </button>
         )}
       </div>
+      {!hasPlan && !hasIncome && (
+        <p className="text-xs text-muted-foreground -mt-3">
+          Per sapere quanto avrai a fine periodo, indica il tuo{" "}
+          <Link href="/dashboard/account" className="text-primary hover:underline">stipendio</Link>{" "}
+          e{" "}
+          <Link href="/dashboard/smart?v=spese-fisse" className="text-primary hover:underline">le spese fisse</Link>.
+        </p>
+      )}
       {carriedFrom && expanded !== "saldo" && (
         <p className="text-[11px] text-muted-foreground -mt-4">
-          Aggiornato da solo con i movimenti dal {fmtDay(carriedFrom)}. Non torna con la banca? Tocca &quot;Correggi&quot;.
+          Saldo aggiornato da solo con i movimenti dal {fmtDay(carriedFrom)}. Non torna con la banca? Tocca &quot;Correggi il saldo&quot;.
         </p>
       )}
 
@@ -573,7 +495,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
               <div className="flex flex-col gap-1 pt-2 mt-1 border-t">
                 {accounts.map(a => (
                   <Line key={a.id} label={`🏦 ${a.name}`}
-                    value={formatEuro((accountStart.get(a.id) ?? 0) + periodTxs.filter(t => t.account_id === a.id && t.date <= iso).reduce((s, t) => s + Number(t.amount), 0))} />
+                    value={formatEuro((accountStart[a.id] ?? 0) + periodTxs.filter(t => t.account_id === a.id && t.date <= iso).reduce((s, t) => s + Number(t.amount), 0))} />
                 ))}
                 {(() => {
                   const loose = periodTxs.filter(t => !t.account_id && t.date <= iso).length;
@@ -626,25 +548,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
         </div>
       )}
 
-      {/* 2 — Fine periodo */}
-      <div className="pt-4 border-t flex flex-col gap-2">
-        {hasPlan || hasIncome ? (
-          <button onClick={() => toggle("fine")} className="flex items-baseline justify-between gap-3 text-left hover:opacity-80 transition-opacity">
-            <span className="text-sm text-muted-foreground flex items-center gap-1">
-              A fine periodo ({fmtDay(periodTo)}) avrai circa <Chevron open={expanded === "fine"} />
-            </span>
-            <span className={`text-xl font-semibold tabular-nums ${projection.endBalance < 0 ? "text-red-500" : ""}`}>
-              {formatEuro(projection.endBalance)}
-            </span>
-          </button>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Per sapere quanto avrai a fine periodo, indica il tuo{" "}
-            <Link href="/dashboard/account" className="text-primary hover:underline">stipendio</Link>{" "}
-            e{" "}
-            <Link href="/dashboard/smart?v=spese-fisse" className="text-primary hover:underline">le spese fisse</Link>.
-          </p>
-        )}
+      {/* Dettaglio della stima di fine periodo */}
         {expanded === "fine" && (
           <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs">
             <Line label="Saldo di oggi" value={formatEuro(actualToday)} />
@@ -665,7 +569,6 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
             )}
           </div>
         )}
-      </div>
 
       {/* 3 — Come stai andando */}
       <div className="flex flex-col gap-4">
@@ -690,7 +593,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
                 {rateItems.map(({ item }) => (
                   <Line key={item.id} label={`· ${item.name}`} value={formatEuro(item.amount)} className="pl-2" />
                 ))}
-                {sinkingMonthly > 0 && <Line label="Accantonamenti (quota del mese)" value={formatEuro(sinkingMonthly)} className="pt-1 border-t" />}
+                {sinkingMonthly > 0 && <Line label="Spese dell'anno (quota del mese)" value={formatEuro(sinkingMonthly)} className="pt-1 border-t" />}
                 <Line label="Budget per categoria" value={formatEuro(budgetTotal)} className="pt-1 border-t" />
                 <Line label="= Spese previste" value={formatEuro(spesePreviste)} strong className="pt-1 border-t" />
                 <Link href="/dashboard/smart" className="text-primary hover:underline pt-1">Modifica in Pianifica →</Link>
@@ -722,16 +625,16 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
         )}
       </div>
 
-      {/* Salvadanai, con il tasto Emergenza accanto */}
-      <div className="pt-4 border-t flex items-center justify-between gap-3">
-        <Link href="/dashboard/salvadanai" className="flex flex-col gap-0.5 group min-w-0">
-          <span className="text-xs text-muted-foreground">Messi da parte nei salvadanai 🐷</span>
+      {/* Salvadanai, con dentro il tasto Emergenza */}
+      <div data-tour="salvadanai-emergenza" className="rounded-lg border bg-muted/30 px-3 py-2 flex items-center justify-between gap-3">
+        <Link href="/dashboard/salvadanai" className="min-h-11 flex flex-col justify-center gap-0.5 group min-w-0">
+          <span className="text-xs text-muted-foreground">Messi da parte nei <span className="whitespace-nowrap">salvadanai 🐷</span></span>
           <span className="text-lg font-semibold tabular-nums">
             {formatEuro(piggyBalance)}{" "}
             <span className="text-xs font-normal text-muted-foreground group-hover:text-foreground transition-colors">Apri →</span>
           </span>
         </Link>
-        <EmergencyButton userId={userId} onDone={() => { setRefreshKey(k => k + 1); router.refresh(); }} />
+        <EmergencyButton userId={userId} onDone={() => router.refresh()} />
       </div>
     </div>
   );
