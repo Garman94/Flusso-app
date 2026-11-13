@@ -21,6 +21,7 @@ import { PageTour } from "@/components/tour/page-tour";
 import { GettingStartedCard } from "./getting-started-card";
 import { currentPeriod } from "@/lib/period";
 import type { HeroData, HeroTx } from "./hero-data";
+import { shortDay } from "@/lib/spendable";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Profile = { full_name: string | null; plan: string; piggy_balance: number };
@@ -171,14 +172,10 @@ export function DashboardClient({
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
 
 
-  const now = new Date();
-  const periodStart = new Date(periodFrom + "T00:00:00");
-  const periodEnd   = new Date(periodTo   + "T00:00:00");
-
   // ── Period label ─────────────────────────────────────────────────────────
-  const periodLabel = payDay > 0
-    ? `${periodStart.toLocaleDateString("it-IT", { day: "numeric", month: "short" })} – ${periodEnd.toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" })}`
-    : now.toLocaleString("it-IT", { month: "long", year: "numeric" });
+  // "27 ott – 26 nov": la card del saldo dice già "Fino al prossimo stipendio (26 nov)".
+  // shortDay e non toLocaleDateString: uguale su server e browser.
+  const periodLabel = `${shortDay(periodFrom)} – ${shortDay(periodTo)}`;
 
   // ── Aggregates ────────────────────────────────────────────────────────────
   // Spostamenti e Salvadanaio sono trasferimenti interni: esclusi da entrate/uscite
@@ -259,7 +256,7 @@ export function DashboardClient({
       {/* ── Banner: transazioni non categorizzate ── */}
       {uncategorizedCount >= 3 && (
         <Link
-          href="/dashboard/transazioni?filter=uncategorized&edit=1"
+          href="/dashboard/transazioni?filter=uncategorized"
           className="rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 py-3 flex items-center justify-between gap-3 text-sm hover:bg-orange-500/15 transition-colors group"
         >
           <div className="flex items-center gap-3">
@@ -280,6 +277,7 @@ export function DashboardClient({
         userId={userId}
         periodFrom={periodFrom}
         periodTo={periodTo}
+        payDay={payDay}
         piggyBalance={profile.piggy_balance}
         data={hero}
         periodTxs={currentTxs}
