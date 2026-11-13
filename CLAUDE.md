@@ -7,6 +7,19 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Dashboard: quanto puoi spendere, In arrivo e guide (2026-11-10)
+
+Fase 1 della ricerca UX ("si capisce subito"), parte dashboard e guide. Solo codice, nessuna migration e nessun dato cambiato.
+- **Dati dal server** (`app/dashboard/hero-data.ts`): la card del saldo chiedeva i dati dal browser dopo l'idratazione (6 richieste, poi il "buco" del saldo una dopo l'altra); il saldo compariva dopo 0,8-2,5 s, fino a 6 s. Ora `page.tsx` fa due giri in parallelo: profilo + `loadHeroBase` (spese ricorrenti, componenti, budget, conti) + le altre query; poi i movimenti del periodo (una sola query, per la card e per "Dove vanno i soldi") + `loadStartingBalance` (stesse regole di prima: `rollBalance`, `totalAtStartOf`; senza la migration 048 si resta col saldo unico). La card riceve `data` e `periodTxs`, non ha più useEffect e dopo un salvataggio fa `router.refresh()`. Misura in locale (demo, 390 px): il saldo arriva già nella pagina, 0,3-0,5 s.
+- **Numero grande** in cima alla card (`SpendableHeadline`, calcolo in `lib/spendable.ts`, test `tests/spendable.test.ts`): «Fino al prossimo stipendio (26 nov)» (`periodEndLabel`; "26 nov" è l'ultimo giorno del periodo, non il giorno dello stipendio), «Puoi spendere ancora X», «circa Y al giorno per N giorni» (arrotondato per difetto). X = il più piccolo tra budget rimasto (`leftToSpend`) e soldi davvero disponibili (`endBalance + leftToSpend` = saldo di oggi + entrate attese − spese fisse e rate da pagare): se è il secondo (`capped`) una nota dice che è quello che resta sul conto. Budget superato, soldi che mancano per le spese fisse (`short`) e nessun budget hanno frasi calme e un passo da fare. Sotto, più piccoli: «Saldo di oggi · A fine periodo circa» (si aprono come prima) e le barre Spese ed Entrate. Intestazione della dashboard "27 ott – 26 nov" con `shortDay` (niente `toLocaleDateString`: ora la card arriva dal server).
+- **In arrivo** (`app/dashboard/upcoming-card.tsx`, calcoli in `lib/upcoming.ts`, test `tests/upcoming.test.ts`): spese fisse, rate in corso e spese dell'anno con la scadenza nel periodo, stato da `planStatus`; ordine non trovate → in arrivo → da verificare → pagate, al massimo 4 (`UPCOMING_MAX`), «Vedi tutte» → Spese fisse. «L'ho pagata» (non trovate e da verificare) chiama `markRecurringAsPaid` e poi `router.refresh()`; le spese dell'anno scadute rimandano a Pianifica (lì si sceglie se prendere i soldi dal salvadanaio). Senza voci la card non compare. Usa i dati della card del saldo, nessuna query in più. Evento `upcoming_marked_paid` (`kind`, `state`).
+- **Emergenza**: il tasto sta dentro il riquadro «Messi da parte nei salvadanai» (`data-tour="salvadanai-emergenza"`); nella finestra «accantonamenti» → «spese dell'anno». La logica non cambia.
+- **Guide** (`lib/tour-steps.ts`, `components/tour/page-tour.tsx`): solo la dashboard parte da sola (5 passi: quanto puoi spendere, In arrivo, salvadanai ed Emergenza, Mesi passati, Transazioni), e non se la campanella è aperta. Nelle altre pagine un tasto «?» in basso a destra (`aria-label="Guida di questa pagina"`) e, la prima volta o dopo un aggiornamento, una riga di suggerimento chiudibile; `?tour=1` la fa partire ovunque. Transazioni dice «Ti restano X (entrate − uscite)» e «Tocca un movimento per modificarlo»; parole nuove «Spese dell'anno», «Questa persona sono io», «Funzioni avanzate». Il fumetto (`tour-overlay.tsx`) non va mai sopra la campanella e, per gli elementi più alti dello schermo, sta in basso dentro lo schermo (prima finiva fuori).
+- Tocchi da 44 px (`min-h-11`) su tutto ciò che è stato toccato, campo del saldo `text-base` sul telefono; tolto `&edit=1` dal link «Categorizza».
+- Rollback: revert della PR (solo codice, nessun dato toccato).
+
+---
+
 ## Si capisce subito: benvenuto, landing, prezzi, barra e campanella (2026-11-10)
 
 Fase 1 della ricerca sull'usabilità: chi arriva deve capire in un minuto cosa fa Flusso e vedere subito un numero suo.
@@ -773,7 +786,8 @@ Se `plan === 'free'` e la pagina ha `freePreview` definito in `PAGE_TOURS`, al p
 
 ### Attributi `data-tour`
 ```
-hero, breakdown, month-report-btn          dashboard
+hero, upcoming, salvadanai-emergenza,      dashboard
+breakdown, month-report-btn
 nav-transazioni, nav-smart                 nav
 tx-nav, tx-summary, tx-filters, tx-add    transazioni
 smart-obiettivi, smart-impegni              smart (cover)
@@ -781,7 +795,7 @@ account-income, account-family,            account
 account-power-user, account-feedback
 ```
 
-> Versioni tour: `/dashboard` v1.7 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v2.1 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.4. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`.
+> Versioni tour: `/dashboard` v3.0 · `/dashboard/transazioni` v1.5 · `/dashboard/smart` v3.2 · `/dashboard/salvadanai` v1.1 · `/dashboard/account` v1.6. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`. Solo la dashboard parte da sola; le altre pagine hanno il tasto «?» (2026-11-10).
 
 ### LocalStorage
 Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valore diverso dalla versione in `PAGE_TOURS` = aggiornamento.

@@ -14,7 +14,6 @@ import {
   computeDebtProgress,
   isTransferCategory,
   projectPeriodEnd,
-  type IncomeInfo,
 } from "@/lib/calculations";
 import { parseAmount } from "@/lib/import-parse";
 import { isFixedExpense, planStatus, splitPlan, type PlanItem } from "@/lib/fixed-expenses";
