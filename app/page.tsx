@@ -2,8 +2,9 @@ import Link from "next/link";
 import { Navbar } from "@/components/navbar";
 import { PricingCard } from "@/components/pricing-card";
 import { siteConfig } from "@/lib/config";
+import { getFounderSeats } from "@/lib/founder-seats-server";
 
-const features = [
+const features: { icon: string; title: string; description: string; premium?: boolean }[] = [
   {
     icon: "📊",
     title: "Dashboard essenziale",
@@ -14,7 +15,7 @@ const features = [
     icon: "📁",
     title: "Carica l'estratto conto",
     description:
-      "Importa il file Excel o CSV della tua banca. Se le colonne non sono quelle attese le indichi tu una volta sola, e i doppioni vengono riconosciuti.",
+      "Importa il file Excel o CSV della tua banca. Se le colonne non sono quelle attese le indichi tu una volta sola, e i doppioni vengono riconosciuti. Con Premium anche l'estratto conto in PDF, letto dall'AI.",
   },
   {
     icon: "🏷️",
@@ -27,18 +28,20 @@ const features = [
     title: "Budget per categoria",
     description:
       "Decidi quanto vuoi spendere in ogni categoria e confrontalo con la tua media reale, escludendo i mesi fuori dal normale.",
+    premium: true,
   },
   {
     icon: "🏦",
     title: "Accantonamenti e rate",
     description:
       "Assicurazione, bollo, vacanze: Flusso calcola quanto mettere da parte ogni mese. Per mutuo e rate vedi quanto hai pagato e quanto manca.",
+    premium: true,
   },
   {
     icon: "🎯",
     title: "Obiettivi e salvadanai",
     description:
-      "Crea più salvadanai (anche condivisi con la famiglia) e obiettivi con scadenza: vacanza, fondo emergenza, acquisto importante.",
+      "Crea più salvadanai (anche condivisi con la famiglia) e obiettivi con scadenza: vacanza, fondo emergenza, acquisto importante. Gratis un obiettivo, con Premium quanti vuoi.",
   },
 ];
 
@@ -51,7 +54,7 @@ const steps = [
   {
     step: "2",
     title: "Carica le tue spese",
-    description: "Importa il file Excel o CSV della banca, oppure inserisci i movimenti a mano.",
+    description: "Importa il file Excel o CSV della banca (con Premium anche il PDF dell'estratto conto), oppure inserisci i movimenti a mano.",
   },
   {
     step: "3",
@@ -81,7 +84,8 @@ const mockCategories = [
   { icon: "🚗", label: "Trasporti", amount: "€180" },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const seats = await getFounderSeats();
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
@@ -98,7 +102,7 @@ export default function HomePage() {
           </h1>
 
           <p className="text-xl text-muted-foreground max-w-xl">
-            Carica l&apos;estratto conto della tua banca: Flusso categorizza i movimenti, ti mostra dove vanno i soldi e quanto mettere da parte per le spese che arriveranno. Gratis.
+            Carica l&apos;estratto conto della tua banca: Flusso categorizza i movimenti, ti mostra dove vanno i soldi e quanto puoi spendere fino al prossimo stipendio. Gratis.
           </p>
 
           <div className="flex gap-3 flex-wrap justify-center">
@@ -125,7 +129,7 @@ export default function HomePage() {
 
           <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
             <span>✓ Piano gratuito senza scadenza</span>
-            <span>✓ Setup in 2 minuti</span>
+            <span>✓ Carichi il file della tua banca e in un minuto sai quanto puoi spendere</span>
             <span>✓ Database in Europa</span>
             <span>✓ Rimborso garantito 30 giorni (Premium)</span>
           </div>
@@ -225,7 +229,7 @@ export default function HomePage() {
             </div>
 
             <p className="text-center font-semibold text-lg">
-              Flusso risolve tutto questo in 2 minuti.
+              Flusso ti dà la risposta in un minuto, partendo dal file della tua banca.
             </p>
           </div>
         </section>
@@ -250,7 +254,14 @@ export default function HomePage() {
                 className="rounded-xl border p-6 flex flex-col gap-3 bg-card hover:shadow-md transition-shadow"
               >
                 <span className="text-3xl">{feature.icon}</span>
-                <h3 className="font-semibold">{feature.title}</h3>
+                <h3 className="font-semibold flex items-center gap-2">
+                  {feature.title}
+                  {feature.premium && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                      Premium
+                    </span>
+                  )}
+                </h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   {feature.description}
                 </p>
@@ -300,8 +311,13 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {Object.values(siteConfig.plans).map((plan) => (
-              <PricingCard key={plan.label} plan={plan} />
+            {Object.entries(siteConfig.plans).map(([key, plan]) => (
+              <PricingCard
+                key={plan.label}
+                plan={plan}
+                note={key === "founder" ? seats.note : undefined}
+                soldOut={key === "founder" && seats.soldOut}
+              />
             ))}
           </div>
         </section>
@@ -313,7 +329,7 @@ export default function HomePage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
               {[
                 { icon: "🔒", text: "Crittografia dei dati (in transito e a riposo)" },
-                { icon: "🇪🇺", text: "Database in Europa (Supabase, Irlanda). Con l'import da screenshot l'immagine passa da Anthropic (USA) e Flusso non la conserva" },
+                { icon: "🇪🇺", text: "Database in Europa (Supabase, Irlanda). Se fai leggere all'AI una foto o un PDF (Premium) il file passa da Anthropic (USA) e Flusso non lo conserva" },
                 { icon: "🚫", text: "Non vendiamo i tuoi dati a terzi. Puoi esportare i movimenti o cancellare tutto quando vuoi" },
               ].map((item) => (
                 <div key={item.text} className="flex flex-col items-center text-center gap-2">
@@ -332,7 +348,7 @@ export default function HomePage() {
               Pronto a controllare le tue finanze?
             </h2>
             <p className="text-primary-foreground/80 max-w-md">
-              Bastano due minuti: importa un estratto conto e guarda dove vanno i tuoi soldi.
+              Basta un minuto: carica il file della tua banca e scopri quanto puoi spendere fino al prossimo stipendio.
             </p>
             <Link
               href="/auth/sign-up"
