@@ -7,8 +7,9 @@ import { addDaysISO, todayISO } from "@/lib/dates";
 import { periodContaining, periodName, totals, type RecapTx } from "@/lib/recap";
 import type { RecapTeaser } from "./recap-banner";
 import { DashboardClient } from "./dashboard-client";
-import type { Transaction, Goal } from "@/lib/calculations";
+import type { Transaction, Goal, IncomeInfo } from "@/lib/calculations";
 import { withPotBalances } from "@/lib/goals";
+import { loadHeroBase, loadStartingBalance, type HeroData, type HeroProfile, type HeroTx } from "./hero-data";
 
 // ─── Server component ─────────────────────────────────────────────────────────
 
@@ -24,14 +25,25 @@ async function DashboardContent() {
 
   const userId = authData.claims.sub;
 
-  // Fetch profile first to know the payDay
-  const profileRes = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .single();
+  // Primo giro: il profilo (per il giorno di paga) insieme a tutto quello che non dipende dal periodo.
+  const [profileRes, heroBase, goalsRes, totalCountRes, lastTxRes, uncategorizedCountRes, goalPotsRes] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", userId).single(),
+    loadHeroBase(supabase, userId),
+    supabase.from("goals")
+      .select("id, name, target_amount, current_amount, deadline, icon, monthly_contribution, savings_pot_id")
+      .eq("user_id", userId).order("created_at", { ascending: false }).limit(3),
+    supabase.from("transactions")
+      .select("id", { count: "exact", head: true }).eq("user_id", userId),
+    supabase.from("transactions")
+      .select("date").eq("user_id", userId).order("date", { ascending: false }).limit(1).single(),
+    supabase.from("transactions")
+      .select("id", { count: "exact", head: true }).eq("user_id", userId).is("category_id", null),
+    // un obiettivo collegato vale il saldo del suo salvadanaio (lib/goals.ts)
+    supabase.from("savings_pots").select("id, current_balance").eq("user_id", userId),
+  ]);
 
-  const payDay: number = profileRes.data?.pay_day ?? 0;
+  const profile = profileRes.data as (HeroProfile & Record<string, unknown>) | null;
+  const payDay: number = (profile?.pay_day as number | undefined) ?? 0;
   // Stesso periodo di Transazioni e Pianifica (lib/period.ts è l'unica fonte).
   const { from: mFrom, to: mTo } = currentPeriod(payDay);
 
@@ -44,23 +56,21 @@ async function DashboardContent() {
         .eq("user_id", userId).gte("date", closed.from).lte("date", closed.to)
     : null;
 
-  const [currentTxsRes, goalsRes, totalCountRes, lastTxRes, uncategorizedCountRes, closedTxsRes, goalPotsRes] = await Promise.all([
+  // Secondo giro: i movimenti del periodo (una sola query per la card del saldo e per il resto
+  // della pagina) e il saldo a inizio periodo.
+  const [currentTxsRes, closedTxsRes, heroStart] = await Promise.all([
     supabase.from("transactions")
-      .select("id, amount, date, description, category_id, categories(name, color, icon)")
+      .select("*, categories(name, color, icon)")
       .eq("user_id", userId).gte("date", mFrom).lte("date", mTo).order("date", { ascending: true }),
-    supabase.from("goals")
-      .select("id, name, target_amount, current_amount, deadline, icon, monthly_contribution, savings_pot_id")
-      .eq("user_id", userId).order("created_at", { ascending: false }).limit(3),
-    supabase.from("transactions")
-      .select("id", { count: "exact", head: true }).eq("user_id", userId),
-    supabase.from("transactions")
-      .select("date").eq("user_id", userId).order("date", { ascending: false }).limit(1).single(),
-    supabase.from("transactions")
-      .select("id", { count: "exact", head: true }).eq("user_id", userId).is("category_id", null),
     closedTxsQuery,
-    // un obiettivo collegato vale il saldo del suo salvadanaio (lib/goals.ts)
-    supabase.from("savings_pots").select("id, current_balance").eq("user_id", userId),
+    loadStartingBalance(supabase, userId, profile, heroBase.accounts, mFrom),
   ]);
+
+  const hero: HeroData = {
+    ...heroBase,
+    ...heroStart,
+    ownerIncome: (profile ?? null) as Partial<IncomeInfo> | null,
+  };
 
   const closedTxs = (closedTxsRes?.data ?? []) as unknown as RecapTx[];
   const recapTeaser: RecapTeaser | null = closed && closedTxs.length >= 3
@@ -76,11 +86,12 @@ async function DashboardContent() {
     <DashboardClient
       userId={userId}
       profile={{
-        full_name: profileRes.data?.full_name ?? null,
-        plan: await getEffectivePlan(profileRes.data?.plan ?? "free", profileRes.data?.trial_ends_at),
-        piggy_balance: Number(profileRes.data?.piggy_balance ?? 0),
+        full_name: (profile?.full_name as string | null | undefined) ?? null,
+        plan: await getEffectivePlan((profile?.plan as string | undefined) ?? "free", profile?.trial_ends_at as string | null | undefined),
+        piggy_balance: Number(profile?.piggy_balance ?? 0),
       }}
-      currentTxs={(currentTxsRes.data ?? []) as unknown as Transaction[]}
+      currentTxs={(currentTxsRes.data ?? []) as unknown as (Transaction & HeroTx)[]}
+      hero={hero}
       goals={withPotBalances((goalsRes.data ?? []) as unknown as (Goal & { monthly_contribution: number | null; savings_pot_id: string | null })[], goalPotsRes.data ?? [])}
       totalTxCount={totalCountRes.count ?? 0}
       uncategorizedCount={uncategorizedCountRes.count ?? 0}

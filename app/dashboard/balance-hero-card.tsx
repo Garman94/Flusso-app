@@ -1,11 +1,9 @@
 "use client";
 
-import { addDaysISO, todayISO } from "@/lib/dates";
-import { balanceAt, neededRange, totalAtStartOf, type Account, type AccountTx } from "@/lib/accounts";
-import { useEffect, useMemo, useState } from "react";
+import { todayISO } from "@/lib/dates";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import {
   formatEuro,
   aggregateExpectedIncome,
@@ -15,7 +13,6 @@ import {
   sinkingFundInput,
   computeDebtProgress,
   isTransferCategory,
-  rollBalance,
   projectPeriodEnd,
   type IncomeInfo,
 } from "@/lib/calculations";
@@ -25,6 +22,7 @@ import { flowOf, isSpending, moneyTotals } from "@/lib/money";
 import { updateStartingBalance } from "./saldo-action";
 import { EmergencyButton } from "./emergency-button";
 import { toast } from "sonner";
+import type { HeroData, HeroTx } from "./hero-data";
 
 // Card principale della dashboard. Tre domande, in quest'ordine:
 //   1. quanto ho oggi?            → Saldo di oggi
@@ -35,46 +33,17 @@ import { toast } from "sonner";
 // entrate previste − spese previste (il risparmio del mese, non un saldo): confrontato col
 // saldo reale dava differenze senza senso. Vedi projectPeriodEnd in lib/calculations.ts.
 
-const INCOME_COLS = "income_type, monthly_income, income_frequency, income_payday, income_variability, active_months";
-const PAGE = 1000;
-
-type RecurringRow = {
-  id: string;
-  name: string;
-  tipologia: "fissa" | "variabile" | "entrata";
-  frequency: string;
-  custom_days: number | null;
-  amount: number;
-  amount_max: number | null;
-  next_due_date: string | null;
-  saving_start_date: string | null;
-  saving_offset?: number | null;
-  debt_type: string | null;
-  debt_total_amount: number | null;
-  debt_start_date: string | null;
-  due_day: number | null;
-  due_month: number | null;
-  match_keywords: string[] | null;
-  secondary_name: string | null;
-  end_date: string | null;
-  last_paid_date: string | null;
-};
-
-type Tx = {
-  amount: number; date: string;
-  description?: string | null; merchant?: string | null;
-  member_id?: string | null;
-  account_id?: string | null;
-  categories?: { name: string } | null;
-};
-
-type MemberIncome = Partial<IncomeInfo> & { id: string; name: string; color: string; is_owner: boolean };
+type Tx = HeroTx;
 
 type Props = {
   userId: string;
   periodFrom: string;
   periodTo: string;
   piggyBalance: number;
+  /** letti dal server (hero-data.ts): la card non fa richieste, dopo un salvataggio router.refresh() */
+  data: HeroData;
+  /** movimenti del periodo, gli stessi del resto della dashboard */
+  periodTxs: HeroTx[];
 };
 
 type ExpandKey = "saldo" | "fine" | "spese" | "entrate";
@@ -83,49 +52,6 @@ const isTransfer = (t: Tx) => isTransferCategory(t.categories?.name);
 
 const fmtDay = (iso: string) =>
   new Date(iso + "T00:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" });
-
-/** Movimenti (data, importo) in [from, to): a pagine, per non fermarsi al limite di 1000 righe. */
-async function fetchAmounts(userId: string, from: string, to: string): Promise<{ date: string; amount: number }[]> {
-  const supabase = createClient();
-  const out: { date: string; amount: number }[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("date, amount")
-      .eq("user_id", userId)
-      .gte("date", from)
-      .lt("date", to)
-      .order("date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(offset, offset + PAGE - 1);
-    if (error || !data) break;
-    out.push(...(data as { date: string; amount: number }[]));
-    if (data.length < PAGE) break;
-  }
-  return out;
-}
-
-/** Movimenti dei conti (data, importo, conto) in [from, to], estremi compresi: a pagine. */
-async function fetchAccountAmounts(userId: string, from: string, to: string): Promise<AccountTx[]> {
-  const supabase = createClient();
-  const out: AccountTx[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("date, amount, account_id")
-      .eq("user_id", userId)
-      .not("account_id", "is", null)
-      .gte("date", from)
-      .lte("date", to)
-      .order("date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(offset, offset + PAGE - 1);
-    if (error || !data) break;
-    out.push(...(data as AccountTx[]));
-    if (data.length < PAGE) break;
-  }
-  return out;
-}
 
 // ─── Setup: primo utilizzo / correzione ─────────────────────────────────────
 // L'utente inserisce il saldo che ha OGGI sul conto. Per ancorare la proiezione
@@ -286,95 +212,15 @@ function ProgressStat({
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
-export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: Props) {
+export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance, data, periodTxs }: Props) {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [startingBalance, setStartingBalance] = useState<number | null>(null);
-  /** data dell'ultimo saldo inserito a mano, se il saldo di questo periodo è stato riportato */
-  const [carriedFrom, setCarriedFrom] = useState<string | null>(null);
-  const [items, setItems] = useState<RecurringRow[]>([]);
-  const [periodTxs, setPeriodTxs] = useState<Tx[]>([]);
-  const [budgetTotal, setBudgetTotal] = useState(0);
-  const [ownerIncome, setOwnerIncome] = useState<Partial<IncomeInfo> | null>(null);
-  const [membersIncome, setMembersIncome] = useState<MemberIncome[]>([]);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const { startingBalance, carriedFrom, items, budgetTotal, ownerIncome, membersIncome, accounts, accountStart } = data;
   const [editing, setEditing] = useState(false);
-  /** Conti (migration 048): se ci sono, il saldo è la loro somma e si corregge da /dashboard/conti */
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  /** saldo di ogni conto a inizio periodo */
-  const [accountStart, setAccountStart] = useState<Map<string, number>>(new Map());
   const [expanded, setExpanded] = useState<ExpandKey | null>(null);
 
   function toggle(key: ExpandKey) {
     setExpanded(k => k === key ? null : key);
   }
-
-  useEffect(() => {
-    const supabase = createClient();
-    let cancelled = false;
-
-    (async () => {
-      const [profileRes, recRes, periodTxRes, memRes, budgetRes, accRes] = await Promise.all([
-        supabase.from("profiles").select(`period_starting_balance, period_starting_balance_date, ${INCOME_COLS}`).eq("id", userId).single(),
-        supabase.from("recurring_expenses")
-          // "*": comprende saving_offset (migration 041) e regge anche se la colonna non c'è ancora
-          .select("*")
-          .eq("user_id", userId),
-        // Filtro per data: senza, il limite di default di 1000 righe potrebbe tagliare il periodo corrente.
-        supabase.from("transactions")
-          .select("*, categories(name)")
-          .eq("user_id", userId).gte("date", periodFrom).lte("date", periodTo),
-        supabase.from("family_members").select(`id, name, color, is_owner, ${INCOME_COLS}`).eq("user_id", userId),
-        // categories(name) per escludere "Accantonamenti": quella quota è già contata
-        // separatamente via aggregateSinkingFunds, sommarla anche qui la conterebbe due volte.
-        supabase.from("category_budgets").select("monthly_budget, categories(name)").eq("user_id", userId),
-        // senza la migration 048 la query fallisce: si resta col saldo unico di prima
-        supabase.from("accounts").select("id, name, member_id, anchor_balance, anchor_date, checked_at").eq("archived", false).order("created_at"),
-      ]);
-      const accs = accRes.error ? [] : ((accRes.data ?? []).map(a => ({ ...a, anchor_balance: Number(a.anchor_balance) })) as Account[]);
-
-      // Saldo a inizio periodo: quello inserito per questo periodo, oppure l'ultimo inserito
-      // riportato in avanti con i movimenti registrati nel frattempo.
-      const known = profileRes.data?.period_starting_balance;
-      const knownDate = profileRes.data?.period_starting_balance_date as string | null | undefined;
-      let start: number | null = null;
-      let carried: string | null = null;
-      const startByAccount = new Map<string, number>();
-      if (accs.length) {
-        // Con i conti: somma dei saldi dei conti a fine del giorno prima dell'inizio periodo
-        const before = addDaysISO(periodFrom, -1);
-        const range = neededRange(accs, before)!;
-        const gapTxs = await fetchAccountAmounts(userId, range.from, range.to);
-        start = totalAtStartOf(accs, gapTxs, periodFrom);
-        for (const a of accs) startByAccount.set(a.id, balanceAt(a, gapTxs, before));
-      } else if (known != null && knownDate) {
-        if (knownDate === periodFrom) {
-          start = Number(known);
-        } else {
-          const [from, to] = knownDate < periodFrom ? [knownDate, periodFrom] : [periodFrom, knownDate];
-          const gap = await fetchAmounts(userId, from, to);
-          start = rollBalance(Number(known), knownDate, periodFrom, gap);
-          carried = knownDate;
-        }
-      }
-
-      if (cancelled) return;
-      setStartingBalance(start);
-      setCarriedFrom(carried);
-      setAccounts(accs);
-      setAccountStart(startByAccount);
-      setOwnerIncome((profileRes.data ?? null) as Partial<IncomeInfo> | null);
-      setItems((recRes.data ?? []) as RecurringRow[]);
-      setPeriodTxs((periodTxRes.data ?? []) as unknown as Tx[]);
-      setMembersIncome((memRes.data ?? []) as MemberIncome[]);
-      setBudgetTotal((budgetRes.data ?? [])
-        .filter(r => (r.categories as unknown as { name: string } | null)?.name?.toLowerCase() !== "accantonamenti")
-        .reduce((s, r) => s + Number(r.monthly_budget), 0));
-      setLoading(false);
-    })();
-
-    return () => { cancelled = true; };
-  }, [userId, periodFrom, periodTo, refreshKey]);
 
   const iso = todayISO();
 
@@ -467,21 +313,12 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
     };
   }, [startingBalance, items, periodTxs, budgetTotal, ownerIncome, membersIncome, piggyBalance, txSumToToday, periodFrom, periodTo, iso]);
 
-  if (loading) {
-    return (
-      <div data-tour="hero" className="rounded-xl border p-5 animate-pulse">
-        <div className="h-4 w-56 bg-muted rounded mb-4" />
-        <div className="h-24 w-full bg-muted/60 rounded" />
-      </div>
-    );
-  }
-
   if (startingBalance == null || !result) {
     return (
       <SetupForm
         periodFrom={periodFrom}
         txSumInPeriod={txSumToToday}
-        onSaved={() => setRefreshKey(k => k + 1)}
+        onSaved={() => router.refresh()}
       />
     );
   }
@@ -499,7 +336,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
         periodFrom={periodFrom}
         txSumInPeriod={txSumToToday}
         initialValue={actualToday}
-        onSaved={() => { setEditing(false); setRefreshKey(k => k + 1); }}
+        onSaved={() => { setEditing(false); router.refresh(); }}
         onCancel={() => setEditing(false)}
       />
     );
@@ -573,7 +410,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
               <div className="flex flex-col gap-1 pt-2 mt-1 border-t">
                 {accounts.map(a => (
                   <Line key={a.id} label={`🏦 ${a.name}`}
-                    value={formatEuro((accountStart.get(a.id) ?? 0) + periodTxs.filter(t => t.account_id === a.id && t.date <= iso).reduce((s, t) => s + Number(t.amount), 0))} />
+                    value={formatEuro((accountStart[a.id] ?? 0) + periodTxs.filter(t => t.account_id === a.id && t.date <= iso).reduce((s, t) => s + Number(t.amount), 0))} />
                 ))}
                 {(() => {
                   const loose = periodTxs.filter(t => !t.account_id && t.date <= iso).length;
@@ -731,7 +568,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, piggyBalance }: 
             <span className="text-xs font-normal text-muted-foreground group-hover:text-foreground transition-colors">Apri →</span>
           </span>
         </Link>
-        <EmergencyButton userId={userId} onDone={() => { setRefreshKey(k => k + 1); router.refresh(); }} />
+        <EmergencyButton userId={userId} onDone={() => router.refresh()} />
       </div>
     </div>
   );

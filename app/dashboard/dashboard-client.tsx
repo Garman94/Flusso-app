@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { PageTour } from "@/components/tour/page-tour";
 import { GettingStartedCard } from "./getting-started-card";
 import { currentPeriod } from "@/lib/period";
+import type { HeroData, HeroTx } from "./hero-data";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Profile = { full_name: string | null; plan: string; piggy_balance: number };
@@ -29,7 +30,9 @@ type DashboardGoal = Goal & { monthly_contribution: number | null };
 type Props = {
   userId: string;
   profile: Profile;
-  currentTxs: Transaction[];
+  currentTxs: (Transaction & HeroTx)[];
+  /** dati della card del saldo, letti dal server (hero-data.ts) */
+  hero: HeroData;
   goals: DashboardGoal[];
   totalTxCount: number;
   uncategorizedCount: number;
@@ -160,7 +163,7 @@ function SettingsModal({ payDay, onClose }: { payDay: number; onClose: () => voi
 
 // ─── Main Dashboard Client ────────────────────────────────────────────────────
 export function DashboardClient({
-  userId, profile, currentTxs, goals,
+  userId, profile, currentTxs, hero, goals,
   totalTxCount, uncategorizedCount, lastTxDate,
   payDay, periodFrom, periodTo, recapTeaser,
 }: Props) {
@@ -278,6 +281,8 @@ export function DashboardClient({
         periodFrom={periodFrom}
         periodTo={periodTo}
         piggyBalance={profile.piggy_balance}
+        data={hero}
+        periodTxs={currentTxs}
       />
 
       {/* ── Rate scadute non ancora segnate come pagate ── */}
