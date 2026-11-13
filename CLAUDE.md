@@ -21,6 +21,22 @@ Fase 1 della ricerca sull'usabilità: chi arriva deve capire in un minuto cosa f
 
 ---
 
+## Demo coerente (2026-11-13)
+
+Migration 051 (solo demo), test `tests/demo-coerente.test.ts`. Prima (prove del 10/11) la demo aveva movimenti con date future, "aggiornato dal 1 nov" con il periodo dal 27/10, ottobre con 1.400 € di entrate contro 2.100 di stipendio (il 27/9 era domenica e lo stipendio cadeva nel periodo prima), risparmio negativo, spesa più grande = giorno più caro, Conti e Carburante vuoti, "Ciao, Marco!" e due obiettivi per la stessa vacanza.
+- `reseed_demo()` costruisce 7 periodi di paga (giorno 27, spostato come in `lib/period.ts`: sabato → venerdì, domenica → lunedì) e non scrive mai movimenti dopo oggi (`v.dt <= current_date`).
+- **Nucleo**: Giulia (titolare, `is_owner`, stipendio il giorno di paga) e Luca (libero professionista, fattura il 10). Le entrate di ogni periodo sono quelle di Account e se ne risparmia circa un quarto.
+- **Riepilogo**: la spesa più grande è un acquisto da solo nel suo giorno, il giorno più caro è un altro (spesa + cena).
+- **Conto** "Conto in comune" con l'ancora a ieri, già quadrato: tutti i movimenti (salvadanai compresi) stanno sul conto, e il saldo a inizio periodo calcolato dal conto coincide con `period_starting_balance`.
+- **Salvadanai**: Vacanza estiva e Nuovo laptop (ognuno col suo obiettivo, che vale il saldo), Emergenza (libero), Accantonamenti (in pari col previsto dei due accantonamenti, collegati lì). I versamenti sono anche movimenti del conto.
+- **Auto** "Utilitaria" (benzina): rifornimenti presi dai movimenti Q8 ed Eni (prezzo con tre decimali, km dall'ultimo rifornimento), l'ultimo lasciato libero per provare "Usa"; tragitto casa-lavoro 18 km andata e ritorno nei giorni feriali.
+- 7 spese fisse e 5 budget; Telepass resta fuori apposta come spesa fissa trovata nei movimenti. Gli importi sono fissi per periodo (piccole variazioni a giro) e Ristoranti a volte sfora il budget apposta.
+- `reseed_demo_salvadanai()` (043) ora non fa niente: resta perché `/api/demo/reset` la chiama.
+- **Provata in una transazione annullata** il 13/11 (nessuna scrittura rimasta, demo di produzione controllata dopo): 0 date future, 159 movimenti tutti con il conto, 6 periodi chiusi con risparmio tra 645 e 784 €, saldo dal conto = saldo a inizio periodo, obiettivi = salvadanai, consumo 17–17,5 km/l.
+- **Applicata in produzione il 13/11** (`db push --remote`, solo la 051): la demo di produzione ha gli stessi numeri della prova, e il giro di `/api/demo/reset` (reseed_demo → reseed_demo_utenze → reseed_demo_salvadanai) provato in transazione annullata funziona. **La 050 (PR #31) è più vecchia ma non ancora applicata**: `db push` la rifiuta finché non si aggiunge `--include-all`. Nessun codice dipende dalla 051. Rollback: `supabase/rollback/051_demo_coerente_down.sql` (rimette le funzioni della 038 e della 043, toglie auto e conto della demo e la ricarica).
+
+---
+
 ## Modifica dei movimenti e pagina Transazioni (2026-11-10)
 
 Fase 1 della ricerca UX ("si capisce subito"). Solo la pagina Transazioni, nessuna migration.
@@ -872,6 +888,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `042_obiettivi_salvadanai.sql` | Trigger `sync_goal_from_pot`: gli obiettivi collegati e allineati seguono il saldo del salvadanaio. Nessun dato modificato |
 | `043_demo_obiettivi_salvadanai.sql` | Solo demo: `reseed_demo_salvadanai()`, ogni obiettivo col suo salvadanaio e accantonamenti nel salvadanaio "Accantonamenti" |
 | `050_campanella_pulita.sql` | Spegne (`is_active = false`) le due notifiche della campanella superate (formati Excel, "sezione Smart"). Nessun dato cancellato. Rollback: `supabase/rollback/050_campanella_pulita_down.sql` |
+| `051_demo_coerente.sql` | Solo demo: `reseed_demo()` sui periodi di paga, mai date future, con conto, auto e salvadanai in pari; `reseed_demo_salvadanai()` vuota. Applicata il 2026-11-13 |
 
 ---
 
