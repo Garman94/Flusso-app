@@ -7,13 +7,27 @@ import { PAGE_TOURS, hasUnseenTour, isFirstVisit, markTourSeen } from "@/lib/tou
 
 type Props = { path: string; plan?: string };
 
+// Solo la dashboard fa partire la guida da sola (al primo accesso; dopo un aggiornamento
+// chiede). Nelle altre pagine c'è un tasto "?" in basso a destra, con al massimo una riga di
+// suggerimento la prima volta o dopo un aggiornamento: la guida parte solo se la chiedi.
+// ?tour=1 (onboarding, pallino nella barra) la fa partire in qualsiasi pagina.
+const AUTO_START = new Set(["/dashboard"]);
+
+/** La guida non parte sopra la finestra delle notifiche aperta. */
+function bellIsOpen(): boolean {
+  return document.querySelector("[data-tour='notifications-bell']")?.getAttribute("aria-expanded") === "true";
+}
+
 export function PageTour({ path, plan }: Props) {
-  const { start } = useTour();
+  const { start, active } = useTour();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [showPrompt, setShowPrompt] = useState(false);
+  const [hint, setHint] = useState<"first" | "update" | null>(null);
 
   const def = PAGE_TOURS[path];
+  const auto = AUTO_START.has(path);
+  const stepsFor = () => (plan === "free" && def?.freePreview ? def.freePreview : def!.steps);
 
   useEffect(() => {
     if (!def) return;
@@ -35,18 +49,23 @@ export function PageTour({ path, plan }: Props) {
       url.searchParams.delete("tour");
       router.replace(url.pathname + (url.search || ""));
       const t = setTimeout(() => {
-        start(def.steps);
+        start(stepsFor());
         markTourSeen(path);
       }, 500);
       return () => clearTimeout(t);
     }
 
+    if (!auto) {
+      if (isFirstVisit(path)) setHint("first");
+      else if (hasUnseenTour(path)) setHint("update");
+      return;
+    }
+
     if (isFirstVisit(path)) {
-      // primo accesso: parte subito senza chiedere
-      // se utente free e la pagina ha freePreview, usa quello
-      const steps = (plan === "free" && def.freePreview) ? def.freePreview : def.steps;
+      // primo accesso: parte subito senza chiedere (se la campanella è aperta, alla prossima visita)
       const t = setTimeout(() => {
-        start(steps);
+        if (bellIsOpen()) return;
+        start(stepsFor());
         markTourSeen(path);
       }, 800);
       return () => clearTimeout(t);
@@ -59,6 +78,8 @@ export function PageTour({ path, plan }: Props) {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (!def) return null;
+
   function handleYes() {
     setShowPrompt(false);
     markTourSeen(path);
@@ -70,7 +91,48 @@ export function PageTour({ path, plan }: Props) {
     markTourSeen(path);
   }
 
-  if (!showPrompt || !def) return null;
+  function openGuide() {
+    setHint(null);
+    markTourSeen(path);
+    start(stepsFor());
+  }
+
+  function closeHint() {
+    setHint(null);
+    markTourSeen(path);
+  }
+
+  if (!auto) {
+    if (active) return null;
+    return (
+      <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-30 flex items-center gap-2 max-w-[calc(100vw-2rem)]">
+        {hint && (
+          <div className="flex items-center gap-1 min-w-0 rounded-full border bg-background shadow-md pl-3 text-xs animate-in fade-in duration-300">
+            <button onClick={openGuide} className="min-h-11 truncate text-left hover:underline">
+              {hint === "first" ? "Prima volta qui? Tocca per la guida" : "🆕 Novità in questa pagina: guardale"}
+            </button>
+            <button
+              onClick={closeHint}
+              aria-label="Chiudi il suggerimento"
+              className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        <button
+          onClick={openGuide}
+          aria-label="Guida di questa pagina"
+          title="Guida di questa pagina"
+          className="min-h-11 min-w-11 shrink-0 rounded-full border bg-background shadow-md text-base font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          ?
+        </button>
+      </div>
+    );
+  }
+
+  if (!showPrompt) return null;
 
   return (
     <div
@@ -90,13 +152,13 @@ export function PageTour({ path, plan }: Props) {
       <div className="flex gap-2">
         <button
           onClick={handleYes}
-          className="flex-1 bg-primary text-primary-foreground rounded-md py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors"
+          className="min-h-11 flex-1 bg-primary text-primary-foreground rounded-md py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors"
         >
           Sì, mostrami
         </button>
         <button
           onClick={handleNo}
-          className="flex-1 border rounded-md py-1.5 text-xs hover:bg-muted/50 transition-colors"
+          className="min-h-11 flex-1 border rounded-md py-1.5 text-xs hover:bg-muted/50 transition-colors"
         >
           No grazie
         </button>
