@@ -11,7 +11,7 @@ const down = fs.readFileSync(path.join(__dirname, "../supabase/rollback/051_demo
 
 // Solo il codice, senza i commenti (che raccontano anche com'era prima).
 const code = sql
-  .split("\n")
+  .split(/\r?\n/) // anche con i fine riga di Windows (CRLF)
   .map((l) => l.replace(/--.*$/, ""))
   .join("\n");
 

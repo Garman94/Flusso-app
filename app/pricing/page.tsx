@@ -1,12 +1,13 @@
 import { Navbar } from "@/components/navbar";
 import { PricingCard } from "@/components/pricing-card";
-import { siteConfig } from "@/lib/config";
+import { FOUNDER_SEATS, TRIAL_DAYS, siteConfig } from "@/lib/config";
+import { getFounderSeats } from "@/lib/founder-seats-server";
 import Link from "next/link";
 
 const faqs = [
   {
     q: "Posso iniziare gratis?",
-    a: "Sì. Il piano gratuito non scade mai e non richiede carta di credito. Hai accesso alle funzionalità base da subito.",
+    a: `Sì. Il piano gratuito non scade mai e non richiede carta di credito. Nei primi ${TRIAL_DAYS} giorni hai anche tutto Premium, per provarlo.`,
   },
   {
     q: "Cosa succede quando supero il limite del piano gratuito?",
@@ -14,7 +15,7 @@ const faqs = [
   },
   {
     q: "Che formato Excel supportate?",
-    a: "Accettiamo file .xlsx, .xls e .csv. Flusso cerca da solo le colonne Data, Importo e Descrizione (anche con Entrate e Uscite separate). Se non le trova te le fa indicare una volta e se le ricorda.",
+    a: "Accettiamo file .xlsx, .xls e .csv. Flusso cerca da solo le colonne Data, Importo e Descrizione (anche con Entrate e Uscite separate). Se non le trova te le fa indicare una volta e se le ricorda. Con Premium puoi caricare anche l'estratto conto in PDF di qualsiasi banca: lo legge l'AI e ti dice se i movimenti tornano con il saldo.",
   },
   {
     q: "Cos'è una regola di categorizzazione?",
@@ -22,7 +23,7 @@ const faqs = [
   },
   {
     q: "Cos'è il piano Founder?",
-    a: "Paghi una volta e hai accesso a vita a tutte le funzionalità Premium, aggiornamenti inclusi. Non è acquistabile dal sito: lo attivo io a mano. Registrati e scrivimi dalla chat in Account.",
+    a: `Paghi una volta e hai accesso a vita a tutte le funzionalità Premium, aggiornamenti inclusi. Vale solo per i primi ${FOUNDER_SEATS}. Non è acquistabile dal sito: lo attivo io a mano. Registrati e scrivimi dalla chat in Account.`,
   },
   {
     q: "Offrite rimborsi?",
@@ -30,15 +31,16 @@ const faqs = [
   },
   {
     q: "I miei dati bancari sono al sicuro?",
-    a: "Non ci colleghiamo alla tua banca: carichi solo il file che esporti tu. Il database è in Europa (Irlanda) e i dati sono crittografati. Se usi l'import da screenshot (Premium) l'immagine viene elaborata da Anthropic (USA) e non viene conservata da Flusso.",
+    a: "Non ci colleghiamo alla tua banca: carichi solo il file che esporti tu. Il database è in Europa (Irlanda) e i dati sono crittografati. Se fai leggere all'AI una foto o un PDF (Premium) il file viene elaborato da Anthropic (USA) e Flusso non lo conserva.",
   },
   {
     q: "Funziona con la mia banca?",
-    a: "Funziona con le banche che permettono di esportare i movimenti in Excel o CSV. Se il tuo file non viene letto bene, scrivimi dalla chat in Account e lo aggiungo.",
+    a: "Funziona con le banche che permettono di esportare i movimenti in Excel o CSV. Con Premium va bene anche l'estratto conto in PDF. Se il tuo file non viene letto bene, scrivimi dalla chat in Account e lo aggiungo.",
   },
 ];
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  const seats = await getFounderSeats();
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
@@ -55,8 +57,13 @@ export default function PricingPage() {
         {/* Plans */}
         <section className="w-full max-w-5xl px-5 pb-24">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {Object.values(siteConfig.plans).map((plan) => (
-              <PricingCard key={plan.label} plan={plan} />
+            {Object.entries(siteConfig.plans).map(([key, plan]) => (
+              <PricingCard
+                key={plan.label}
+                plan={plan}
+                note={key === "founder" ? seats.note : undefined}
+                soldOut={key === "founder" && seats.soldOut}
+              />
             ))}
           </div>
         </section>
@@ -79,16 +86,25 @@ export default function PricingPage() {
                 <tbody>
                   {[
                     ["Transazioni manuali", "Illimitate", "Illimitate", "Illimitate"],
-                    ["Import estratto conto (Excel/CSV)", "3 file/mese", "Illimitati", "Illimitati"],
+                    ["Import del file della banca (Excel/CSV)", "3 file/mese", "Illimitati", "Illimitati"],
+                    ["Estratto conto in PDF o foto (AI)", "❌", "✅", "✅"],
                     ["Categorie e regole personalizzate", "✅", "✅", "✅"],
+                    ["Spese fisse", "✅", "✅", "✅"],
+                    ["Conti e saldo che torna con la banca", "✅", "✅", "✅"],
+                    ["Salvadanai", "✅", "✅", "✅"],
                     ["Obiettivi di risparmio", "1", "Illimitati", "Illimitati"],
-                    ["Import da screenshot (AI)", "❌", "✅", "✅"],
                     ["Budget per categoria", "❌", "✅", "✅"],
                     ["Accantonamenti e rate", "❌", "✅", "✅"],
+                    ["Stima di luce e gas", "✅", "✅", "✅"],
+                    ["Bollette lette dall'AI", "❌", "✅", "✅"],
+                    ["Auto e carburante", "❌", "✅", "✅"],
+                    ["Emergenza: soldi dai salvadanai per un imprevisto", "✅", "✅", "✅"],
+                    ["Riepilogo di ogni mese", "✅", "✅", "✅"],
                     ["Esporta i movimenti (CSV)", "✅", "✅", "✅"],
-                    ["Supporto diretto e voto sulle novità", "❌", "❌", "✅"],
+                    ["Chat diretta con me", "✅", "✅", "✅"],
+                    ["Voto sulle novità e accesso anticipato", "❌", "❌", "✅"],
                     ["Accesso a vita", "❌", "❌", "✅"],
-                    ["Prezzo mensile", "Gratis", "€4,99/mese", "€49 una tantum"],
+                    ["Prezzo", "Gratis", "€4,99/mese", `€49 una tantum (primi ${FOUNDER_SEATS})`],
                     ["Opzione annuale", "—", "€39/anno", "—"],
                   ].map(([feature, free, premium, founder]) => (
                     <tr key={feature} className="border-b last:border-b-0 hover:bg-muted/30 transition-colors">

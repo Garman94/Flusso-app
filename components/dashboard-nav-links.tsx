@@ -80,7 +80,8 @@ export function DashboardNavLinks({ isAdmin }: Props) {
             <Link
               href={href}
               data-tour={href === "/dashboard/transazioni" ? "nav-transazioni" : href === "/dashboard/smart" ? "nav-smart" : undefined}
-              className={`transition-colors text-sm ${
+              aria-current={isActive(href, exact) ? "page" : undefined}
+              className={`inline-flex min-h-11 items-center transition-colors text-sm ${
                 isActive(href, exact)
                   ? "text-foreground font-semibold"
                   : "text-muted-foreground hover:text-foreground"
@@ -91,9 +92,9 @@ export function DashboardNavLinks({ isAdmin }: Props) {
             {unseenMap[href] && (
               <button
                 onClick={e => handleDot(e, href)}
-                className="absolute -top-1 -right-2.5 w-2 h-2 rounded-full bg-primary hover:opacity-80 transition-opacity"
+                className="absolute top-2 -right-2.5 w-2 h-2 rounded-full bg-primary hover:opacity-80 transition-opacity before:absolute before:-inset-2 before:content-['']"
                 title="Novità in questa pagina — tocca per vederle"
-                aria-label="Tutorial aggiornato"
+                aria-label={`Novità in ${label}: guarda la guida`}
               />
             )}
           </div>
@@ -101,7 +102,8 @@ export function DashboardNavLinks({ isAdmin }: Props) {
         {isAdmin && (
           <Link
             href="/dashboard/admin"
-            className={`transition-colors text-sm ${
+            aria-current={isActive("/dashboard/admin", false) ? "page" : undefined}
+            className={`inline-flex min-h-11 items-center transition-colors text-sm ${
               isActive("/dashboard/admin", false)
                 ? "text-amber-600 dark:text-amber-400 font-semibold"
                 : "text-amber-600/60 dark:text-amber-400/60 hover:text-amber-600 dark:hover:text-amber-400"
@@ -126,60 +128,60 @@ export function MobileBottomNav({ isAdmin }: Props) {
 
       {/* Dashboard */}
       <div className="relative">
-        <Link href="/dashboard" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard", true) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard", true) ? 2.2 : 1.8}>
+        <Link href="/dashboard" aria-current={isActive("/dashboard", true) ? "page" : undefined} className={`flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard", true) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard", true) ? 2.2 : 1.8}>
             <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
             <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
           </svg>
           <span className="text-[10px]">Dashboard</span>
         </Link>
         {unseenMap["/dashboard"] && (
-          <button onClick={e => handleDot(e, "/dashboard")} className="absolute top-0.5 right-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background" aria-label="Novità in questa pagina" />
+          <button onClick={e => handleDot(e, "/dashboard")} className="absolute top-0.5 right-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background before:absolute before:-inset-2 before:content-['']" aria-label="Novità in Dashboard: guarda la guida" />
         )}
       </div>
 
       {/* Transazioni */}
       <div className="relative">
-        <Link href="/dashboard/transazioni" data-tour="nav-transazioni" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/transazioni", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/transazioni", false) ? 2.2 : 1.8}>
+        <Link href="/dashboard/transazioni" aria-current={isActive("/dashboard/transazioni", false) ? "page" : undefined} data-tour="nav-transazioni" className={`flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/transazioni", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/transazioni", false) ? 2.2 : 1.8}>
             <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
           </svg>
           <span className="text-[10px]">Transazioni</span>
         </Link>
         {unseenMap["/dashboard/transazioni"] && (
-          <button onClick={e => handleDot(e, "/dashboard/transazioni")} className="absolute top-0.5 right-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background" aria-label="Novità in questa pagina" />
+          <button onClick={e => handleDot(e, "/dashboard/transazioni")} className="absolute top-0.5 right-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background before:absolute before:-inset-2 before:content-['']" aria-label="Novità in Transazioni: guarda la guida" />
         )}
       </div>
 
       {/* Pianifica (URL /dashboard/smart, invariato per non rompere link e guide già viste) */}
       <div className="relative">
-        <Link href="/dashboard/smart" data-tour="nav-smart" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/smart", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/smart", false) ? 2.2 : 1.8}>
+        <Link href="/dashboard/smart" aria-current={isActive("/dashboard/smart", false) ? "page" : undefined} data-tour="nav-smart" className={`flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/smart", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/smart", false) ? 2.2 : 1.8}>
             <rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4M8 14l2.5 2.5L16 12" />
           </svg>
           <span className="text-[10px]">Pianifica</span>
         </Link>
         {unseenMap["/dashboard/smart"] && (
-          <button onClick={e => handleDot(e, "/dashboard/smart")} className="absolute top-0.5 right-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background" aria-label="Novità in questa pagina" />
+          <button onClick={e => handleDot(e, "/dashboard/smart")} className="absolute top-0.5 right-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background before:absolute before:-inset-2 before:content-['']" aria-label="Novità in Pianifica: guarda la guida" />
         )}
       </div>
 
       {/* Account */}
       <div className="relative">
-        <Link href="/dashboard/account" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/account", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/account", false) ? 2.2 : 1.8}>
+        <Link href="/dashboard/account" aria-current={isActive("/dashboard/account", false) ? "page" : undefined} className={`flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/account", false) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/account", false) ? 2.2 : 1.8}>
             <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
           </svg>
           <span className="text-[10px]">Account</span>
         </Link>
         {unseenMap["/dashboard/account"] && (
-          <button onClick={e => handleDot(e, "/dashboard/account")} className="absolute top-0.5 right-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background" aria-label="Novità in questa pagina" />
+          <button onClick={e => handleDot(e, "/dashboard/account")} className="absolute top-0.5 right-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background before:absolute before:-inset-2 before:content-['']" aria-label="Novità in Account: guarda la guida" />
         )}
       </div>
 
       {isAdmin && (
-        <Link href="/dashboard/admin" className={`flex flex-col items-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/admin", false) ? "text-amber-600 dark:text-amber-400" : "text-amber-600/50 dark:text-amber-400/50 hover:text-amber-600 dark:hover:text-amber-400"}`}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/admin", false) ? 2.2 : 1.8}>
+        <Link href="/dashboard/admin" aria-current={isActive("/dashboard/admin", false) ? "page" : undefined} className={`flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 transition-colors py-1 px-3 ${isActive("/dashboard/admin", false) ? "text-amber-600 dark:text-amber-400" : "text-amber-600/50 dark:text-amber-400/50 hover:text-amber-600 dark:hover:text-amber-400"}`}>
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive("/dashboard/admin", false) ? 2.2 : 1.8}>
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
           </svg>
           <span className="text-[10px]">Admin</span>
