@@ -323,14 +323,14 @@ begin
     order by t.date desc
     offset 1
   loop
-    pr := 1.82 + ((extract(day from r.date)::int + extract(month from r.date)::int) % 8) / 100.0;
+    pr := round(1.82 + ((extract(day from r.date)::int + extract(month from r.date)::int) % 8) / 100.0, 3);
     q  := round(r.amt / pr, 2);
     insert into vehicle_refuels (user_id, vehicle_id, date, amount, quantity, price, trip_km, full_tank, transaction_id)
       values (demo_id, veh_id, r.date, r.amt, q, pr,
               round(q * (15.5 + (extract(day from r.date)::int % 5) * 0.5)), true, r.id);
   end loop;
   insert into vehicle_routines (user_id, vehicle_id, name, km, round_trip, kind, weekdays)
-    values (demo_id, veh_id, 'Casa - lavoro', 12, true, 'days', '{1,2,3,4,5}');
+    values (demo_id, veh_id, 'Casa - lavoro', 18, true, 'days', '{1,2,3,4,5}');
 end;
 $function$;
 
