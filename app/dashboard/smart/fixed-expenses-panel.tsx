@@ -235,7 +235,7 @@ function FixedList({
       <div className="flex items-center gap-3">
         <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">← Indietro</button>
         <h1 className="text-xl font-bold flex-1">Spese fisse</h1>
-        <button onClick={() => onOpenForm(null)} className="text-sm bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 transition-colors">
+        <button onClick={() => onOpenForm(null)} className="shrink-0 min-h-11 text-sm bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 transition-colors">
           + Aggiungi
         </button>
       </div>
@@ -309,8 +309,8 @@ function FixedList({
                   {subtotal > 0 && <span className="normal-case tracking-normal font-medium tabular-nums">{formatEuro(subtotal)} in questo periodo</span>}
                 </h2>
                 {g.key === "utenze" && (
-                  <button onClick={onOpenUtenze} className="text-sm text-primary hover:underline self-start -mt-1">
-                    ⚡ Calcola luce e gas: stima la bolletta di questo mese →
+                  <button onClick={onOpenUtenze} className="min-h-11 text-sm text-primary hover:underline self-start -mt-1 text-left">
+                    💡 Calcola luce e gas: stima la bolletta di questo mese →
                   </button>
                 )}
                 {g.list.map(st => {
@@ -360,7 +360,7 @@ function FixedList({
       )}
 
       <button onClick={onOpenUtenze} className="rounded-xl border px-4 py-3 text-left flex items-center gap-3 hover:bg-muted/40 transition-colors">
-        <span className="text-xl">⚡🔥</span>
+        <span className="text-xl">💡🔥</span>
         <span className="flex flex-col flex-1">
           <span className="text-sm font-medium">Calcolatore luce e gas</span>
           <span className="text-xs text-muted-foreground">Quanto pagherai questo mese, dai consumi degli anni passati e dai prezzi del tuo fornitore.</span>

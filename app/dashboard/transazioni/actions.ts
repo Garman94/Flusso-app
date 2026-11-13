@@ -3,6 +3,64 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { categorize } from "@/lib/categorize";
+import { EDITABLE_FIELDS, type EditableTx } from "@/lib/transaction-edit";
+
+const TX_SELECT = "*, categories(id, name, color, icon), family_members(id, name, color)";
+
+/**
+ * Pannello "Modifica movimento" (transaction-sheet.tsx): salva solo i campi passati, cioè quelli cambiati.
+ * Categoria, persona e conto devono essere dell'utente (le categorie anche predefinite).
+ */
+export async function updateTransaction(txId: string, patch: Partial<EditableTx>) {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  if (!data?.claims) return { error: "Non autenticato" };
+  const userId = data.claims.sub;
+
+  const update: Partial<EditableTx> = {};
+  for (const f of EDITABLE_FIELDS) if (f in patch) Object.assign(update, { [f]: patch[f] ?? null });
+  if (Object.keys(update).length === 0) return { error: "Niente da salvare" };
+
+  if ("date" in update && (!/^\d{4}-\d{2}-\d{2}$/.test(String(update.date)) || Number.isNaN(Date.parse(String(update.date))))) {
+    return { error: "Data non valida" };
+  }
+  if ("amount" in update) {
+    const n = Math.round(Number(update.amount) * 100) / 100;
+    if (!Number.isFinite(n) || n === 0) return { error: "Importo non valido" };
+    update.amount = n;
+  }
+  if ("description" in update) {
+    const d = String(update.description ?? "").trim();
+    if (!d) return { error: "Scrivi una descrizione" };
+    update.description = d;
+  }
+  if ("notes" in update) update.notes = update.notes?.trim() || null;
+
+  if (update.category_id) {
+    const { data: c } = await supabase.from("categories").select("id")
+      .eq("id", update.category_id).or(`user_id.eq.${userId},user_id.is.null`).maybeSingle();
+    if (!c) return { error: "Categoria non trovata" };
+  }
+  if (update.member_id) {
+    const { data: m } = await supabase.from("family_members").select("id")
+      .eq("id", update.member_id).eq("user_id", userId).maybeSingle();
+    if (!m) return { error: "Persona non trovata" };
+  }
+  if (update.account_id) {
+    const { data: a } = await supabase.from("accounts").select("id")
+      .eq("id", update.account_id).eq("user_id", userId).maybeSingle();
+    if (!a) return { error: "Conto non trovato" };
+  }
+
+  const { data: tx, error } = await supabase.from("transactions")
+    .update(update).eq("id", txId).eq("user_id", userId)
+    .select(TX_SELECT).single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/transazioni");
+  revalidatePath("/dashboard");
+  return { transaction: tx };
+}
 
 /** Assegna categoria a una singola transazione */
 export async function categorizeTransaction(txId: string, categoryId: string) {

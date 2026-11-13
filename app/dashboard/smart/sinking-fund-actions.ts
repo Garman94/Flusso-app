@@ -51,7 +51,7 @@ export async function markSinkingFundPaid(
     .eq("user_id", userId)
     .single();
   if (!rec) return { error: "Spesa non trovata." };
-  if (!rec.next_due_date) return { error: "Voce non configurata come accantonamento." };
+  if (!rec.next_due_date) return { error: "Questa voce non è una spesa dell'anno." };
 
   const cycleMonths = monthsPerCycle(rec.frequency, rec.custom_days);
   const newDueDate = addMonths(new Date(rec.next_due_date + "T00:00:00"), cycleMonths);
@@ -116,7 +116,7 @@ export async function markSinkingFundPaid(
         user_id: userId,
         amount: amountToDeduct,
         type: "withdraw",
-        note: "Pagamento accantonamento",
+        note: "Pagamento spesa dell'anno",
       });
       if (txErr) return { error: txErr.message };
       const before = Number(pot.current_balance);

@@ -18,7 +18,7 @@ export const UTILITY: Record<UtilityKind, {
   otherDefault: number;
   priceRange: [number, number];
 }> = {
-  luce: { label: "Luce", icon: "⚡", unit: "kWh", otherDefault: 0.06, priceRange: [0.01, 2] },
+  luce: { label: "Luce", icon: "💡", unit: "kWh", otherDefault: 0.06, priceRange: [0.01, 2] },
   gas: { label: "Gas", icon: "🔥", unit: "Smc", otherDefault: 0.30, priceRange: [0.05, 5] },
 };
 

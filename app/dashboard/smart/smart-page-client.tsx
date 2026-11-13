@@ -1,6 +1,6 @@
 "use client";
 
-import { toISODate, todayISO } from "@/lib/dates";
+import { todayISO } from "@/lib/dates";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -20,7 +20,12 @@ import { BudgetPanel } from "./budget-panel";
 import { FixedExpensesPanel, fixedSuggestions, useDismissedSuggestions } from "./fixed-expenses-panel";
 import { UtenzePanel } from "./utenze-panel";
 import { CarburantePanel } from "./carburante-panel";
-import { isFixedExpense } from "@/lib/fixed-expenses";
+import { isFixedExpense, planPayments } from "@/lib/fixed-expenses";
+import { debtFromLastMonth, debtToMonths, debtEndDate } from "@/lib/debt-plan";
+import {
+  budgetSpend, budgetTotals, budgetStatus, fixedStatus, rateStatus, sinkingStatus, steadyFrom, goalsStatus, potsStatus,
+  type CoverStatus,
+} from "@/lib/plan-cover";
 import { EmergencyButton } from "../emergency-button";
 import { useDemoGuard } from "@/components/demo-context";
 
@@ -244,11 +249,43 @@ const EMPTY_D = {
   debt_type: "" as DebtType | "",
   name: "",
   amount: "",
+  // "until": rata al mese + mese dell'ultima rata (lib/debt-plan.ts); "total": importo
+  // totale + data di inizio. Nel database finiscono sempre importo totale e data di inizio.
+  mode: "until" as "until" | "total",
+  last_m: "", last_y: "",
+  first_m: "", first_y: "",
   debt_total_amount: "",
   debt_start_date: "",
   due_day: null as number | null,
   secondary_name: "",
 };
+
+const MONTHS_IT = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+
+/** "YYYY-MM" dai due menu, "" finché ne manca uno. */
+const ym = (y: string, m: string) => (y && m ? `${y}-${m}` : "");
+
+/** Mese e anno con due menu: `type="month"` non c'è su Firefox e Safari per computer. */
+function MonthYearSelect({ month, year, onChange, fromYear, toYear, label }: {
+  month: string; year: string; onChange: (month: string, year: string) => void;
+  fromYear: number; toYear: number; label: string;
+}) {
+  const cls = "border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors min-h-11";
+  const years: number[] = [];
+  for (let y = fromYear; y <= toYear; y++) years.push(y);
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <select aria-label={`${label}: mese`} value={month} onChange={e => onChange(e.target.value, year)} className={cls}>
+        <option value="">Mese</option>
+        {MONTHS_IT.map((name, i) => <option key={name} value={String(i + 1).padStart(2, "0")}>{name}</option>)}
+      </select>
+      <select aria-label={`${label}: anno`} value={year} onChange={e => onChange(month, e.target.value)} className={cls}>
+        <option value="">Anno</option>
+        {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
+      </select>
+    </div>
+  );
+}
 
 const DEBT_TYPE_META: Record<DebtType, { icon: string; label: string }> = {
   mutuo:          { icon: "🏠", label: "Mutuo" },
@@ -333,6 +370,9 @@ export function SmartPageClient({
   const [recurringItems, setRecurringItems] = useState<RecurringExpense[]>(initialRecurring ?? []);
   const [recurringLoading, setRecurringLoading] = useState(!initialRecurring);
   const [storedGoals, setGoals] = useState(initialGoals);
+  // Budget per categoria: qui e non solo nel pannello, così la copertina ("X € rimasti")
+  // e le spese fisse vedono subito un budget appena salvato.
+  const [categoryBudgets, setCategoryBudgets] = useState<CategoryBudget[]>(initialCategoryBudgets);
 
   // Recurring wizard (add)
   const [rStep, setRStep] = useState(1);
@@ -458,10 +498,18 @@ export function SmartPageClient({
   }
 
   function goEditRate(item: RecurringExpense) {
+    // Si riapre "fino a quando" se l'importo totale è un numero intero di rate (come lo
+    // salva quel modo), altrimenti con importo totale e data di inizio.
+    const months = item.debt_total_amount != null && item.debt_start_date
+      ? debtToMonths({ totalAmount: Number(item.debt_total_amount), monthly: Number(item.amount), startDate: item.debt_start_date })
+      : null;
     setDForm({
       debt_type: (item.debt_type ?? "") as DebtType | "",
       name: item.name,
       amount: item.amount.toString().replace(".", ","),
+      mode: months ? "until" : "total",
+      last_m: months?.lastMonth.slice(5, 7) ?? "", last_y: months?.lastMonth.slice(0, 4) ?? "",
+      first_m: months?.firstMonth.slice(5, 7) ?? "", first_y: months?.firstMonth.slice(0, 4) ?? "",
       debt_total_amount: item.debt_total_amount != null ? String(item.debt_total_amount).replace(".", ",") : "",
       debt_start_date: item.debt_start_date ?? "",
       due_day: item.due_day ?? null,
@@ -472,15 +520,33 @@ export function SmartPageClient({
 
   async function handleSaveRate() {
     const amt = parseFloat(dForm.amount.replace(",", "."));
-    const total = parseFloat(dForm.debt_total_amount.replace(",", "."));
     if (!dForm.debt_type) { toast.error("Scegli il tipo di rata/debito."); return; }
     if (!dForm.name.trim()) { toast.error("Inserisci un nome."); return; }
     if (isNaN(amt) || amt <= 0) { toast.error("Inserisci una rata mensile valida."); return; }
-    if (isNaN(total) || total < amt) { toast.error("L'importo totale deve essere almeno pari alla rata mensile."); return; }
-    if (!dForm.debt_start_date) { toast.error("Inserisci la data di inizio."); return; }
+
+    let total: number;
+    let startDate: string;
+    if (dForm.mode === "until") {
+      const last = ym(dForm.last_y, dForm.last_m);
+      const first = ym(dForm.first_y, dForm.first_m);
+      if (!last) { toast.error("Indica mese e anno dell'ultima rata."); return; }
+      if ((dForm.first_m || dForm.first_y) && !first) { toast.error("Della prima rata indica mese e anno, o lasciali vuoti."); return; }
+      const plan = debtFromLastMonth({ monthly: amt, lastMonth: last, today: todayISO(), firstMonth: first || null });
+      if (!plan) {
+        toast.error(first ? "L'ultima rata non può venire prima della prima." : "L'ultima rata è già passata: per una rata finita indica anche la prima.");
+        return;
+      }
+      total = plan.totalAmount;
+      startDate = plan.startDate;
+    } else {
+      total = parseFloat(dForm.debt_total_amount.replace(",", "."));
+      if (isNaN(total) || total < amt) { toast.error("L'importo totale deve essere almeno pari alla rata mensile."); return; }
+      if (!dForm.debt_start_date) { toast.error("Inserisci la data di inizio."); return; }
+      startDate = dForm.debt_start_date;
+    }
 
     setDSaving(true);
-    const progress = computeDebtProgress({ totalAmount: total, monthlyAmount: amt, startDate: dForm.debt_start_date });
+    const progress = computeDebtProgress({ totalAmount: total, monthlyAmount: amt, startDate });
     const payload = {
       name: dForm.name.trim(), tipologia: "fissa" as Tipologia, frequency: "mensile" as Frequency,
       custom_days: null, amount: amt, amount_max: null,
@@ -488,8 +554,8 @@ export function SmartPageClient({
       due_day: dForm.due_day, category_id: null, notes: null,
       secondary_name: dForm.secondary_name.trim() || null,
       next_due_date: null, saving_start_date: null,
-      end_date: toISODate(progress.endDate),
-      debt_type: dForm.debt_type, debt_total_amount: total, debt_start_date: dForm.debt_start_date,
+      end_date: debtEndDate(progress.endDate, dForm.due_day),
+      debt_type: dForm.debt_type, debt_total_amount: total, debt_start_date: startDate,
     };
 
     const supabase = createClient();
@@ -536,7 +602,7 @@ export function SmartPageClient({
     if (error) { toast.error(`Errore: ${error.message}`); return; }
     setRecurringItems(prev => prev.map(it => it.next_due_date ? { ...it, savings_pot_id: potId || null } : it));
     const pot = pots.find(p => p.id === potId);
-    toast.success(pot ? `Gli accantonamenti ora usano il salvadanaio "${pot.name}"` : "Gli accantonamenti ora contano tutti i salvadanai");
+    toast.success(pot ? `Le spese dell'anno ora usano il salvadanaio "${pot.name}"` : "Le spese dell'anno ora contano tutti i salvadanai");
   }
 
   async function handleSaveAccantonamento() {
@@ -569,7 +635,7 @@ export function SmartPageClient({
     if (error) toast.error(`Errore: ${error.message}`);
     else {
       setRecurringItems(prev => [...prev, data as RecurringExpense]);
-      toast.success("Accantonamento aggiunto!"); goBack("accantonamenti");
+      toast.success("Spesa dell'anno aggiunta!"); goBack("accantonamenti");
     }
     setASaving(false);
   }
@@ -851,7 +917,7 @@ export function SmartPageClient({
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-bold">{trialExpired ? "La prova Premium è finita" : "Funzione Premium"}</h1>
           <p className="text-muted-foreground">
-            Budget per categoria, rate e accantonamenti servono a Flusso per dirti quanto avrai a fine mese.
+            Budget per categoria, rate e spese dell&apos;anno servono a Flusso per dirti quanto avrai a fine mese.
             {trialExpired ? " I tuoi dati restano tutti qui." : ""}
           </p>
         </div>
@@ -871,25 +937,42 @@ export function SmartPageClient({
   }
 
   if (view === "cover") {
-    const rateActive = recurringItems.filter(it => it.debt_type && it.debt_start_date && it.debt_total_amount
-      && computeDebtProgress({ totalAmount: it.debt_total_amount, monthlyAmount: it.amount, startDate: it.debt_start_date }).status === "active");
-    const accantonamentiCount = recurringItems.filter(it => it.next_due_date).length;
-    const potsTotal = pots.reduce((sum, p) => sum + Number(p.current_balance), 0);
-    const fixedCount = recurringItems.filter(isFixedExpense).length;
-    const foundCount = fixedSuggestions(recurringItems, transactions, categories, dismissedSuggestions).length;
+    // Una riga di stato per sezione al posto dei conteggi (lib/plan-cover.ts). Con null la
+    // sezione non è ancora impostata e si vede la descrizione di sempre.
+    const today = todayISO();
+    const periodEnd = pEnd ?? today;
+    const fixedItems = recurringItems.filter(isFixedExpense);
+    const foundCount = fixedItems.length ? 0 : fixedSuggestions(recurringItems, transactions, categories, dismissedSuggestions).length;
+    const planItems = recurringItems.filter(it => isFixedExpense(it) || it.debt_type);
+    const accId = categories.find(c => c.name.toLowerCase() === "accantonamenti")?.id ?? null;
+    const sinkingQuota = aggregateSinkingFunds(
+      recurringItems.filter(it => it.next_due_date && it.saving_start_date).map(sinkingFundInput), piggyBalance,
+    ).this_month_total;
+    const budgetMap = Object.fromEntries(categoryBudgets.map(b => [b.category_id, Number(b.monthly_budget)]));
+    const spend = budgetSpend(categories, transactions, pStart, periodEnd,
+      planPayments(planItems, transactions, [{ from: pStart, to: periodEnd }]));
+    const status = {
+      fixed: fixedStatus(fixedItems, transactions, pStart, periodEnd, today, foundCount),
+      budget: budgetStatus(budgetTotals(categories, budgetMap, spend, accId, sinkingQuota)),
+      rate: rateStatus(recurringItems, today),
+      sinking: sinkingStatus(recurringItems.filter(it => it.next_due_date && it.saving_start_date), today),
+      goals: goalsStatus(goals),
+      pots: potsStatus(pots),
+    };
 
-    type Item = { icon: string; label: string; desc: string; badge?: string; premium: boolean; tour?: string; onClick?: () => void; href?: string };
+    type Item = { icon: string; label: string; desc: string; status?: CoverStatus; premium: boolean; tour?: string; onClick?: () => void; href?: string };
     const SECTIONS: { title: string; items: Item[] }[] = [
       {
         title: "Le spese del mese",
         items: [
           { icon: "📋", label: "Spese fisse", desc: "Affitto, bollette, telefono, abbonamenti: quelle che arrivano da sole", premium: false, tour: "smart-spese-fisse",
-            badge: fixedCount ? `${fixedCount}` : foundCount ? `${foundCount} ${foundCount === 1 ? "trovata" : "trovate"}` : undefined, onClick: () => setView("spese-fisse") },
-          { icon: "🧮", label: "Budget", desc: "Quanto vuoi spendere per le spese che cambiano: spesa, ristoranti, svago…", premium: true, tour: "smart-budget", onClick: () => setView("budget") },
+            status: status.fixed, onClick: () => setView("spese-fisse") },
+          { icon: "🧮", label: "Budget", desc: "Quanto vuoi spendere per le spese che cambiano: spesa, ristoranti, svago…", premium: true, tour: "smart-budget",
+            status: status.budget, onClick: () => setView("budget") },
           { icon: "📆", label: "Rate e mutui", desc: "Mutuo, finanziamenti, prestiti: quanto hai pagato e quanto manca", premium: true,
-            badge: rateActive.length ? `${rateActive.length} in corso` : undefined, onClick: () => setView("rate") },
-          { icon: "🏦", label: "Accantonamenti", desc: "Spese annuali (assicurazione, bollo…): quanto mettere da parte ogni mese per non trovarti scoperto", premium: true,
-            badge: accantonamentiCount ? `${accantonamentiCount}` : undefined, onClick: () => setView("accantonamenti") },
+            status: status.rate, onClick: () => setView("rate") },
+          { icon: "🏦", label: "Spese dell'anno", desc: "Assicurazione, bollo, regali: quanto mettere da parte ogni mese per non trovarti scoperto", premium: true,
+            status: status.sinking, onClick: () => setView("accantonamenti") },
         ],
       },
       {
@@ -903,28 +986,38 @@ export function SmartPageClient({
         title: "I tuoi risparmi",
         items: [
           { icon: "🎯", label: "Obiettivi", desc: "Una cifra da raggiungere entro una data: vacanza, fondo emergenza, un acquisto", premium: false, tour: "smart-obiettivi",
-            badge: goals.length ? `${goals.length}` : undefined, onClick: () => setView("list-goals") },
+            status: status.goals, onClick: () => setView("list-goals") },
           { icon: "🐷", label: "Salvadanai", desc: "I soldi che hai già messo da parte, anche in comune con la famiglia", premium: false,
-            badge: potsTotal > 0 ? fmt(potsTotal) : undefined, href: "/dashboard/salvadanai" },
+            status: status.pots, href: "/dashboard/salvadanai" },
         ],
       },
     ];
 
-    const cardClass = "flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 px-4 py-3.5 text-left transition-all active:scale-[0.98] w-full";
-    const cardBody = (it: Item) => (
-      <>
-        <span className="text-2xl shrink-0">{it.icon}</span>
-        <span className="flex flex-col min-w-0 flex-1">
-          <span className="text-base font-medium flex items-center gap-2">
-            {it.label}
-            {it.premium && isFree && <span className="text-[10px] font-semibold uppercase tracking-wide rounded bg-muted px-1.5 py-0.5 text-muted-foreground">🔒 Premium</span>}
+    const cardClass = "flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 px-4 py-3.5 min-h-11 text-left transition-all active:scale-[0.98] w-full";
+    const TONE: Record<string, string> = {
+      ok: "text-green-700 dark:text-green-400",
+      warn: "text-amber-700 dark:text-amber-400",
+      neutral: "text-foreground/80",
+    };
+    // Sul piano gratuito le sezioni Premium sono chiuse: lì resta la descrizione.
+    const cardBody = (it: Item) => {
+      const st = it.premium && isFree ? null : it.status ?? null;
+      return (
+        <>
+          <span className="text-2xl shrink-0">{it.icon}</span>
+          <span className="flex flex-col min-w-0 flex-1">
+            <span className="text-base font-medium flex items-center gap-2">
+              {it.label}
+              {it.premium && isFree && <span className="text-[10px] font-semibold uppercase tracking-wide rounded bg-muted px-1.5 py-0.5 text-muted-foreground">🔒 Premium</span>}
+            </span>
+            {st
+              ? <span className={`text-sm font-medium tabular-nums ${TONE[st.tone]}`}>{st.text}</span>
+              : <span className="text-xs text-muted-foreground">{it.desc}</span>}
           </span>
-          <span className="text-xs text-muted-foreground">{it.desc}</span>
-        </span>
-        {it.badge && <span className="text-xs text-muted-foreground tabular-nums shrink-0">{it.badge}</span>}
-        <span className="text-muted-foreground shrink-0">›</span>
-      </>
-    );
+          <span className="text-muted-foreground shrink-0">›</span>
+        </>
+      );
+    };
 
     return (
       <div className="flex flex-col gap-5">
@@ -1006,7 +1099,7 @@ export function SmartPageClient({
         setItems={fn => setRecurringItems(prev => fn(prev) as unknown as RecurringExpense[])}
         transactions={transactions}
         categories={categories}
-        categoryBudgets={initialCategoryBudgets}
+        categoryBudgets={categoryBudgets}
         periodFrom={pStart}
         periodTo={pEnd ?? pStart}
         editId={fEditId}
@@ -1049,7 +1142,10 @@ export function SmartPageClient({
         planItems={recurringItems.filter(it => isFixedExpense(it) || it.debt_type)}
         piggyBalance={piggyBalance}
         payDay={payDay}
-        initialBudgets={initialCategoryBudgets}
+        initialBudgets={categoryBudgets}
+        onBudgetSaved={(id, amt) => setCategoryBudgets(prev => [
+          ...prev.filter(b => b.category_id !== id), { category_id: id, monthly_budget: amt },
+        ])}
         initialNotes={initialBudgetNotes}
         onBack={() => goBack("cover")}
         onOpenAccantonamenti={() => setView("accantonamenti")}
@@ -1100,7 +1196,7 @@ export function SmartPageClient({
           <h1 className="text-xl font-bold flex-1">Rate</h1>
           <button
             onClick={goAddRate}
-            className="text-sm bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 transition-colors"
+            className="shrink-0 min-h-11 text-sm bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 transition-colors"
           >
             + Aggiungi
           </button>
@@ -1230,7 +1326,7 @@ export function SmartPageClient({
                   key={type}
                   type="button"
                   onClick={() => setDForm(f => ({ ...f, debt_type: type }))}
-                  className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-sm text-left transition-all ${
+                  className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 min-h-11 text-sm text-left transition-all ${
                     dForm.debt_type === type ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
                   }`}
                 >
@@ -1262,23 +1358,78 @@ export function SmartPageClient({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">Importo totale finanziato (€)</label>
-            <input
-              type="text" value={dForm.debt_total_amount}
-              onChange={e => setDForm(f => ({ ...f, debt_total_amount: e.target.value }))}
-              placeholder="es. 12000"
-              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
-            />
+            <label className="text-sm font-medium">Cosa sai della rata?</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ["until", "📅", "Fino a quando dura"],
+                ["total", "💶", "Importo totale e inizio"],
+              ] as const).map(([mode, icon, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={dForm.mode === mode}
+                  onClick={() => setDForm(f => ({ ...f, mode }))}
+                  className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 min-h-11 text-sm text-left transition-all ${
+                    dForm.mode === mode ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                  }`}
+                >
+                  <span className="text-lg">{icon}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">Data di inizio</label>
-            <input
-              type="date" value={dForm.debt_start_date}
-              onChange={e => setDForm(f => ({ ...f, debt_start_date: e.target.value }))}
-              className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
-            />
-          </div>
+          {dForm.mode === "until" ? (() => {
+            const thisYear = +todayISO().slice(0, 4);
+            return (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium">Mese dell&apos;ultima rata</label>
+                  <MonthYearSelect
+                    label="Ultima rata" month={dForm.last_m} year={dForm.last_y}
+                    fromYear={thisYear - 30} toYear={thisYear + 40}
+                    onChange={(m, y) => setDForm(f => ({ ...f, last_m: m, last_y: y }))}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium">
+                    Prima rata{" "}
+                    <span className="text-muted-foreground font-normal">— facoltativa, se te la ricordi</span>
+                  </label>
+                  <MonthYearSelect
+                    label="Prima rata" month={dForm.first_m} year={dForm.first_y}
+                    fromYear={thisYear - 40} toYear={thisYear + 5}
+                    onChange={(m, y) => setDForm(f => ({ ...f, first_m: m, first_y: y }))}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Senza, Flusso conta le rate da questo mese: &quot;pagato finora&quot; parte da qui.
+                  </p>
+                </div>
+              </>
+            );
+          })() : (
+            <>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium">Importo totale finanziato (€)</label>
+              <input
+                type="text" value={dForm.debt_total_amount}
+                onChange={e => setDForm(f => ({ ...f, debt_total_amount: e.target.value }))}
+                placeholder="es. 12000"
+                className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium">Data di inizio</label>
+              <input
+                type="date" value={dForm.debt_start_date}
+                onChange={e => setDForm(f => ({ ...f, debt_start_date: e.target.value }))}
+                className="border-2 rounded-xl px-4 py-3 text-base bg-background focus:outline-none focus:border-primary transition-colors"
+              />
+            </div>
+            </>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium">
@@ -1308,7 +1459,7 @@ export function SmartPageClient({
                 <button
                   type="button"
                   onClick={() => setDForm(f => ({ ...f, secondary_name: "" }))}
-                  className="text-xs text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                  className="text-xs text-muted-foreground hover:text-destructive transition-colors shrink-0 min-h-11 px-2 -mr-2"
                 >
                   ✕ Scollega
                 </button>
@@ -1355,13 +1506,27 @@ export function SmartPageClient({
 
           {(() => {
             const amt = parseFloat(dForm.amount.replace(",", "."));
+            if (isNaN(amt) || amt <= 0) return null;
+            const box = "text-xs text-muted-foreground rounded-lg border bg-muted/30 px-3 py-2";
+            const monthLabel = (d: Date) => d.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+            if (dForm.mode === "until") {
+              const first = ym(dForm.first_y, dForm.first_m);
+              const plan = debtFromLastMonth({ monthly: amt, lastMonth: ym(dForm.last_y, dForm.last_m), today: todayISO(), firstMonth: first || null });
+              if (!plan) return null;
+              const end = computeDebtProgress({ totalAmount: plan.totalAmount, monthlyAmount: amt, startDate: plan.startDate }).endDate;
+              return (
+                <p className={box}>
+                  💡 {first ? "Dalla prima all'ultima" : "Da questo mese all'ultima"}: {plan.installments}{" "}
+                  {plan.installments === 1 ? "rata" : "rate"}, {fmt(plan.totalAmount)} in tutto. Termina a {monthLabel(end)}.
+                </p>
+              );
+            }
             const total = parseFloat(dForm.debt_total_amount.replace(",", "."));
-            if (isNaN(amt) || amt <= 0 || isNaN(total) || total < amt || !dForm.debt_start_date) return null;
+            if (isNaN(total) || total < amt || !dForm.debt_start_date) return null;
             const preview = computeDebtProgress({ totalAmount: total, monthlyAmount: amt, startDate: dForm.debt_start_date });
             return (
-              <p className="text-xs text-muted-foreground rounded-lg border bg-muted/30 px-3 py-2">
-                💡 {preview.totalMonths} rate in tutto, termina a{" "}
-                {preview.endDate.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}.
+              <p className={box}>
+                💡 {preview.totalMonths} rate in tutto, termina a {monthLabel(preview.endDate)}.
               </p>
             );
           })()}
@@ -1370,7 +1535,7 @@ export function SmartPageClient({
         <button
           onClick={handleSaveRate}
           disabled={dSaving}
-          className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          className="bg-primary text-primary-foreground rounded-xl px-6 py-3 min-h-11 font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
           {dSaving ? "Salvataggio…" : dEditId ? "Salva modifiche" : "Aggiungi rata"}
         </button>
@@ -1388,7 +1553,7 @@ export function SmartPageClient({
       <div className="flex flex-col gap-6 max-w-md mx-auto w-full">
         <div className="flex items-center gap-3">
           <BackButton onClick={() => goBack("accantonamenti")} />
-          <h1 className="text-xl font-bold">Nuovo accantonamento</h1>
+          <h1 className="text-xl font-bold">Nuova spesa dell&apos;anno</h1>
         </div>
 
         <div className="flex flex-col gap-5">
@@ -1536,7 +1701,7 @@ export function SmartPageClient({
                 <button
                   type="button"
                   onClick={() => setAForm(f => ({ ...f, secondary_name: "" }))}
-                  className="text-xs text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                  className="text-xs text-muted-foreground hover:text-destructive transition-colors shrink-0 min-h-11 px-2 -mr-2"
                 >
                   ✕ Scollega
                 </button>
@@ -1587,7 +1752,7 @@ export function SmartPageClient({
           disabled={aSaving}
           className="bg-primary text-primary-foreground rounded-xl px-6 py-3 font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
-          {aSaving ? "Salvataggio…" : "Aggiungi accantonamento"}
+          {aSaving ? "Salvataggio…" : "Aggiungi spesa dell'anno"}
         </button>
       </div>
     );
@@ -1887,7 +2052,7 @@ export function SmartPageClient({
               <div className="flex flex-col gap-2 pt-2 border-t">
                 <label className="text-sm font-medium">
                   Prossima scadenza{" "}
-                  <span className="text-muted-foreground font-normal">— per accantonamento</span>
+                  <span className="text-muted-foreground font-normal">— per le spese dell&apos;anno</span>
                 </label>
                 <p className="text-xs text-muted-foreground -mt-1">
                   Inserisci quando sarà il prossimo pagamento per calcolare quanto accantonare ogni mese.
@@ -2111,7 +2276,7 @@ export function SmartPageClient({
                 <button
                   type="button"
                   onClick={() => setEForm(f => ({ ...f, secondary_name: "" }))}
-                  className="text-xs text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                  className="text-xs text-muted-foreground hover:text-destructive transition-colors shrink-0 min-h-11 px-2 -mr-2"
                 >
                   ✕ Scollega
                 </button>
@@ -2235,7 +2400,7 @@ export function SmartPageClient({
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium">
                 Prossima scadenza{" "}
-                <span className="text-muted-foreground font-normal">— per accantonamento</span>
+                <span className="text-muted-foreground font-normal">— per le spese dell&apos;anno</span>
               </label>
               <div className="flex gap-2 items-center">
                 <input
@@ -2268,7 +2433,7 @@ export function SmartPageClient({
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium">
                 Salvadanaio{" "}
-                <span className="text-muted-foreground font-normal">— facoltativo, per accantonamento</span>
+                <span className="text-muted-foreground font-normal">— facoltativo, per le spese dell&apos;anno</span>
               </label>
               <p className="text-xs text-muted-foreground -mt-1">
                 &ldquo;Segna come pagata&rdquo; scalerà da questo salvadanaio invece che dal primo disponibile.
@@ -2552,7 +2717,7 @@ export function SmartPageClient({
                     <span className="flex flex-col gap-0.5 min-w-0">
                       <span>{p.emoji} {p.name}</span>
                       {usedBy && <span className="text-xs text-muted-foreground">È già dell&apos;obiettivo &ldquo;{usedBy}&rdquo;</span>}
-                      {!usedBy && sinking && <span className="text-xs text-muted-foreground">Tiene gli accantonamenti</span>}
+                      {!usedBy && sinking && <span className="text-xs text-muted-foreground">Tiene le spese dell&apos;anno</span>}
                     </span>
                     <span className="text-muted-foreground shrink-0">{fmt(Number(p.current_balance))}</span>
                   </button>
@@ -3137,6 +3302,9 @@ export function SmartPageClient({
       (s, d) => s + (d.proj.months_remaining > 0 ? d.steady_monthly : 0), 0,
     );
     const in_catchup = summary.this_month_total > steady_state_total + 0.01;
+    // "Dal mese prossimo" / "Da apr 2027": il recupero dura fino all'ultima scadenza in recupero.
+    const steadyFromText = steadyFrom(catchupData.filter(d => d.is_catchup).map(d => d.proj.input.next_due_date), todayISO());
+    const steadyFromLabel = steadyFromText.charAt(0).toUpperCase() + steadyFromText.slice(1);
     // Dopo un'Emergenza (voci ripartite con saving_offset): indietro è normale, si sta recuperando.
     const afterEmergency = sinkingInputs.some(i => (i.saved_offset ?? 0) !== 0);
 
@@ -3248,7 +3416,7 @@ export function SmartPageClient({
                 )}
                 {dialogNewQuota > 0 && (
                   <p>
-                    Nuovo accantonamento:{" "}
+                    Da mettere da parte:{" "}
                     <span className="font-medium text-foreground">{fmt(dialogNewQuota)}/mese</span>
                     {" "}per {dialogNewCycleMonths} {dialogNewCycleMonths === 1 ? "mese" : "mesi"}.
                   </p>
@@ -3311,7 +3479,7 @@ export function SmartPageClient({
                 <button
                   onClick={() => setPaidDialog(null)}
                   disabled={paidSaving}
-                  className="flex-1 rounded-xl border-2 px-4 py-2.5 text-sm font-medium hover:bg-muted/50 disabled:opacity-50 transition-colors"
+                  className="flex-1 min-h-11 rounded-xl border-2 px-4 py-2.5 text-sm font-medium hover:bg-muted/50 disabled:opacity-50 transition-colors"
                 >
                   Annulla
                 </button>
@@ -3347,7 +3515,7 @@ export function SmartPageClient({
                     }
                   }}
                   disabled={paidSaving}
-                  className="flex-1 bg-primary text-primary-foreground rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                  className="flex-1 min-h-11 bg-primary text-primary-foreground rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 >
                   {paidSaving ? "Conferma…" : "Conferma pagamento"}
                 </button>
@@ -3359,10 +3527,13 @@ export function SmartPageClient({
         <div className="flex flex-col gap-6">
           <div className="flex items-center gap-3">
             <BackButton onClick={() => goBack("cover")} />
-            <h1 className="text-xl font-bold flex-1">Accantonamenti</h1>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl font-bold">Spese dell&apos;anno</h1>
+              <p className="text-xs text-muted-foreground">Assicurazione, bollo, regali: quelle che non arrivano ogni mese</p>
+            </div>
             <button
               onClick={goAddAccantonamento}
-              className="text-sm bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 transition-colors"
+              className="shrink-0 min-h-11 text-sm bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 transition-colors"
             >
               + Aggiungi
             </button>
@@ -3375,15 +3546,15 @@ export function SmartPageClient({
           ) : sinkingInputs.length === 0 ? (
             <div className="flex flex-col items-center gap-4 py-16 text-center">
               <span className="text-5xl">🏦</span>
-              <h2 className="text-lg font-bold">Nessun accantonamento</h2>
+              <h2 className="text-lg font-bold">Nessuna spesa dell&apos;anno</h2>
               <p className="text-muted-foreground text-sm max-w-xs">
-                Configura una spesa ricorrente non mensile con una &ldquo;Prossima scadenza&rdquo; per attivare il calcolo dell&apos;accantonamento mensile.
+                Aggiungi le spese che arrivano una o poche volte l&apos;anno, con la prossima scadenza: Flusso ti dice quanto mettere da parte ogni mese per averli pronti.
               </p>
               <button
                 onClick={goAddAccantonamento}
-                className="bg-primary text-primary-foreground rounded-xl px-5 py-2.5 text-sm font-medium hover:bg-primary/90 transition-colors"
+                className="min-h-11 bg-primary text-primary-foreground rounded-xl px-5 py-2.5 text-sm font-medium hover:bg-primary/90 transition-colors"
               >
-                Aggiungi accantonamento
+                Aggiungi una spesa dell&apos;anno
               </button>
             </div>
           ) : (
@@ -3393,7 +3564,7 @@ export function SmartPageClient({
                 <div className="rounded-xl border border-amber-400/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
                   ⏰{" "}
                   <span className="font-medium">
-                    {readyToPay.length === 1 ? "1 accantonamento pronto" : `${readyToPay.length} accantonamenti pronti`}
+                    {readyToPay.length === 1 ? "1 spesa pronta" : `${readyToPay.length} spese pronte`}
                   </span>
                   {" "}per il pagamento:{" "}
                   {readyToPay.map(p => p.input.name).join(", ")}
@@ -3404,16 +3575,16 @@ export function SmartPageClient({
               {in_catchup && (
                 <div className="rounded-xl border border-amber-400/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 flex flex-col gap-1.5 text-sm">
                   <p className="font-semibold text-amber-700 dark:text-amber-400">
-                    ⏫ Sei in fase di recupero
+                    ⏫ Stai recuperando: questo mese metti un po&apos; di più
                   </p>
                   <p className="text-amber-700/80 dark:text-amber-500 text-xs leading-relaxed">
                     {afterEmergency
                       ? "Dopo il prelievo d'emergenza la quota mensile è più alta: rimetti da parte quello che hai preso entro le scadenze. Superate quelle, la quota torna normale."
-                      : "Alcune scadenze arrivano prima che tu abbia avuto il tempo di accantonare l'importo completo, quindi la rata mensile attuale è più alta del normale. Una volta superate queste prime scadenze, la quota mensile si stabilizzerà."}
+                      : "Alcune scadenze arrivano prima che tu abbia avuto il tempo di mettere da parte tutta la cifra, quindi ora la quota del mese è più alta del normale. Superate queste scadenze, torna normale."}
                   </p>
                   <div className="flex justify-between items-center pt-1 border-t border-amber-400/30">
-                    <span className="text-xs text-amber-700/80 dark:text-amber-500">Quota a regime (da prossimo ciclo)</span>
-                    <span className="text-sm font-bold text-amber-700 dark:text-amber-400">{fmt(steady_state_total)}/mese</span>
+                    <span className="text-xs text-amber-700/80 dark:text-amber-500">{steadyFromLabel}</span>
+                    <span className="text-sm font-bold text-amber-700 dark:text-amber-400">{fmt(steady_state_total)} al mese</span>
                   </div>
                 </div>
               )}
@@ -3422,7 +3593,7 @@ export function SmartPageClient({
               <div className={`rounded-2xl border-2 p-5 flex flex-col gap-4 ${statusConfig.bg}`}>
                 <div className="flex items-center justify-between">
                   <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Situazione accantonamenti
+                    Situazione spese dell&apos;anno
                   </h2>
                   <span className={`text-xs font-semibold ${statusConfig.color}`}>
                     {statusConfig.label}
@@ -3430,31 +3601,24 @@ export function SmartPageClient({
                 </div>
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">
-                      Da accantonare questo mese
-                      {in_catchup && <span className="ml-1 text-xs text-amber-500">(recupero)</span>}
-                    </span>
+                    <span className="text-muted-foreground">Da mettere da parte questo mese</span>
                     <span className="font-bold text-base">{fmt(summary.this_month_total)}</span>
                   </div>
                   {in_catchup && (
                     <div className="flex justify-between items-center text-sm">
-                      <span className="text-muted-foreground">A regime</span>
-                      <span className="font-semibold text-muted-foreground">{fmt(steady_state_total)}/mese</span>
+                      <span className="text-muted-foreground">{steadyFromLabel}</span>
+                      <span className="font-semibold text-muted-foreground">{fmt(steady_state_total)} al mese</span>
                     </div>
                   )}
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Previsto accantonato finora</span>
-                    <span className="font-semibold">{fmt(summary.expected_saved_total)}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">{potLabel}</span>
-                    <span className="font-semibold">{fmt(summary.piggy_balance)}</span>
-                  </div>
-                  <div className="border-t pt-2 flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Delta</span>
-                    <span className={`font-bold ${summary.delta >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
-                      {summary.delta >= 0 ? "+" : ""}{fmt(summary.delta)}
-                    </span>
+                  <div className="border-t pt-2 flex flex-col gap-0.5 text-sm">
+                    <p>
+                      Dovresti avere <span className="font-semibold tabular-nums">{fmt(summary.expected_saved_total)}</span>
+                      {" · "}ne hai <span className="font-semibold tabular-nums">{fmt(summary.piggy_balance)}</span>{" "}
+                      <span className={`font-bold tabular-nums ${summary.delta >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                        ({summary.delta >= 0 ? "+" : ""}{fmt(summary.delta)})
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">{potLabel}</p>
                   </div>
                 </div>
               </div>
@@ -3467,7 +3631,7 @@ export function SmartPageClient({
                     fino al mese scorso: soldi presi senza passare dall&apos;Emergenza? Ricalcola le quote per rimetterli da parte
                     entro le scadenze.
                     {-summary.delta - catchUp.shortfall > 0.5 && (
-                      <> Gli altri {fmt(-summary.delta - catchUp.shortfall)} del Delta sono le quote di questo mese, da versare come sempre.</>
+                      <> Gli altri {fmt(-summary.delta - catchUp.shortfall)} della differenza sono le quote di questo mese, da versare come sempre.</>
                     )}
                   </p>
                   <div className="flex justify-between gap-2">
@@ -3493,7 +3657,7 @@ export function SmartPageClient({
                         toast.success(`Ricalcolato: da ora ${fmt(res.monthlyAfter)} al mese.`);
                         await reloadAfterEmergency();
                       }}
-                      className="shrink-0 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                      className="shrink-0 min-h-11 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
                     >
                       {recalcBusy ? "…" : "Ricalcola"}
                     </button>
@@ -3537,14 +3701,14 @@ export function SmartPageClient({
                 </div>
               ) : (
                 <Link href="/dashboard/salvadanai" className="rounded-xl border px-4 py-3 text-sm text-primary hover:bg-muted/40 transition-colors">
-                  🐷 Crea un salvadanaio per gli accantonamenti, così vedi se sei in pari →
+                  🐷 Crea un salvadanaio per le spese dell&apos;anno, così vedi se sei in pari →
                 </Link>
               )}
 
               {/* Notifica: accantonato da transazioni reali questo mese */}
               {accTxThisMonth > 0 && (
                 <div className="rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 flex items-center justify-between gap-3 text-sm">
-                  <span className="text-muted-foreground">💰 Accantonato da transazioni questo mese</span>
+                  <span className="text-muted-foreground">💰 Messo da parte con i movimenti questo mese</span>
                   <span className="font-semibold">{fmt(accTxThisMonth)}</span>
                 </div>
               )}
@@ -3582,7 +3746,7 @@ export function SmartPageClient({
                             <span className="font-semibold truncate">{proj.input.name}</span>
                             {isCatchup && (
                               <span className="text-xs bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-300/50 rounded-full px-2 py-0.5 whitespace-nowrap">
-                                ⏫ recupero
+                                ⏫ in recupero
                               </span>
                             )}
                           </div>
@@ -3603,14 +3767,15 @@ export function SmartPageClient({
                           })()}
                           {isCatchup && catchup && (
                             <div className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-                              A regime: {fmt(catchup.steady_monthly)}/mese
+                              Dopo la scadenza: {fmt(catchup.steady_monthly)} al mese
                             </div>
                           )}
                         </div>
                         <button
                           onClick={() => goEditRecurring(item)}
-                          className="text-xs text-muted-foreground hover:text-foreground border rounded-lg px-2 py-1 transition-colors shrink-0"
+                          className="min-h-11 min-w-11 text-xs text-muted-foreground hover:text-foreground border rounded-lg px-2 py-1 transition-colors shrink-0"
                           title="Modifica"
+                          aria-label={`Modifica ${proj.input.name}`}
                         >
                           ✏️
                         </button>
@@ -3619,7 +3784,7 @@ export function SmartPageClient({
                       <div className="flex flex-col gap-1.5">
                         <div className="flex justify-between text-xs text-muted-foreground">
                           <span>
-                            Quota mensile:{" "}
+                            Al mese:{" "}
                             <span className="font-semibold text-foreground">{fmt(proj.monthly_quota)}</span>
                           </span>
                           <span>{Math.min(100, pct)}%</span>
@@ -3633,7 +3798,7 @@ export function SmartPageClient({
                           />
                         </div>
                         <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>Previsto: {fmt(proj.expected_saved_so_far)}</span>
+                          <span>Dovresti avere: {fmt(proj.expected_saved_so_far)}</span>
                           <span>Totale: {fmt(proj.input.amount_per_cycle)}</span>
                         </div>
                       </div>
@@ -3655,7 +3820,7 @@ export function SmartPageClient({
                               setPaidDeduct(potBalanceFor(item) >= foundAmt);
                               setPaidDialog({ proj, item });
                             }}
-                            className="shrink-0 bg-primary text-primary-foreground rounded-lg px-3 py-1.5 font-medium hover:bg-primary/90 transition-colors"
+                            className="shrink-0 min-h-11 bg-primary text-primary-foreground rounded-lg px-3 py-1.5 font-medium hover:bg-primary/90 transition-colors"
                           >
                             Conferma
                           </button>
@@ -3674,7 +3839,7 @@ export function SmartPageClient({
                             setPaidDeduct(potBalanceFor(item) >= defaultAmt);
                             setPaidDialog({ proj, item });
                           }}
-                          className={`text-xs font-medium rounded-lg px-3 py-1.5 transition-colors ${
+                          className={`min-h-11 text-xs font-medium rounded-lg px-3 py-1.5 transition-colors ${
                             showPaidProminent
                               ? "bg-primary text-primary-foreground hover:bg-primary/90"
                               : "border hover:bg-muted/50 text-muted-foreground hover:text-foreground"
@@ -3699,7 +3864,7 @@ export function SmartPageClient({
                               ));
                             }
                           }}
-                          className="text-xs text-muted-foreground hover:text-foreground underline"
+                          className="min-h-11 px-1 text-xs text-muted-foreground hover:text-foreground underline"
                         >
                           🔄 Ricalcola da oggi
                         </button>
@@ -3713,7 +3878,7 @@ export function SmartPageClient({
               <div className="rounded-xl border border-dashed p-4 flex flex-col gap-1.5">
                 <p className="text-xs font-medium text-muted-foreground">Come funziona il salvadanaio?</p>
                 <p className="text-xs text-muted-foreground">
-                  Accantonando {fmt(summary.this_month_total)} ogni mese nel salvadanaio, arriverai pronto a ogni scadenza non mensile.
+                  Mettendo da parte {fmt(summary.this_month_total)} ogni mese nel salvadanaio, arriverai pronto a ogni scadenza.
                 </p>
                 <a href="/dashboard/account" className="text-xs text-primary hover:underline mt-1">
                   Aggiorna il saldo del salvadanaio →

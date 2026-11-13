@@ -115,7 +115,7 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <span className="text-xl">🏦</span>
-          <h2 className="font-semibold text-sm">Accantonamenti</h2>
+          <h2 className="font-semibold text-sm">Spese dell&apos;anno</h2>
         </div>
         <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
       </div>
@@ -123,7 +123,7 @@ export function SinkingFundsCard({ userId }: { userId: string }) {
       {/* Summary row */}
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="rounded-xl bg-muted/50 px-3 py-2.5 flex flex-col gap-0.5">
-          <span className="text-xs text-muted-foreground">Da accantonare/mese</span>
+          <span className="text-xs text-muted-foreground">Da mettere da parte al mese</span>
           <span className="font-bold text-base tabular-nums">{fmt(summary.this_month_total)}</span>
         </div>
         <div className="rounded-xl bg-muted/50 px-3 py-2.5 flex flex-col gap-0.5">
