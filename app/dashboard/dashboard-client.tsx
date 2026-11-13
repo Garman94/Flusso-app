@@ -13,6 +13,7 @@ import {
 import { isSpending } from "@/lib/money";
 import { SinkingFundsCard } from "./sinking-funds-card";
 import { BalanceHeroCard } from "./balance-hero-card";
+import { UpcomingCard } from "./upcoming-card";
 import { OverdueExpensesBanner } from "./overdue-expenses-banner";
 import { RecapBanner, type RecapTeaser } from "./recap-banner";
 import { updatePayDay } from "./pay-day-action";
@@ -282,6 +283,9 @@ export function DashboardClient({
         data={hero}
         periodTxs={currentTxs}
       />
+
+      {/* ── In arrivo: spese fisse, rate e spese dell'anno del periodo ── */}
+      <UpcomingCard items={hero.items} txs={currentTxs} periodFrom={periodFrom} periodTo={periodTo} />
 
       {/* ── Rate scadute non ancora segnate come pagate ── */}
       <OverdueExpensesBanner userId={userId} />
