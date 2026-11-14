@@ -11,39 +11,40 @@ export type PageTourDef = {
 export const PAGE_TOURS: Record<string, PageTourDef> = {
 
   "/dashboard": {
-    version: "2.1",
-    whatIsNew: "la card del saldo è più semplice: saldo di oggi, stima di fine periodo e due barre (spese ed entrate); il saldo si aggiorna da solo a ogni nuovo periodo",
+    version: "3.0",
+    whatIsNew: "in alto c'è quanto puoi spendere fino al prossimo stipendio (e circa quanto al giorno), sotto le spese fisse in arrivo; il tasto Emergenza è nel riquadro dei salvadanai",
     steps: [
       {
-        title: "Benvenuto in Flusso! 👋",
-        message: "Quattro tocchi e sai dove trovare tutto.",
-      },
-      {
         target: "[data-tour='hero']",
-        title: "Quanto hai e quanto avrai",
-        message: "In alto il saldo di oggi, sotto la stima di fine periodo e due barre: quanto hai speso rispetto alle previsioni e quanto hai incassato. Tocca un numero per vedere da dove viene.",
+        title: "Quanto puoi spendere 💶",
+        message: "Il numero grande è quanto puoi spendere ancora fino alla fine del periodo, con le spese fisse da pagare già tolte, e sotto circa quanto al giorno. Tocca «Saldo di oggi» o «A fine periodo» per vedere da dove vengono i numeri. (La prima volta Flusso ti chiede quanto hai oggi sul conto.)",
       },
       {
-        target: "[data-tour='breakdown']",
-        title: "Dove vanno i soldi",
-        message: "Tocca una categoria per vedere i singoli movimenti.",
+        target: "[data-tour='upcoming']",
+        title: "In arrivo",
+        message: "Le spese fisse e le rate di questo periodo: quali sono pagate, quali arrivano tra pochi giorni e quali Flusso non ha trovato nei movimenti. Se ne hai pagata una in un altro modo, tocca «L'ho pagata».",
+      },
+      {
+        target: "[data-tour='salvadanai-emergenza']",
+        title: "Salvadanai ed Emergenza 🐷",
+        message: "Quanto hai messo da parte. Se ti servono soldi per un imprevisto, «Emergenza» ti dice da quale salvadanaio prenderli e ricalcola quanto mettere da parte per le spese dell'anno.",
+      },
+      {
+        target: "[data-tour='month-report-btn']",
+        title: "Mesi passati",
+        message: "Il riepilogo di ogni mese: quanto hai risparmiato, dove sono andati i soldi e cosa è cambiato rispetto al solito.",
       },
       {
         target: "[data-tour='nav-transazioni']",
         title: "Da qui si parte",
-        message: "In Transazioni importi l'estratto conto della banca o aggiungi i movimenti a mano.",
-      },
-      {
-        target: "[data-tour='nav-smart']",
-        title: "Pianifica",
-        message: "Decidi quanto spendere per categoria, segui rate e spese annuali, crea obiettivi di risparmio.",
+        message: "In Transazioni carichi l'estratto conto della banca o aggiungi i movimenti a mano. Nelle altre pagine il tasto «?» in basso apre la loro guida.",
       },
     ],
   },
 
   "/dashboard/transazioni": {
-    version: "1.4",
-    whatIsNew: "quando scegli una categoria, Flusso ti propone di ricordarla per i movimenti simili (anche nei prossimi import)",
+    version: "1.5",
+    whatIsNew: "tocca un movimento per modificarlo o eliminarlo; il riepilogo dice quanto ti resta (entrate − uscite)",
     steps: [
       {
         title: "Le tue transazioni 💸",
@@ -56,8 +57,12 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       },
       {
         target: "[data-tour='tx-summary']",
-        title: "Totali in tempo reale",
-        message: "Questa riga mostra entrate, uscite e saldo netto delle sole voci visibili — si aggiorna subito al cambio di filtro o ricerca.",
+        title: "Quanto ti resta",
+        message: "Questa riga conta le voci che vedi e dice «Ti restano X (entrate − uscite)». Si aggiorna subito quando cambi filtro o cerchi.",
+      },
+      {
+        title: "Tocca un movimento ✏️",
+        message: "Tocca un movimento per modificarlo: categoria, importo, data, descrizione, persona, conto e nota. In fondo al pannello puoi anche eliminarlo.",
       },
       {
         target: "[data-tour='tx-filters']",
@@ -67,11 +72,7 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       {
         target: "[data-tour='tx-add']",
         title: "Aggiungi movimenti",
-        message: "Aggiungi manualmente, importa un Excel della banca o analizza uno screenshot con l'AI.",
-      },
-      {
-        title: "Import Excel guidato 📂",
-        message: "Se hai dei Componenti, il primo passo dell'import chiede a chi appartengono i movimenti. Poi Flusso controlla i duplicati: segna in verde le righe nuove, in giallo i possibili doppioni e salta quelli identici già presenti.",
+        message: "Aggiungi a mano, importa il file della banca o fai leggere una foto o un PDF dell'estratto conto. All'import Flusso salta i movimenti già caricati e ti segnala i possibili doppioni.",
       },
       {
         title: "Categorie che si ricordano",
@@ -81,8 +82,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/smart": {
-    version: "3.1",
-    whatIsNew: "Nuova sezione Spese fisse: affitto, bollette, telefono e abbonamenti, contati nel mese in cui arrivano. Flusso trova da solo quelle che si ripetono nei tuoi movimenti",
+    version: "3.2",
+    whatIsNew: "ogni voce dice a che punto sei, le rate si inseriscono con «quanto pago al mese e fino a quando» e gli Accantonamenti ora si chiamano Spese dell'anno",
     freePreview: [
       {
         title: "Pianifica 🗓️",
@@ -101,14 +102,14 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       },
       {
         target: "[data-tour='smart-budget']",
-        title: "Budget, rate e accantonamenti",
-        message: "Con Premium imposti quanto spendere per categoria, segui rate e spese annuali, e la dashboard ti dice quanto avrai a fine mese.",
+        title: "Budget, rate e spese dell'anno",
+        message: "Con Premium imposti quanto spendere per categoria, segui rate e spese dell'anno (assicurazione, bollo…), e la dashboard ti dice quanto puoi spendere fino al prossimo stipendio.",
       },
     ],
     steps: [
       {
         title: "Pianifica 🗓️",
-        message: "Qui decidi in anticipo dove vanno i tuoi soldi. Quello che imposti qui diventa la previsione di fine mese in dashboard.",
+        message: "Qui decidi in anticipo dove vanno i tuoi soldi. Ogni voce dice a che punto sei, e quello che imposti diventa il «puoi spendere ancora» della dashboard.",
       },
       {
         target: "[data-tour='smart-spese-fisse']",
@@ -118,7 +119,7 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       {
         target: "[data-tour='smart-budget']",
         title: "Il resto delle spese",
-        message: "Budget per le spese che cambiano (spesa, ristoranti…), Rate e mutui per i debiti, Accantonamenti per le spese annuali. Insieme alle spese fisse fanno le \"spese previste\".",
+        message: "Budget per le spese che cambiano (spesa, ristoranti…), Rate e mutui per i debiti (basta dire quanto paghi al mese e fino a quando), Spese dell'anno per assicurazione, bollo e le altre che arrivano una volta l'anno. Insieme alle spese fisse fanno le \"spese previste\".",
       },
       {
         target: "[data-tour='smart-obiettivi']",
@@ -129,12 +130,12 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/salvadanai": {
-    version: "1.0",
-    whatIsNew: "salvadanai multipli con obiettivi, condivisione e storico movimenti",
+    version: "1.1",
+    whatIsNew: "un obiettivo collegato vale quello che c'è nel suo salvadanaio, e dalla dashboard il tasto Emergenza ti aiuta con gli imprevisti",
     steps: [
       {
         title: "Salvadanai 🐷",
-        message: "Ora puoi avere più salvadanai separati — vacanza, emergenza, casa… La somma di tutti corrisponde all'unico salvadanaio della tua banca.",
+        message: "Tieni separati i soldi messi da parte: vacanza, emergenze, spese dell'anno… Un salvadanaio collegato a un obiettivo fa salire (o scendere) anche l'obiettivo.",
       },
       {
         target: "[data-tour='pot-grid']",
@@ -150,8 +151,8 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
   },
 
   "/dashboard/account": {
-    version: "1.5",
-    whatIsNew: "puoi esportare i tuoi movimenti in CSV",
+    version: "1.6",
+    whatIsNew: "nomi più chiari: «Questa persona sono io» per indicare te tra i componenti, «Funzioni avanzate» al posto di Modalità smanettone",
     steps: [
       {
         title: "Il tuo account ⚙️",
@@ -165,11 +166,11 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
       {
         target: "[data-tour='account-family']",
         title: "Componenti",
-        message: "Aggiungi i membri della famiglia o del gruppo, con nome, colore e — se vuoi — le info sul reddito. Aggiungi anche te stesso e spunta \"Sei tu\": da quel momento import Excel e salvadanai condivisi ti chiederanno sempre di scegliere una persona precisa invece del generico \"Io\", e il tuo reddito si gestisce da qui.",
+        message: "Aggiungi i membri della famiglia o del gruppo, con nome, colore e — se vuoi — le info sul reddito. Aggiungi anche te stesso e spunta \"Questa persona sono io\": da quel momento import Excel e salvadanai condivisi ti chiederanno sempre di scegliere una persona precisa invece del generico \"Io\", e il tuo reddito si gestisce da qui.",
       },
       {
         target: "[data-tour='account-power-user']",
-        title: "Modalità smanettone",
+        title: "Funzioni avanzate",
         message: "Per chi vuole di più: mostra l'elenco completo delle regole di categoria e le regole per rinominare le descrizioni.",
       },
       {

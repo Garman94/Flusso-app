@@ -46,13 +46,19 @@ function TooltipCard({
     const cardW    = Math.min(320, window.innerWidth - 32);
     const centerX  = s.left + s.width / 2;
     const left     = Math.max(16, Math.min(centerX - cardW / 2, window.innerWidth - cardW - 16));
+    // Il fumetto non va mai sopra la campanella delle notifiche: resta sotto la sua riga.
+    const bell     = document.querySelector("[data-tour='notifications-bell']")?.getBoundingClientRect();
+    const minTop   = bell && bell.bottom > 0 ? bell.bottom + 8 : 16;
 
-    if (spBottom + 180 < window.innerHeight) {
+    if (window.innerHeight - spBottom >= 188) {
       // tooltip below
-      style = { position: "fixed", top: spBottom + 8, left, width: cardW };
+      style = { position: "fixed", top: Math.max(spBottom + 8, minTop), left, width: cardW };
+    } else if (spTop - minTop >= 188) {
+      // tooltip above: se è alto, scorre dentro invece di salire sopra la campanella
+      style = { position: "fixed", bottom: window.innerHeight - spTop + 8, left, width: cardW, maxHeight: spTop - minTop - 8, overflowY: "auto" };
     } else {
-      // tooltip above
-      style = { position: "fixed", bottom: window.innerHeight - spTop + 8, left, width: cardW };
+      // elemento più alto dello schermo (la card del saldo sul telefono): il fumetto sta in basso, sopra l'elemento
+      style = { position: "fixed", bottom: 16, left, width: cardW, maxHeight: window.innerHeight - minTop - 16, overflowY: "auto" };
     }
   }
 
@@ -71,14 +77,14 @@ function TooltipCard({
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={onNext}
-          className="flex-1 bg-primary text-primary-foreground rounded-md py-2 text-sm font-medium hover:bg-primary/90 transition-colors"
+          className="min-h-11 flex-1 bg-primary text-primary-foreground rounded-md py-2 text-sm font-medium hover:bg-primary/90 transition-colors"
         >
           {isLast ? "Inizia 🚀" : "Avanti →"}
         </button>
         {!isLast && (
           <button
             onClick={onSkip}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-2"
+            className="min-h-11 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-2"
           >
             Salta
           </button>

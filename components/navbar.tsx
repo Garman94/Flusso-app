@@ -9,7 +9,7 @@ export function Navbar() {
     <nav className="w-full flex justify-center border-b border-b-foreground/10 h-16 sticky top-0 bg-background/80 backdrop-blur-sm z-50">
       <div className="w-full max-w-5xl flex justify-between items-center px-5 text-sm">
         {/* Logo */}
-        <Link href="/" className="font-bold text-lg">
+        <Link href="/" className="inline-flex min-h-11 items-center font-bold text-lg">
           {siteConfig.name}
         </Link>
 
@@ -19,7 +19,7 @@ export function Navbar() {
             <Link
               key={link.href}
               href={link.href}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex min-h-11 items-center text-muted-foreground hover:text-foreground transition-colors"
             >
               {link.label}
             </Link>
@@ -29,7 +29,7 @@ export function Navbar() {
         {/* Right side */}
         <div className="flex items-center gap-3">
           <ThemeSwitcher />
-          <Suspense fallback={<div className="w-20 h-8 rounded bg-muted animate-pulse" />}>
+          <Suspense fallback={<div className="w-20 h-11 rounded bg-muted animate-pulse" />}>
             <AuthButton />
           </Suspense>
         </div>

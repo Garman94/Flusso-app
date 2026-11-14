@@ -7,6 +7,49 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Dashboard: quanto puoi spendere, In arrivo e guide (2026-11-10)
+
+Fase 1 della ricerca UX ("si capisce subito"), parte dashboard e guide. Solo codice, nessuna migration e nessun dato cambiato.
+- **Dati dal server** (`app/dashboard/hero-data.ts`): la card del saldo chiedeva i dati dal browser dopo l'idratazione (6 richieste, poi il "buco" del saldo una dopo l'altra); il saldo compariva dopo 0,8-2,5 s, fino a 6 s. Ora `page.tsx` fa due giri in parallelo: profilo + `loadHeroBase` (spese ricorrenti, componenti, budget, conti) + le altre query; poi i movimenti del periodo (una sola query, per la card e per "Dove vanno i soldi") + `loadStartingBalance` (stesse regole di prima: `rollBalance`, `totalAtStartOf`; senza la migration 048 si resta col saldo unico). La card riceve `data` e `periodTxs`, non ha più useEffect e dopo un salvataggio fa `router.refresh()`. Misura in locale (demo, 390 px): il saldo arriva già nella pagina, 0,3-0,5 s.
+- **Numero grande** in cima alla card (`SpendableHeadline`, calcolo in `lib/spendable.ts`, test `tests/spendable.test.ts`): «Fino al prossimo stipendio (26 nov)» (`periodEndLabel`; "26 nov" è l'ultimo giorno del periodo, non il giorno dello stipendio), «Puoi spendere ancora X», «circa Y al giorno per N giorni» (arrotondato per difetto). X = il più piccolo tra budget rimasto (`leftToSpend`) e soldi davvero disponibili (`endBalance + leftToSpend` = saldo di oggi + entrate attese − spese fisse e rate da pagare): se è il secondo (`capped`) una nota dice che è quello che resta sul conto. Budget superato, soldi che mancano per le spese fisse (`short`) e nessun budget hanno frasi calme e un passo da fare. Sotto, più piccoli: «Saldo di oggi · A fine periodo circa» (si aprono come prima) e le barre Spese ed Entrate. Intestazione della dashboard "27 ott – 26 nov" con `shortDay` (niente `toLocaleDateString`: ora la card arriva dal server).
+- **In arrivo** (`app/dashboard/upcoming-card.tsx`, calcoli in `lib/upcoming.ts`, test `tests/upcoming.test.ts`): spese fisse, rate in corso e spese dell'anno con la scadenza nel periodo, stato da `planStatus`; ordine non trovate → in arrivo → da verificare → pagate, al massimo 4 (`UPCOMING_MAX`), «Vedi tutte» → Spese fisse. «L'ho pagata» (non trovate e da verificare) chiama `markRecurringAsPaid` e poi `router.refresh()`; le spese dell'anno scadute rimandano a Pianifica (lì si sceglie se prendere i soldi dal salvadanaio). Senza voci la card non compare. Usa i dati della card del saldo, nessuna query in più. Evento `upcoming_marked_paid` (`kind`, `state`).
+- **Emergenza**: il tasto sta dentro il riquadro «Messi da parte nei salvadanai» (`data-tour="salvadanai-emergenza"`); nella finestra «accantonamenti» → «spese dell'anno». La logica non cambia.
+- **Guide** (`lib/tour-steps.ts`, `components/tour/page-tour.tsx`): solo la dashboard parte da sola (5 passi: quanto puoi spendere, In arrivo, salvadanai ed Emergenza, Mesi passati, Transazioni), e non se la campanella è aperta. Nelle altre pagine un tasto «?» in basso a destra (`aria-label="Guida di questa pagina"`) e, la prima volta o dopo un aggiornamento, una riga di suggerimento chiudibile; `?tour=1` la fa partire ovunque. Transazioni dice «Ti restano X (entrate − uscite)» e «Tocca un movimento per modificarlo»; parole nuove «Spese dell'anno», «Questa persona sono io», «Funzioni avanzate». Il fumetto (`tour-overlay.tsx`) non va mai sopra la campanella e, per gli elementi più alti dello schermo, sta in basso dentro lo schermo (prima finiva fuori).
+- Tocchi da 44 px (`min-h-11`) su tutto ciò che è stato toccato, campo del saldo `text-base` sul telefono; tolto `&edit=1` dal link «Categorizza».
+- Rollback: revert della PR (solo codice, nessun dato toccato).
+
+---
+
+## Si capisce subito: benvenuto, landing, prezzi, barra e campanella (2026-11-10)
+
+Fase 1 della ricerca sull'usabilità: chi arriva deve capire in un minuto cosa fa Flusso e vedere subito un numero suo.
+- **Benvenuto** (`app/onboarding/page.tsx`): nome, poi tre domande che si possono saltare: banca (riusa `bank-export-guide.tsx` senza modificarlo, il clic sulla banca la segna), giorno dello stipendio (0 = mese solare) e saldo di oggi. Alla fine "Puoi spendere circa X fino al …" e il tasto per caricare il file. La domanda "Come userai Flusso?" non c'è più: `profiles.usage_type` resta ma non si scrive.
+  - Stima in `lib/first-estimate.ts` (`firstSpendEstimate`, test in `tests/first-estimate.test.ts`): periodo di paga da `currentPeriod`, tiene da parte il 10% (`ESTIMATE_RESERVE_SHARE`), arrotonda per difetto alle decine, euro al giorno per i giorni che restano. Non conosce spese fisse né entrate in arrivo, e la pagina lo dice.
+  - Salva `full_name`, `pay_day` e il saldo come la card della dashboard (`balanceAtPeriodStart`: quello di oggi riportato a inizio periodo togliendo i movimenti già registrati, in `period_starting_balance`/`_date`), poi `onboarded_at`. Restano `?preview=1` (nessuna scrittura), la demo che non scrive e l'evento `onboarding_completed` (`bank`, `has_payday`, `has_balance`, `dest`: mai importi). "Scrivi a Marco" della guida chiude il benvenuto prima di andare in Account, altrimenti il layout lo rimanderebbe qui.
+- **Landing e prezzi** (`app/page.tsx`, `app/pricing/page.tsx`, `components/pricing-card.tsx`, liste in `lib/config.ts`): le funzioni elencate sono quelle vere di ogni piano (Conti, Salvadanai, Riepilogo e chat sono gratis; PDF e foto letti dall'AI, bollette, carburante e Pianifica sono Premium). L'eroe non promette più gli accantonamenti a chi è sul piano gratuito.
+- **Posti Founder** (`lib/founder-seats.ts`, `lib/founder-seats-server.ts`, test in `tests/founder-seats.test.ts`): l'offerta da 49 € vale per i primi `FOUNDER_SEATS` = 50. I posti presi si contano dal server (profili con `plan = 'founder'`, service role, `unstable_cache` di un'ora). Il numero si mostra solo quando ne restano meno di 10 (`FOUNDER_SEATS_SHOW_BELOW`), altrimenti "Solo per i primi 50"; esauriti, il tasto sparisce. **Da confermare con Marco**: soglia e conteggio (i founder comprendono anche i Premium regalati). Senza chiave o database il testo resta quello generico.
+- **Barra e campanella**: tasti di almeno 44 px (`h-11`/`min-h-11`) e nomi per i lettori di schermo in `navbar.tsx`, `auth-button.tsx`, `logout-button.tsx` (niente più pulsante dentro un link), `theme-switcher.tsx`, `notifications-bell.tsx` ("Notifiche: N da leggere", ✕ "Ignora: …") e `dashboard-nav-links.tsx` (solo misure, `aria-current` e nomi; i pallini delle guide hanno un'area di tocco più grande ma non 44 px). Il logo dentro `app/dashboard/layout.tsx` è rimasto com'era.
+- **Migration 050** (`050_campanella_pulita.sql`, **applicata in produzione il 13/11**): spegne (`is_active = false`, niente cancellato) le due notifiche del 2026-09-11 che non dicono più il vero, il benvenuto con "tutti i formati Excel" e il consiglio sulla "sezione Smart". Quella che chiede un parere resta accesa. Prima una SELECT in sola lettura (trova esattamente quelle due); applicata al "pubblica" del 13/11 con `db push --remote --include-all` (era più vecchia della 051, già passata): spente le due, quella del parere resta accesa.
+- Rollback: prima il codice (Vercel → Instant Rollback, o `git revert` del merge), poi `supabase/rollback/050_campanella_pulita_down.sql` (riaccende le due notifiche).
+
+---
+
+## Demo coerente (2026-11-13)
+
+Migration 051 (solo demo), test `tests/demo-coerente.test.ts`. Prima (prove del 10/11) la demo aveva movimenti con date future, "aggiornato dal 1 nov" con il periodo dal 27/10, ottobre con 1.400 € di entrate contro 2.100 di stipendio (il 27/9 era domenica e lo stipendio cadeva nel periodo prima), risparmio negativo, spesa più grande = giorno più caro, Conti e Carburante vuoti, "Ciao, Marco!" e due obiettivi per la stessa vacanza.
+- `reseed_demo()` costruisce 7 periodi di paga (giorno 27, spostato come in `lib/period.ts`: sabato → venerdì, domenica → lunedì) e non scrive mai movimenti dopo oggi (`v.dt <= current_date`).
+- **Nucleo**: Giulia (titolare, `is_owner`, stipendio il giorno di paga) e Luca (libero professionista, fattura il 10). Le entrate di ogni periodo sono quelle di Account e se ne risparmia circa un quarto.
+- **Riepilogo**: la spesa più grande è un acquisto da solo nel suo giorno, il giorno più caro è un altro (spesa + cena).
+- **Conto** "Conto in comune" con l'ancora a ieri, già quadrato: tutti i movimenti (salvadanai compresi) stanno sul conto, e il saldo a inizio periodo calcolato dal conto coincide con `period_starting_balance`.
+- **Salvadanai**: Vacanza estiva e Nuovo laptop (ognuno col suo obiettivo, che vale il saldo), Emergenza (libero), Accantonamenti (in pari col previsto dei due accantonamenti, collegati lì). I versamenti sono anche movimenti del conto.
+- **Auto** "Utilitaria" (benzina): rifornimenti presi dai movimenti Q8 ed Eni (prezzo con tre decimali, km dall'ultimo rifornimento), l'ultimo lasciato libero per provare "Usa"; tragitto casa-lavoro 18 km andata e ritorno nei giorni feriali.
+- 7 spese fisse e 5 budget; Telepass resta fuori apposta come spesa fissa trovata nei movimenti. Gli importi sono fissi per periodo (piccole variazioni a giro) e Ristoranti a volte sfora il budget apposta.
+- `reseed_demo_salvadanai()` (043) ora non fa niente: resta perché `/api/demo/reset` la chiama.
+- **Provata in una transazione annullata** il 13/11 (nessuna scrittura rimasta, demo di produzione controllata dopo): 0 date future, 159 movimenti tutti con il conto, 6 periodi chiusi con risparmio tra 645 e 784 €, saldo dal conto = saldo a inizio periodo, obiettivi = salvadanai, consumo 17–17,5 km/l.
+- **Applicata in produzione il 13/11** (`db push --remote`, solo la 051): la demo di produzione ha gli stessi numeri della prova, e il giro di `/api/demo/reset` (reseed_demo → reseed_demo_utenze → reseed_demo_salvadanai) provato in transazione annullata funziona. La 050 è passata dopo, con `--include-all`. Nessun codice dipende dalla 051. Rollback: `supabase/rollback/051_demo_coerente_down.sql` (rimette le funzioni della 038 e della 043, toglie auto e conto della demo e la ricarica).
+
+---
+
 ## Modifica dei movimenti e pagina Transazioni (2026-11-10)
 
 Fase 1 della ricerca UX ("si capisce subito"). Solo la pagina Transazioni, nessuna migration.
@@ -744,7 +787,8 @@ Se `plan === 'free'` e la pagina ha `freePreview` definito in `PAGE_TOURS`, al p
 
 ### Attributi `data-tour`
 ```
-hero, breakdown, month-report-btn          dashboard
+hero, upcoming, salvadanai-emergenza,      dashboard
+breakdown, month-report-btn
 nav-transazioni, nav-smart                 nav
 tx-nav, tx-summary, tx-filters, tx-add    transazioni
 smart-obiettivi, smart-impegni              smart (cover)
@@ -752,7 +796,7 @@ account-income, account-family,            account
 account-power-user, account-feedback
 ```
 
-> Versioni tour: `/dashboard` v1.7 · `/dashboard/transazioni` v1.2 · `/dashboard/smart` v2.1 · `/dashboard/salvadanai` v1.0 · `/dashboard/account` v1.4. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`.
+> Versioni tour: `/dashboard` v3.0 · `/dashboard/transazioni` v1.5 · `/dashboard/smart` v3.2 · `/dashboard/salvadanai` v1.1 · `/dashboard/account` v1.6. Aggiorna questa riga ad ogni bump versione in `lib/tour-steps.ts`. Solo la dashboard parte da sola; le altre pagine hanno il tasto «?» (2026-11-10).
 
 ### LocalStorage
 Chiave per pagina: `flusso_tour_v:/dashboard` ecc. Assente = primo accesso. Valore diverso dalla versione in `PAGE_TOURS` = aggiornamento.
@@ -858,6 +902,8 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `041_emergenza.sql` | Campo `saving_offset` (default 0) su `recurring_expenses` — già da parte all'inizio del piano, scritto solo dall'Emergenza |
 | `042_obiettivi_salvadanai.sql` | Trigger `sync_goal_from_pot`: gli obiettivi collegati e allineati seguono il saldo del salvadanaio. Nessun dato modificato |
 | `043_demo_obiettivi_salvadanai.sql` | Solo demo: `reseed_demo_salvadanai()`, ogni obiettivo col suo salvadanaio e accantonamenti nel salvadanaio "Accantonamenti" |
+| `050_campanella_pulita.sql` | Spegne (`is_active = false`) le due notifiche della campanella superate (formati Excel, "sezione Smart"). Nessun dato cancellato. Rollback: `supabase/rollback/050_campanella_pulita_down.sql` |
+| `051_demo_coerente.sql` | Solo demo: `reseed_demo()` sui periodi di paga, mai date future, con conto, auto e salvadanai in pari; `reseed_demo_salvadanai()` vuota. Applicata il 2026-11-13 |
 
 ---
 
