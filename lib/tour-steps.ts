@@ -94,15 +94,16 @@ export const PAGE_TOURS: Record<string, PageTourDef> = {
         title: "Spese fisse 📋",
         message: "Affitto, bollette, telefono, abbonamenti. Flusso trova da solo quelle che si ripetono nei tuoi movimenti e ti dice quando sono pagate.",
       },
-      {
-        target: "[data-tour='smart-budget']",
-        title: "Budget, rate e spese dell'anno",
-        message: "Con Premium imposti quanto spendere per categoria, segui rate e spese dell'anno (assicurazione, bollo…), e la dashboard ti dice quanto puoi spendere fino al prossimo stipendio.",
-      },
+      // Obiettivi prima di Budget: sul piano gratuito le sezioni Premium stanno in fondo.
       {
         target: "[data-tour='smart-obiettivi']",
         title: "Obiettivi 🎯",
         message: "Una cifra da raggiungere entro una data: Flusso ti dice quanto mettere da parte ogni mese.",
+      },
+      {
+        target: "[data-tour='smart-budget']",
+        title: "Budget, rate e spese dell'anno",
+        message: "Con Premium imposti quanto spendere per categoria, segui rate e spese dell'anno (assicurazione, bollo…), e la dashboard ti dice quanto puoi spendere fino al prossimo stipendio.",
       },
     ],
     steps: [

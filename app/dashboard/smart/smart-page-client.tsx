@@ -993,7 +993,24 @@ export function SmartPageClient({
       },
     ];
 
+    // Sul piano gratuito prima quello che si può usare, poi tutte insieme in fondo le
+    // sezioni Premium, sotto "Con Premium" (prima erano mescolate, con una piccola etichetta,
+    // e sembrava tutto aperto).
+    const shown: { title: string; note?: string; items: Item[] }[] = isFree
+      ? [
+          ...SECTIONS
+            .map(s => ({ ...s, items: s.items.filter(it => !it.premium) }))
+            .filter(s => s.items.length > 0),
+          {
+            title: "Con Premium 🔒",
+            note: "Si aprono passando a Premium e completano la stima di fine mese in dashboard.",
+            items: SECTIONS.flatMap(s => s.items.filter(it => it.premium)),
+          },
+        ]
+      : SECTIONS;
+
     const cardClass = "flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 px-4 py-3.5 min-h-11 text-left transition-all active:scale-[0.98] w-full";
+    const lockedClass = `${cardClass} border-dashed`;
     const TONE: Record<string, string> = {
       ok: "text-green-700 dark:text-green-400",
       warn: "text-amber-700 dark:text-amber-400",
@@ -1001,20 +1018,21 @@ export function SmartPageClient({
     };
     // Sul piano gratuito le sezioni Premium sono chiuse: lì resta la descrizione.
     const cardBody = (it: Item) => {
-      const st = it.premium && isFree ? null : it.status ?? null;
+      const locked = it.premium && isFree;
+      const st = locked ? null : it.status ?? null;
       return (
         <>
-          <span className="text-2xl shrink-0">{it.icon}</span>
+          <span className={`text-2xl shrink-0 ${locked ? "opacity-60" : ""}`}>{it.icon}</span>
           <span className="flex flex-col min-w-0 flex-1">
-            <span className="text-base font-medium flex items-center gap-2">
+            <span className={`text-base font-medium ${locked ? "text-muted-foreground" : ""}`}>
               {it.label}
-              {it.premium && isFree && <span className="text-[10px] font-semibold uppercase tracking-wide rounded bg-muted px-1.5 py-0.5 text-muted-foreground">🔒 Premium</span>}
+              {locked && <span className="sr-only"> (Premium)</span>}
             </span>
             {st
               ? <span className={`text-sm font-medium tabular-nums ${TONE[st.tone]}`}>{st.text}</span>
               : <span className="text-xs text-muted-foreground">{it.desc}</span>}
           </span>
-          <span className="text-muted-foreground shrink-0">›</span>
+          <span className="text-muted-foreground shrink-0" aria-hidden="true">{locked ? "🔒" : "›"}</span>
         </>
       );
     };
@@ -1029,14 +1047,18 @@ export function SmartPageClient({
           </p>
         </div>
 
-        {SECTIONS.map(section => (
+        {shown.map(section => (
           <div key={section.title} className="flex flex-col gap-2">
             <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{section.title}</h2>
-            {section.items.map(it => it.href ? (
-              <Link key={it.label} href={it.href} data-tour={it.tour} className={cardClass}>{cardBody(it)}</Link>
-            ) : (
-              <button key={it.label} onClick={it.onClick} data-tour={it.tour} className={cardClass}>{cardBody(it)}</button>
-            ))}
+            {section.note && <p className="text-sm text-muted-foreground -mt-1">{section.note}</p>}
+            {section.items.map(it => {
+              const cls = it.premium && isFree ? lockedClass : cardClass;
+              return it.href ? (
+                <Link key={it.label} href={it.href} data-tour={it.tour} className={cls}>{cardBody(it)}</Link>
+              ) : (
+                <button key={it.label} onClick={it.onClick} data-tour={it.tour} className={cls}>{cardBody(it)}</button>
+              );
+            })}
           </div>
         ))}
       </div>
