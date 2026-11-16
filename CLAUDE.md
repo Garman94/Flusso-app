@@ -7,6 +7,17 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Perché falliscono le letture di foto e PDF (2026-11-16)
+
+Fase 2 della ricerca UX ("ti richiama"), primo pezzo. Solo codice, nessuna migration.
+- **Motivo vero nell'evento**: `screenshot_failed` aveva `reason = "server"` per ogni errore del server ed `"exception"` per ogni errore nel browser, quindi i 7 fallimenti su 9 della ricerca non si potevano spiegare. Ora le server action (`screenshot-action.ts`) restituiscono anche `code` (`ServerFailure`) e il modale (`screenshot-modal.tsx`) traccia `reason`, `kind`, `size` (fasce: `sizeBucket`), `secs` (`elapsedSeconds`) e, per i PDF, `encrypted`. Codici e funzioni in `lib/read-failure.ts`, test in `tests/read-failure.test.ts`, elenco e query in `docs/09-metriche.md`. Si tracciano anche i rifiuti fatti dal browser prima dell'invio (tipo sbagliato, PDF oltre 2,9 MB), che prima non lasciavano traccia.
+- **Messaggi**: PDF protetto da password (`isEncryptedPdf`, cerca `/Encrypt`) rifiutato dall'API → «Aprilo, scegli Stampa → Salva come PDF». Non si blocca prima dell'invio, perché molti estratti conto hanno solo i permessi bloccati e potrebbero leggersi. Foto HEIC che il browser non apre (`isHeic`) → «Fai uno screenshot, oppure apri Flusso da Safari».
+- **Log**: quando non trova movimenti il server non scrive più nei log di Vercel i primi 300 caratteri della risposta dell'AI (erano movimenti con importi e nomi), ma solo codice, lunghezza e `stop_reason`.
+- **Tempo massimo**: nessun `maxDuration` nelle pagine. Se i fallimenti si fermano tutti allo stesso numero di `secs` è la funzione di Vercel che scade: allora va controllato Vercel → Settings → Functions (Fluid compute) prima di mettere un `maxDuration`, che potrebbe anche abbassare il limite.
+- Rollback: revert della PR (solo codice).
+
+---
+
 ## Dashboard: quanto puoi spendere, In arrivo e guide (2026-11-10)
 
 Fase 1 della ricerca UX ("si capisce subito"), parte dashboard e guide. Solo codice, nessuna migration e nessun dato cambiato.

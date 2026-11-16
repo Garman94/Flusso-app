@@ -10,6 +10,7 @@ import {
   buildPrompt, buildStatementPrompt, checkStatement, parseExtraction, parseStatementExtraction,
   type ExtractedTransaction, type StatementBalances, type StatementCheck,
 } from "@/lib/screenshot-extract";
+import { apiFailure, noRowsFailure, type ServerFailure } from "@/lib/read-failure";
 
 // Un file "use server" non può ri-esportare nulla, nemmeno i tipi (Next li tratta come export a runtime):
 // chi ha bisogno del tipo lo importa da @/lib/screenshot-extract.
@@ -21,7 +22,8 @@ const MAX_BASE64_CHARS = 5_500_000;
 /** PDF: il limite delle server action è 4 MB (next.config), quindi un file fino a ~2,9 MB. */
 const MAX_PDF_BASE64_CHARS = 3_900_000;
 
-type Result = { transactions?: ExtractedTransaction[]; warning?: string; error?: string };
+/** `code` dice perché non è riuscita (evento screenshot_failed): l'utente vede solo `error`. */
+type Result = { transactions?: ExtractedTransaction[]; warning?: string; error?: string; code?: ServerFailure };
 type PdfResult = Result & { balances?: StatementBalances; check?: StatementCheck | null };
 
 /** Conta le analisi delle ultime 24 ore e ne registra una nuova. Se la tabella eventi manca, non blocca. */
@@ -47,16 +49,16 @@ async function overDailyLimit(userId: string): Promise<boolean> {
 const NOT_ACTIVE = "La lettura con l'AI non è ancora attiva. Nel frattempo puoi caricare un file Excel o CSV.";
 
 /** Controlli comuni a screenshot e PDF: login, Premium, chiave dell'API. Il limite giornaliero lo conta chi chiama. */
-async function guard(): Promise<{ userId: string; apiKey: string } | { error: string }> {
+async function guard(): Promise<{ userId: string; apiKey: string } | { error: string; code: ServerFailure }> {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
-  if (!claims?.claims) return { error: "Non autenticato." };
+  if (!claims?.claims) return { error: "Non autenticato.", code: "unauthenticated" };
   const userId = claims.claims.sub as string;
 
   const { data: profile } = await supabase
     .from("profiles").select("*").eq("id", userId).single();
   const plan = await getEffectivePlan(profile?.plan ?? "free", profile?.trial_ends_at);
-  if (!isPremium(plan)) return { error: "L'import da foto e PDF è una funzione Premium." };
+  if (!isPremium(plan)) return { error: "L'import da foto e PDF è una funzione Premium.", code: "not_premium" };
 
   // .trim(): uno spazio o un a-capo rimasti da un copia-incolla nel pannello di Vercel
   // basta a rompere l'autenticazione senza che si veda nulla di strano guardando il valore.
@@ -64,16 +66,20 @@ async function guard(): Promise<{ userId: string; apiKey: string } | { error: st
   if (!apiKey) {
     // Configurazione mancante: il dettaglio va nei log, all'utente un messaggio comprensibile
     console.error("[screenshot] ANTHROPIC_API_KEY non configurata: lettura con l'AI non disponibile");
-    return { error: NOT_ACTIVE };
+    return { error: NOT_ACTIVE, code: "not_active" };
   }
   if (!apiKey.startsWith("sk-ant-")) {
     console.error("[screenshot] ANTHROPIC_API_KEY presente ma con un formato inatteso (non inizia con sk-ant-)");
-    return { error: NOT_ACTIVE };
+    return { error: NOT_ACTIVE, code: "not_active" };
   }
   return { userId, apiKey };
 }
 
-/** Errore dell'API → messaggio per l'utente. */
+/** Errore dell'API → messaggio per l'utente e codice per l'evento. */
+function apiError(err: unknown, what: "immagine" | "PDF"): { error: string; code: ServerFailure } {
+  return { error: apiErrorText(err, what), code: apiFailure(err) };
+}
+
 function apiErrorText(err: unknown, what: "immagine" | "PDF"): string {
   const detail = err instanceof Error ? err.message : String(err);
   console.error(`[screenshot] errore API Anthropic (${what}):`, detail);
@@ -101,18 +107,19 @@ export async function extractTransactionsFromScreenshot(
   mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif",
 ): Promise<Result> {
   const g = await guard();
-  if ("error" in g) return { error: g.error };
+  if ("error" in g) return g;
   if (!base64Image || base64Image.length > MAX_BASE64_CHARS) {
-    return { error: "L'immagine è troppo grande. Prova con uno screenshot più piccolo." };
+    return { error: "L'immagine è troppo grande. Prova con uno screenshot più piccolo.", code: "too_big" };
   }
   if (await overDailyLimit(g.userId)) {
-    return { error: `Hai raggiunto il limite di ${DAILY_LIMIT} analisi nelle ultime 24 ore. Riprova domani.` };
+    return { error: `Hai raggiunto il limite di ${DAILY_LIMIT} analisi nelle ultime 24 ore. Riprova domani.`, code: "daily_limit" };
   }
 
   const client = new Anthropic({ apiKey: g.apiKey });
   const today = todayISO();
 
   let raw = "";
+  let stopReason: string | null = null;
   try {
     const response = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
@@ -128,14 +135,17 @@ export async function extractTransactionsFromScreenshot(
       ],
     });
     raw = textOf(response);
+    stopReason = response.stop_reason;
   } catch (err) {
-    return { error: apiErrorText(err, "immagine") };
+    return apiError(err, "immagine");
   }
 
   const { transactions, truncated, dropped } = parseExtraction(raw, today);
   if (transactions.length === 0) {
-    console.error("[screenshot] nessun movimento leggibile; risposta:", raw.slice(0, 300));
-    return { error: "Non ho trovato movimenti in questa immagine. Controlla che si vedano date e importi." };
+    const code = noRowsFailure(raw, dropped, stopReason);
+    // Mai il testo della risposta nei log: contiene movimenti, importi e nomi
+    console.error(`[screenshot] nessun movimento leggibile (${code}, ${raw.length} caratteri, stop ${stopReason})`);
+    return { error: "Non ho trovato movimenti in questa immagine. Controlla che si vedano date e importi.", code };
   }
 
   const notes: string[] = [];
@@ -150,18 +160,19 @@ export async function extractTransactionsFromScreenshot(
  */
 export async function extractTransactionsFromPdf(base64Pdf: string): Promise<PdfResult> {
   const g = await guard();
-  if ("error" in g) return { error: g.error };
+  if ("error" in g) return g;
   if (!base64Pdf || base64Pdf.length > MAX_PDF_BASE64_CHARS) {
-    return { error: "Il PDF è troppo grande (massimo circa 3 MB). Scarica un periodo più corto, per esempio un mese." };
+    return { error: "Il PDF è troppo grande (massimo circa 3 MB). Scarica un periodo più corto, per esempio un mese.", code: "too_big" };
   }
   if (await overDailyLimit(g.userId)) {
-    return { error: `Hai raggiunto il limite di ${DAILY_LIMIT} analisi nelle ultime 24 ore. Riprova domani.` };
+    return { error: `Hai raggiunto il limite di ${DAILY_LIMIT} analisi nelle ultime 24 ore. Riprova domani.`, code: "daily_limit" };
   }
 
   const client = new Anthropic({ apiKey: g.apiKey });
   const today = todayISO();
 
   let raw = "";
+  let stopReason: string | null = null;
   try {
     const response = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
@@ -177,14 +188,16 @@ export async function extractTransactionsFromPdf(base64Pdf: string): Promise<Pdf
       ],
     });
     raw = textOf(response);
+    stopReason = response.stop_reason;
   } catch (err) {
-    return { error: apiErrorText(err, "PDF") };
+    return apiError(err, "PDF");
   }
 
   const { transactions, truncated, dropped, balances } = parseStatementExtraction(raw, today);
   if (transactions.length === 0) {
-    console.error("[screenshot] PDF senza movimenti leggibili; risposta:", raw.slice(0, 300));
-    return { error: "Non ho trovato movimenti in questo PDF. Controlla che sia un estratto conto o una lista movimenti." };
+    const code = noRowsFailure(raw, dropped, stopReason);
+    console.error(`[screenshot] PDF senza movimenti leggibili (${code}, ${raw.length} caratteri, stop ${stopReason})`);
+    return { error: "Non ho trovato movimenti in questo PDF. Controlla che sia un estratto conto o una lista movimenti.", code };
   }
 
   const notes: string[] = [];
