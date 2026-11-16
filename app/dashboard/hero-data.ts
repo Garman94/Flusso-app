@@ -88,8 +88,9 @@ export async function loadHeroBase(supabase: SupabaseClient, userId: string): Pr
     // categories(name) per escludere "Accantonamenti": quella quota è già contata
     // separatamente via aggregateSinkingFunds, sommarla anche qui la conterebbe due volte.
     supabase.from("category_budgets").select("monthly_budget, categories(name)").eq("user_id", userId),
-    // senza la migration 048 la query fallisce: si resta col saldo unico di prima
-    supabase.from("accounts").select("id, name, member_id, anchor_balance, anchor_date, checked_at").eq("archived", false).order("created_at"),
+    // senza la migration 048 la query fallisce: si resta col saldo unico di prima.
+    // Il filtro su user_id serve all'email del lunedì, che legge con la service role (senza RLS).
+    supabase.from("accounts").select("id, name, member_id, anchor_balance, anchor_date, checked_at").eq("user_id", userId).eq("archived", false).order("created_at"),
   ]);
   return {
     items: (recRes.data ?? []) as RecurringRow[],
