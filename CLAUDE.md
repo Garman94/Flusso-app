@@ -740,6 +740,17 @@ File a sé (`budget-panel.tsx`, non inline in `smart-page-client.tsx` come le al
 - **Test primo utilizzo**: apre `/onboarding?preview=1` in nuova tab
 - **Feedback utenti** (`AdminFeedback`): sidebar con lista utenti che hanno scritto; chat per ogni utente; form di risposta (inserisce `is_admin=true` con `user_id` del destinatario)
 - **Anteprima delle novità** (2026-09-24): vedi sotto.
+- **Chi torna** (2026-11-16): vedi sotto.
+
+#### Chi torna
+
+Card in Admin sotto l'Anteprima (`admin-chi-torna.tsx`, componente server), fase 2 della ricerca UX. Solo codice, nessuna migration. Solo l'admin la vede, controllata dal server (la pagina rimanda via chi non è in `ADMIN_EMAILS`).
+- **Dati** (`lib/retention-server.ts`, service role): iscritti da `auth.admin.listUsers` (le email servono solo a togliere admin e demo, non escono dal server), nomi da `profiles`, visite = eventi `app_open` (a pagine da 1000). Se manca la tabella `events` o il database non risponde la card non compare.
+- **Tornano dopo una settimana** (`userReturns`, `returnSummary`): ha aperto Flusso almeno `RETURN_DAYS` = 7 giorni dopo l'iscrizione; obiettivo `RETURN_TARGET` = 40%. Non si contano gli iscritti da meno di 7 giorni né chi aveva già passato i 7 giorni prima della prima visita registrata (`before_tracking`). Sotto i 20 iscritti contati (`FEW_PEOPLE`) la card avverte che la percentuale cambia molto.
+- **Attivi**: persone diverse negli ultimi 7 giorni e nei 7 prima (`activeInLastDays`), più la tabella delle ultime 8 settimane da lunedì, col calendario di Roma, con i nuovi iscritti (`weeklyActive`, `mondayOf`).
+- **Iscritti uno per uno** (a scomparsa): nome, iscritto, ultima visita, stato.
+- I clic dalle email arriveranno con l'email del lunedì.
+- Test in `tests/chi-torna.test.ts`. Rollback: revert della PR.
 
 #### Anteprima delle novità
 
