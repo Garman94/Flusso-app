@@ -57,6 +57,9 @@ RESEND_FROM_EMAIL=noreply@tuodominio.com
 # Anthropic — https://console.anthropic.com → API keys (import da screenshot, solo server-side)
 ANTHROPIC_API_KEY=
 
+# Email del lunedì: Vercel Cron la chiama con "Authorization: Bearer CRON_SECRET" (stringa casuale sicura)
+CRON_SECRET=
+
 # Secret interno per webhook Supabase (stringa casuale sicura)
 SUPABASE_WEBHOOK_SECRET=
 

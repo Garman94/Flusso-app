@@ -2,6 +2,7 @@
 // Le email servono solo a togliere admin e demo dal conto: non escono da qui.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAdminEmail } from "./admin-emails";
+import { isDemoEmail } from "./demo";
 import {
   userReturns, returnSummary, weeklyActive, activeInLastDays,
   type RetentionUser, type Visit, type UserReturn, type ReturnSummary, type WeekRow,
@@ -24,14 +25,13 @@ export async function loadRetention(service: SupabaseClient): Promise<RetentionD
   try {
     const { data: profiles } = await service.from("profiles").select("id, full_name");
     const names = new Map<string, string | null>((profiles ?? []).map(p => [p.id as string, p.full_name as string | null]));
-    const demo = (process.env.NEXT_PUBLIC_DEMO_EMAIL ?? "").toLowerCase();
     const users: RetentionUser[] = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
       const { data, error } = await service.auth.admin.listUsers({ page, perPage: PAGE });
       if (error) return null;
       for (const u of data.users) {
         const email = (u.email ?? "").toLowerCase();
-        if (isAdminEmail(email) || (demo && email === demo)) continue;
+        if (isAdminEmail(email) || isDemoEmail(email)) continue;
         users.push({ id: u.id, name: names.get(u.id) ?? null, createdAt: u.created_at });
       }
       if (data.users.length < PAGE) break;

@@ -6,23 +6,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   formatEuro,
-  aggregateExpectedIncome,
   hasIncomeInfo,
   normalizeMonthlyIncome,
-  aggregateSinkingFunds,
-  sinkingFundInput,
-  computeDebtProgress,
-  isTransferCategory,
-  projectPeriodEnd,
 } from "@/lib/calculations";
 import { parseAmount } from "@/lib/import-parse";
-import { isFixedExpense, planStatus, splitPlan, type PlanItem } from "@/lib/fixed-expenses";
-import { flowOf, isSpending, moneyTotals } from "@/lib/money";
 import { updateStartingBalance } from "./saldo-action";
 import { EmergencyButton } from "./emergency-button";
 import { toast } from "sonner";
 import type { HeroData, HeroTx } from "./hero-data";
-import { periodEndLabel, shortDay, spendable, type Spendable } from "@/lib/spendable";
+import { periodEndLabel, shortDay, type Spendable } from "@/lib/spendable";
+import { heroNumbers, txSumToToday } from "@/lib/hero-numbers";
 
 // Card principale della dashboard. Tre domande, in quest'ordine:
 //   1. quanto ho oggi?            → Saldo di oggi
@@ -49,8 +42,6 @@ type Props = {
 };
 
 type ExpandKey = "saldo" | "fine" | "spese" | "entrate";
-
-const isTransfer = (t: Tx) => isTransferCategory(t.categories?.name);
 
 // "26 nov" uguale su server e browser (la card ora arriva già pronta dal server)
 const fmtDay = shortDay;
@@ -290,100 +281,19 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, payDay, piggyBal
 
   const iso = todayISO();
 
-  const txSumToToday = useMemo(
-    () => periodTxs.filter(t => t.date <= iso).reduce((s, t) => s + Number(t.amount), 0),
-    [periodTxs, iso]
+  const txSum = useMemo(() => txSumToToday(periodTxs, iso), [periodTxs, iso]);
+
+  // I calcoli stanno in lib/hero-numbers.ts: li usa anche l'email del lunedì.
+  const result = useMemo(
+    () => heroNumbers({ startingBalance, items, periodTxs, budgetTotal, ownerIncome, membersIncome, piggyBalance, periodFrom, periodTo, today: iso }),
+    [startingBalance, items, periodTxs, budgetTotal, ownerIncome, membersIncome, piggyBalance, periodFrom, periodTo, iso],
   );
-
-  const result = useMemo(() => {
-    if (startingBalance == null) return null;
-
-    // ── Effettivi (periodo corrente) ──
-    // Giroconti fuori; i rimborsi (entrate in una categoria di spesa, es. gli amici che ridanno
-    // la cena o il prelievo dagli accantonamenti) abbassano le spese: vedi lib/money.ts.
-    const spendableTxs = periodTxs.filter(t => !isTransfer(t));
-    const expenseTxs = spendableTxs.filter(t => isSpending(t));
-    const incomeTxs  = spendableTxs.filter(t => !isSpending(t));
-    const { income, expenses: expensesAbs } = moneyTotals(periodTxs);
-    const actualToday = startingBalance + txSumToToday;
-
-    // ── Contributo netto per componente (entrate reali - spese reali, periodo corrente) ──
-    const memberMap = new Map<string, { name: string; color: string; income: number; expense: number }>();
-    membersIncome.forEach(m => memberMap.set(m.id, { name: m.name, color: m.color, income: 0, expense: 0 }));
-    for (const t of spendableTxs) {
-      const key = t.member_id ?? "__none__";
-      if (!memberMap.has(key)) memberMap.set(key, { name: "Non assegnato", color: "#94a3b8", income: 0, expense: 0 });
-      const entry = memberMap.get(key)!;
-      const f = flowOf(t);
-      entry.income += f.income;
-      entry.expense += f.expense;
-    }
-    const memberBreakdown = Array.from(memberMap.entries())
-      .map(([id, v]) => ({ id, ...v }))
-      .filter(m => Math.abs(m.income) > 0.005 || Math.abs(m.expense) > 0.005);
-
-    // ── Previsti: reddito dall'anagrafica (mese in cui inizia il periodo) ──
-    const periodMonth = new Date(periodFrom + "T00:00:00").getMonth() + 1;
-
-    // Rate in corso (esclude quelle non ancora iniziate e quelle già terminate) con una
-    // scadenza in questo periodo: una rata partita da poco può avere la prima nel periodo dopo.
-    const rateItems = items
-      .filter(it => it.debt_type && it.debt_total_amount && it.debt_start_date)
-      .map(it => ({
-        item: it,
-        progress: computeDebtProgress({ totalAmount: it.debt_total_amount!, monthlyAmount: it.amount, startDate: it.debt_start_date! }),
-        status: planStatus(it as PlanItem, periodTxs, periodFrom, periodTo, iso),
-      }))
-      .filter(r => r.progress.status === "active" && r.status.state !== "not-due");
-    const rateMonthly = rateItems.reduce((s, r) => s + r.item.amount, 0);
-
-    // Spese fisse (affitto, abbonamenti, bollette) e rate: per ognuna si sa se in questo
-    // periodo è già stata pagata. Quelle ancora da pagare si tolgono a parte dalla stima, così
-    // "puoi ancora spendere" non comprende l'affitto che deve ancora partire.
-    const fixedStatuses = items.filter(isFixedExpense)
-      .map(it => planStatus(it as PlanItem, periodTxs, periodFrom, periodTo, iso))
-      .filter(st => st.state !== "not-due");
-    const rateStatuses = rateItems.map(r => r.status);
-    const plan = splitPlan([...fixedStatuses, ...rateStatuses], t => !isTransfer(t));
-    const fixedMonthly = fixedStatuses.reduce((s, st) => s + st.expected, 0);
-
-    // Spese previste = spese fisse + rate in corso + quota mensile accantonamenti + budget
-    // per categoria (Pianifica).
-    const sinkingInputs = items
-      .filter(it => it.next_due_date && it.saving_start_date)
-      .map(sinkingFundInput);
-    const sinkingMonthly = aggregateSinkingFunds(sinkingInputs, piggyBalance).this_month_total;
-    const spesePreviste = fixedMonthly + rateMonthly + sinkingMonthly + budgetTotal;
-    // Il resto delle spese previste, quelle "da spendere": budget, accantonamenti e le voci
-    // di cui Flusso non può verificare il pagamento.
-    const flexiblePlanned = budgetTotal + sinkingMonthly + plan.flexible;
-
-    // Se il titolare si e' identificato come Componente, il suo reddito e' li' (evita di sommarlo due volte).
-    const hasOwnerMember = membersIncome.some(m => m.is_owner);
-    const entratePreviste = aggregateExpectedIncome(hasOwnerMember ? null : ownerIncome, membersIncome, periodMonth);
-
-    const projection = projectPeriodEnd({
-      balanceToday: actualToday,
-      incomeSoFar: income,
-      expensesSoFar: expensesAbs - plan.paidSpent,
-      expectedIncome: entratePreviste,
-      expectedExpenses: flexiblePlanned,
-      committedRemaining: plan.remaining,
-    });
-
-    return {
-      income, expensesAbs, incomeTxs, expenseTxs, memberBreakdown, actualToday,
-      rateMonthly, rateItems, sinkingMonthly, spesePreviste, entratePreviste,
-      fixedMonthly, fixedStatuses, flexiblePlanned,
-      projection, periodMonth, hasOwnerMember,
-    };
-  }, [startingBalance, items, periodTxs, budgetTotal, ownerIncome, membersIncome, piggyBalance, txSumToToday, periodFrom, periodTo, iso]);
 
   if (startingBalance == null || !result) {
     return (
       <SetupForm
         periodFrom={periodFrom}
-        txSumInPeriod={txSumToToday}
+        txSumInPeriod={txSum}
         onSaved={() => router.refresh()}
       />
     );
@@ -393,14 +303,14 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, payDay, piggyBal
     income, expensesAbs, incomeTxs, expenseTxs, memberBreakdown, actualToday,
     rateMonthly, rateItems, sinkingMonthly, spesePreviste, entratePreviste,
     fixedMonthly, fixedStatuses, flexiblePlanned,
-    projection, periodMonth, hasOwnerMember,
+    projection, periodMonth, hasOwnerMember, spend,
   } = result;
 
   if (editing) {
     return (
       <SetupForm
         periodFrom={periodFrom}
-        txSumInPeriod={txSumToToday}
+        txSumInPeriod={txSum}
         initialValue={actualToday}
         onSaved={() => { setEditing(false); router.refresh(); }}
         onCancel={() => setEditing(false)}
@@ -418,13 +328,6 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, payDay, piggyBal
   ].filter(s => s.amount > 0);
 
   const committed = projection.committedRemaining;
-  const spend = spendable({
-    flexiblePlanned,
-    leftToSpend: projection.leftToSpend,
-    endBalance: projection.endBalance,
-    today: iso,
-    periodTo,
-  });
   // Sotto la barra delle spese: il numero grande dice già quanto resta, qui le spese fisse.
   const spendHint = !hasPlan
     ? <Link href="/dashboard/smart?v=spese-fisse" onClick={e => e.stopPropagation()} className="text-primary hover:underline">Aggiungi le spese fisse (affitto, bollette, abbonamenti) per avere una previsione →</Link>
@@ -489,7 +392,7 @@ export function BalanceHeroCard({ userId, periodFrom, periodTo, payDay, piggyBal
         <div className="flex flex-col gap-2 -mt-2">
           <div className="rounded-lg border bg-muted/30 px-3 py-2 flex flex-col gap-1 text-xs">
             <Line label={`Saldo a inizio periodo (${fmtDay(periodFrom)})`} value={formatEuro(startingBalance)} />
-            <Line label="+ movimenti fino a oggi" value={formatEuro(txSumToToday)} />
+            <Line label="+ movimenti fino a oggi" value={formatEuro(txSum)} />
             <Line label="= Saldo di oggi" value={formatEuro(actualToday)} strong className="pt-1 border-t" />
             {accounts.length > 0 && (
               <div className="flex flex-col gap-1 pt-2 mt-1 border-t">

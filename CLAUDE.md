@@ -20,6 +20,22 @@ Fase 1 della ricerca UX ("si capisce subito"), parte dashboard e guide. Solo cod
 
 ---
 
+## Email del lunedì e Avvisi in Account (2026-11-16)
+
+Fase 2 della ricerca UX («ti richiama»). Migration 052, test `tests/email-lunedi.test.ts`.
+- **Cosa dice**: «Fino al prossimo stipendio (26 nov) puoi spendere ancora X, circa Y al giorno» e le spese da pagare nei prossimi 7 giorni (`upcomingThisWeek`: in arrivo o da verificare, al massimo 5). Se l'ultimo movimento caricato ha più di `STALE_DAYS` = 7 giorni non dice quanto spendere (sarebbe troppo alto) e invita a caricare l'estratto conto. Altre versioni: saldo mai inserito, budget superato, soldi che mancano, nessun budget. Oggetto e riga di anteprima **senza importi** (si vedono sulla schermata di blocco). Contenuto in `lib/weekly-email.ts` (puro), cornice in `lib/email-layout.ts` (anche benvenuto e password), testo dell'utente sempre in `escapeHtml`.
+- **Stessi numeri della dashboard**: i calcoli della card del saldo sono passati da `balance-hero-card.tsx` a `lib/hero-numbers.ts` (`heroNumbers`, `txSumToToday`), che usano sia la card sia l'email. `buildWeeklyEmail` (`lib/weekly-email-server.ts`) fa le stesse query di `app/dashboard/page.tsx`. Legge con la service role: **ogni query filtra per `user_id`** (aggiunto il filtro su `accounts` in `loadHeroBase`, prima si affidava a RLS).
+- **Giro del lunedì**: `vercel.json` → `/api/cron/email-lunedi` alle 6 UTC del lunedì (7 d'inverno, 8 d'estate), solo in produzione; serve `CRON_SECRET` su Vercel (Vercel manda `Authorization: Bearer …`). `runWeeklyEmails`: utenti con email confermata e `email_weekly`, senza admin e demo; chi non ha mai caricato movimenti si salta. Prima scrive la riga in `email_sends` (unica per utente, tipo e lunedì), poi manda: se il cron parte due volte nessuno riceve due email; se Resend fallisce la riga si toglie. 600 ms tra un'email e l'altra (Resend: 2 al secondo). Nei log solo conteggi.
+- **Disiscrizione**: in fondo all'email «Non voglio più questa email» → `/disiscriviti?u&k&t` (firma HMAC in `lib/email-token.ts`, chiave `EMAIL_LINK_SECRET` o la service role). La pagina chiede conferma col tasto, perché alcuni programmi di posta aprono i link da soli. Intestazioni `List-Unsubscribe` e `List-Unsubscribe-Post` (RFC 8058) → POST `/api/email/disiscriviti`: Gmail e Apple Mail disiscrivono col loro tasto.
+- **Account → Avvisi** (`email-alerts-section.tsx`, `#avvisi`): interruttore dell'email del lunedì (accesa per tutti, scelta di Marco); senza la colonna dice «arriva presto». Evento `email_pref_changed`.
+- **Clic**: i link hanno `?da=email-lunedi`; `ActivityPing` registra `email_clicked`. Query in `docs/09-metriche.md`.
+- **Admin → ✉️ Email del lunedì**: «Vedila» (l'HTML con i propri numeri in una scheda) e «Mandamela ora» (`email-test-actions.ts`, solo admin): i cron non girano in anteprima.
+- **Privacy** (`app/privacy/page.tsx`): email del lunedì con importi, Resend, Anthropic anche per PDF e bollette (prima diceva solo screenshot).
+- `profiles.email_monthly` c'è già per il riepilogo del mese (prossima PR). Sono preferenze dell'utente: non vanno nel trigger `prevent_plan_self_change`.
+- Rollback: prima il codice (revert della PR, toglie anche il cron), poi `supabase/rollback/052_email_del_lunedi_down.sql`.
+
+---
+
 ## Si capisce subito: benvenuto, landing, prezzi, barra e campanella (2026-11-10)
 
 Fase 1 della ricerca sull'usabilità: chi arriva deve capire in un minuto cosa fa Flusso e vedere subito un numero suo.
@@ -915,6 +931,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `043_demo_obiettivi_salvadanai.sql` | Solo demo: `reseed_demo_salvadanai()`, ogni obiettivo col suo salvadanaio e accantonamenti nel salvadanaio "Accantonamenti" |
 | `050_campanella_pulita.sql` | Spegne (`is_active = false`) le due notifiche della campanella superate (formati Excel, "sezione Smart"). Nessun dato cancellato. Rollback: `supabase/rollback/050_campanella_pulita_down.sql` |
 | `051_demo_coerente.sql` | Solo demo: `reseed_demo()` sui periodi di paga, mai date future, con conto, auto e salvadanai in pari; `reseed_demo_salvadanai()` vuota. Applicata il 2026-11-13 |
+| `052_email_del_lunedi.sql` | `profiles.email_weekly` / `email_monthly` (default true) e tabella `email_sends` (un invio per utente, tipo e periodo). Rollback: `supabase/rollback/052_email_del_lunedi_down.sql` |
 
 ---
 

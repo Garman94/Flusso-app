@@ -4,6 +4,7 @@
  */
 import { Resend } from "resend";
 import { siteConfig } from "@/lib/config";
+import { emailLayout } from "@/lib/email-layout";
 
 function getResendClient() {
   const apiKey = process.env.RESEND_API_KEY;
@@ -39,39 +40,7 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string) {
 // ─── Email templates ───────────────────────────────────────────────────────
 
 function emailWrapper(content: string) {
-  return `<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${siteConfig.name}</title>
-</head>
-<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0;">
-    <tr>
-      <td align="center">
-        <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
-          <tr>
-            <td style="padding:32px 40px 24px;border-bottom:1px solid #e5e7eb;">
-              <span style="font-size:20px;font-weight:700;color:#111827;">${siteConfig.name}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:32px 40px;">
-              ${content}
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:24px 40px;background:#f9fafb;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">
-              © ${new Date().getFullYear()} ${siteConfig.name} — <a href="${siteConfig.url}/privacy" style="color:#6b7280;">Privacy Policy</a> · <a href="${siteConfig.url}/terms" style="color:#6b7280;">Termini</a>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+  return emailLayout(content);
 }
 
 function welcomeEmailHtml(name: string) {

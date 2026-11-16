@@ -13,6 +13,8 @@ Dal 17/10: `import_completed` e `screenshot_import_completed` prima si perdevano
 
 `auth.users.last_sign_in_at` **non** dice chi torna: non si aggiorna finché la sessione resta valida. Usa `app_open`.
 
+**Email del lunedì** (migration 052): ogni invio è una riga di `email_sends` (`user_id`, `kind` = `weekly`, `period_key` = lunedì della settimana), mai il contenuto. I link dell'email hanno `?da=email-lunedi`: arrivando da lì si registra `email_clicked` (`kind`, `path`; al massimo uno all'ora per tipo). Accendere o spegnere l'email da Account registra `email_pref_changed` (`kind`, `on`); chi si disiscrive dal link dell'email si vede da `profiles.email_weekly = false`.
+
 **Chi torna** (dal 16/11) si legge in Admin, senza SQL: la card conta chi ha aperto Flusso almeno 7 giorni dopo l'iscrizione (obiettivo 40%) e le persone attive negli ultimi 7 giorni e in ogni settimana. Toglie admin e demo, e chi aveva già passato la settimana dopo l'iscrizione prima della prima visita registrata (un suo ritorno di allora non risulterebbe). Calcoli in `lib/retention.ts`.
 
 Le query vanno lanciate da Supabase → SQL Editor (nessuna policy di lettura per gli utenti).
@@ -29,6 +31,22 @@ select
   count(*) filter (where exists (select 1 from events e where e.user_id = u.id and e.name = 'app_open'
                                    and e.created_at >= u.created_at + interval '7 days'))                           as tornati_dopo_7_giorni
 from u;
+```
+
+## Email del lunedì: mandate, cliccate, spente
+
+```sql
+-- per settimana: email mandate e persone che hanno cliccato un link entro 7 giorni
+select s.period_key as settimana, count(*) as mandate,
+       count(*) filter (where exists (
+         select 1 from events e where e.user_id = s.user_id and e.name = 'email_clicked'
+           and e.props->>'kind' = 'email-lunedi'
+           and e.created_at >= s.sent_at and e.created_at < s.sent_at + interval '7 days')) as cliccate
+from email_sends s where s.kind = 'weekly'
+group by 1 order by 1 desc;
+
+-- quanti l'hanno spenta
+select count(*) filter (where not email_weekly) as spenta, count(*) as profili from profiles;
 ```
 
 ## Perché falliscono gli import
