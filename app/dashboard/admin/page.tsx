@@ -13,6 +13,8 @@ import { AdminAnteprima } from "./admin-anteprima";
 import { AdminDizionario } from "./admin-dizionario";
 import { dictionaryProposals, type RuleRow } from "@/lib/dictionary-proposals";
 import { categoryKind } from "@/lib/money";
+import { loadRetention } from "@/lib/retention-server";
+import { AdminChiTorna } from "./admin-chi-torna";
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
@@ -39,7 +41,7 @@ async function AdminContent() {
 
   const service = getServiceClient();
 
-  const [{ data: profiles, error: profilesError }, { data: coupons }, previewPlan, changes, dictionaryRes, rulesRes, systemCatsRes] = await Promise.all([
+  const [{ data: profiles, error: profilesError }, { data: coupons }, previewPlan, changes, dictionaryRes, rulesRes, systemCatsRes, retention] = await Promise.all([
     service
       .from("profiles")
       .select("id, full_name, plan, created_at")
@@ -54,6 +56,8 @@ async function AdminContent() {
     service.from("merchant_dictionary").select("id, keyword, category_name, source").order("keyword"),
     service.from("category_rules").select("user_id, value, categories(name, user_id)"),
     service.from("categories").select("name").is("user_id", null).order("name"),
+    // Chi torna: iscritti e visite (app_open), senza admin e demo
+    loadRetention(service),
   ]);
   const dictionary = dictionaryRes.data ?? [];
   const proposals = dictionaryProposals((rulesRes.data ?? []) as unknown as RuleRow[], dictionary);
@@ -82,6 +86,9 @@ async function AdminContent() {
 
       {/* Anteprima della prossima versione */}
       <AdminAnteprima changes={changes} hasBypass={!!process.env.VERCEL_AUTOMATION_BYPASS_SECRET} />
+
+      {/* Chi torna dopo una settimana e attivi a settimana (se manca la tabella events, non compare) */}
+      {retention && <AdminChiTorna data={retention} />}
 
       {/* Users table */}
       <AdminUsersSection profiles={profiles ?? []} />

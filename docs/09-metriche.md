@@ -13,6 +13,8 @@ Dal 17/10: `import_completed` e `screenshot_import_completed` prima si perdevano
 
 `auth.users.last_sign_in_at` **non** dice chi torna: non si aggiorna finché la sessione resta valida. Usa `app_open`.
 
+**Chi torna** (dal 16/11) si legge in Admin, senza SQL: la card conta chi ha aperto Flusso almeno 7 giorni dopo l'iscrizione (obiettivo 40%) e le persone attive negli ultimi 7 giorni e in ogni settimana. Toglie admin e demo, e chi aveva già passato la settimana dopo l'iscrizione prima della prima visita registrata (un suo ritorno di allora non risulterebbe). Calcoli in `lib/retention.ts`.
+
 Le query vanno lanciate da Supabase → SQL Editor (nessuna policy di lettura per gli utenti).
 
 ## Imbuto: iscrizione → primo import → ritorno
@@ -25,7 +27,7 @@ select
   count(*) filter (where exists (select 1 from transactions t where t.user_id = u.id)) as con_transazioni,
   count(*) filter (where exists (select 1 from events e where e.user_id = u.id and e.name = 'import_completed'))      as import_riusciti,
   count(*) filter (where exists (select 1 from events e where e.user_id = u.id and e.name = 'app_open'
-                                   and e.created_at > u.created_at + interval '6 days'))                            as tornati_dopo_7_giorni
+                                   and e.created_at >= u.created_at + interval '7 days'))                           as tornati_dopo_7_giorni
 from u;
 ```
 
