@@ -32,6 +32,12 @@ Fase 2 della ricerca UX («ti richiama»). Migration 052, test `tests/email-lune
 - **Admin → ✉️ Email del lunedì**: «Vedila» (l'HTML con i propri numeri in una scheda) e «Mandamela ora» (`email-test-actions.ts`, solo admin): i cron non girano in anteprima.
 - **Privacy** (`app/privacy/page.tsx`): email del lunedì con importi, Resend, Anthropic anche per PDF e bollette (prima diceva solo screenshot).
 - `profiles.email_monthly` c'è già per il riepilogo del mese (prossima PR). Sono preferenze dell'utente: non vanno nel trigger `prevent_plan_self_change`.
+- **Provata in una transazione annullata** il 17/11, sul database di produzione, senza lasciare niente (controllato dopo):
+  - le due colonne ci sono, accese per tutti;
+  - `email_sends` ha RLS attiva, e un utente collegato non vi legge niente;
+  - lo stesso invio fatto due volte entra una volta sola;
+  - un utente collegato spegne la sua email da solo, e il trigger lascia il piano com'era.
+  Si applica al «pubblica», prima del merge.
 - Rollback: prima il codice (revert della PR, toglie anche il cron), poi `supabase/rollback/052_email_del_lunedi_down.sql`.
 
 ---
