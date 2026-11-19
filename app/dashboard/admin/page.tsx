@@ -15,6 +15,7 @@ import { dictionaryProposals, type RuleRow } from "@/lib/dictionary-proposals";
 import { categoryKind } from "@/lib/money";
 import { loadRetention } from "@/lib/retention-server";
 import { AdminChiTorna } from "./admin-chi-torna";
+import { AdminEmailLunedi } from "./admin-email-lunedi";
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
@@ -89,6 +90,9 @@ async function AdminContent() {
 
       {/* Chi torna dopo una settimana e attivi a settimana (se manca la tabella events, non compare) */}
       {retention && <AdminChiTorna data={retention} />}
+
+      {/* Email del lunedì: vederla o riceverla subito */}
+      <AdminEmailLunedi />
 
       {/* Users table */}
       <AdminUsersSection profiles={profiles ?? []} />
