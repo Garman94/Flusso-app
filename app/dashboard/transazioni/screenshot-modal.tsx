@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { track, trackBeforeLeaving } from "@/lib/track";
 import { useDemoGuard } from "@/components/demo-context";
 import { prepareImage } from "@/lib/image-prepare";
+import { elapsedSeconds, exceptionFailure, isEncryptedPdf, isHeic, sizeBucket, type ClientFailure, type ServerFailure } from "@/lib/read-failure";
 import { classifyRows, type DedupStatus } from "@/lib/import-dedup";
 import { categorize, type DictionaryEntry, type UserRule } from "@/lib/categorize";
 import { parseAmount } from "@/lib/import-parse";
@@ -70,22 +71,36 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
 
   async function handleFile(file: File) {
     const pdf = isPdf(file);
+    const kind = pdf ? "pdf" : "image";
+    const started = Date.now();
+    // Perché non è riuscita, senza mai dire quale file: tipo, fascia di dimensione, secondi passati
+    const failed = (reason: ClientFailure | ServerFailure, extra: Record<string, string | number | boolean> = {}) =>
+      void track("screenshot_failed", { reason, kind, size: sizeBucket(file.size), secs: elapsedSeconds(started), ...extra });
+
     if (!pdf && !file.type.startsWith("image/")) {
       toast.error("Carica un'immagine (PNG, JPG, WebP) o il PDF dell'estratto conto.");
+      failed("wrong_type");
       return;
     }
     if (pdf && file.size > MAX_PDF_BYTES) {
       toast.error("Il PDF è troppo grande (massimo circa 3 MB). Scarica un periodo più corto, per esempio un mese.");
+      failed("too_big");
       return;
     }
     setRows(null);
     setStatement(null);
     setExtracting(true);
+    let encrypted = false;
     try {
       let result: Awaited<ReturnType<typeof extractTransactionsFromPdf>>;
       if (pdf) {
         setPreview(null);
         setPdfName(file.name);
+        try {
+          encrypted = isEncryptedPdf(new Uint8Array(await file.arrayBuffer()));
+        } catch {
+          // solo per spiegare meglio un eventuale errore
+        }
         result = await extractTransactionsFromPdf(await fileToBase64(file));
       } else {
         // Riduce e converte in JPEG: gli screenshot del telefono pesano più del limite di invio
@@ -93,8 +108,10 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
         try {
           prepared = await prepareImage(file);
         } catch {
-          toast.error("Non riesco ad aprire questa immagine. Prova con un PNG o un JPG.");
-          void track("screenshot_failed", { reason: "decode" });
+          toast.error(isHeic(file)
+            ? "Questo browser non apre le foto HEIC dell'iPhone. Fai uno screenshot della lista movimenti, oppure apri Flusso da Safari."
+            : "Non riesco ad aprire questa immagine. Prova con un PNG o un JPG.");
+          failed("decode", { heic: isHeic(file) });
           return;
         }
         setPdfName(null);
@@ -102,8 +119,11 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
         result = await extractTransactionsFromScreenshot(prepared.base64, prepared.mediaType);
       }
       if (result.error) {
-        toast.error(result.error);
-        void track("screenshot_failed", { reason: "server", kind: pdf ? "pdf" : "image" });
+        // Un PDF protetto da password l'API lo rifiuta: meglio dire come toglierla
+        toast.error(encrypted && result.code === "api_bad_request"
+          ? "Questo PDF è protetto da password e l'AI non riesce ad aprirlo. Aprilo, scegli Stampa → Salva come PDF e carica il file nuovo."
+          : result.error, { duration: 9000 });
+        failed(result.code ?? "unknown", pdf ? { encrypted } : {});
         return;
       }
       if (pdf && result.balances) {
@@ -141,10 +161,13 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
           };
         }),
       );
-      void track("screenshot_extracted", { rows: found.length, kind: pdf ? "pdf" : "image" });
-    } catch {
+      void track("screenshot_extracted", {
+        rows: found.length, kind, size: sizeBucket(file.size), secs: elapsedSeconds(started),
+        ...(pdf ? { encrypted } : {}),
+      });
+    } catch (err) {
       toast.error("Qualcosa è andato storto. Riprova.");
-      void track("screenshot_failed", { reason: "exception" });
+      failed(exceptionFailure(err), pdf ? { encrypted } : {});
     } finally {
       setExtracting(false);
     }
@@ -182,7 +205,7 @@ export function ScreenshotModal({ userId, categories, userRules = [], dictionary
     if (error) {
       console.error("[screenshot] salvataggio non riuscito:", error.message);
       toast.error("Errore nel salvataggio.");
-      void track("screenshot_failed", { reason: "save" });
+      void track("screenshot_failed", { reason: "save", kind: pdfName ? "pdf" : "image" });
     } else {
       toast.success(`${selected.length} transazioni importate!`);
       // onImported ricarica la pagina: prima va salvato l'evento
