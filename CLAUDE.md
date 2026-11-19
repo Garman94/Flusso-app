@@ -31,6 +31,20 @@ Fase 1 della ricerca UX ("si capisce subito"), parte dashboard e guide. Solo cod
 
 ---
 
+## Email del mese (2026-11-19)
+
+Fase 2 della ricerca UX («ti richiama»). Nessuna migration (`profiles.email_monthly` ed `email_sends` ci sono già dalla 052). Test `tests/email-mese.test.ts`.
+- **Cosa dice**: «Com'è andato ottobre»: quanto hai risparmiato (o speso più di quanto è entrato), che parte delle entrate, confronto col mese prima, entrate e uscite; «Da ricordare» con al massimo 3 spese cambiate di più rispetto al solito, spese fisse trovate nei movimenti («2 su 3», non «pagate»: quelle senza parola chiave non si possono verificare) e budget rispettati; tasto per il riepilogo completo e link a Pianifica. Oggetto e anteprima senza importi. Contenuto in `lib/monthly-email.ts` (puro), testo dell'utente sempre in `escapeHtml`.
+- **Stessi numeri di Mesi passati**: le query della pagina `/dashboard/riepilogo` sono passate in `lib/recap-data.ts` (`loadRecap`), usato dalla pagina e dall'email; i calcoli restano `buildRecap`. Con la service role ogni query filtra per `user_id`.
+- **Quando parte**: `vercel.json` → `/api/cron/email-mese` ogni giorno alle 17 UTC (18 d'inverno, 19 d'estate), solo in produzione, con `CRON_SECRET`. Per ognuno (`email_monthly` acceso, email confermata, niente admin e demo) parte nei primi `RECAP_BANNER_DAYS` = 10 giorni del periodo nuovo (`periodToRecap`, la stessa finestra del banner in dashboard; costanti ora in `lib/recap.ts`), una volta sola (`email_sends`, `kind` = `monthly`, `period_key` = inizio del periodo chiuso). **Solo se il periodo è completo** (`recapReadiness`): almeno 3 movimenti, l'ultimo entro 5 giorni dalla fine, non cominciati a metà; altrimenti la riga si toglie e si riprova il giorno dopo (con l'estratto a metà il risparmio sarebbe falso; a far caricare il file ci pensa l'email del lunedì). Nei log solo conteggi, compreso `notReady` per motivo.
+- **Partenza il 7 dicembre** (`MONTHLY_FIRST_DAY`): Marco ha scelto (19/11) di aggiungere il riepilogo del mese alla privacy (dati raccolti, basi giuridiche, Resend) e farlo partire almeno 15 giorni dopo la pubblicazione, senza un'altra email di avviso (la privacy promette il preavviso per le modifiche «sostanziali»). **Se la PR si pubblica dopo il 22/11, spostare la data** (e la data in cima alla privacy). Prima di quel giorno il giro si ferma subito senza toccare il database.
+- **Account → Avvisi**: secondo interruttore «Riepilogo del mese» (`email-alerts-section.tsx`, ora un `EmailSwitch` per tipo), «Parte dal 7 dicembre» finché non è partito. Evento `email_pref_changed` (`kind` = `monthly`).
+- **Disiscrizione**: link firmato con `kind` = `monthly` (pagina `/disiscriviti` e `List-Unsubscribe`: `sendEmail` ora prende il tipo). `recipientEmails` in `lib/weekly-email-server.ts` dà gli indirizzi a entrambi i giri.
+- **Admin → 📅 Email del mese**: «Vedila» e «Mandamela ora» (`emailTest(kind, mode)` in `email-test-actions.ts`, card `AdminEmailTest`) usano l'ultimo periodo chiuso anche fuori dalla finestra e dicono se oggi partirebbe e perché no.
+- Rollback: revert della PR (toglie anche il cron). Nessun dato toccato.
+
+---
+
 ## Email del lunedì e Avvisi in Account (2026-11-16)
 
 Fase 2 della ricerca UX («ti richiama»). Migration 052, test `tests/email-lunedi.test.ts`.
@@ -42,7 +56,7 @@ Fase 2 della ricerca UX («ti richiama»). Migration 052, test `tests/email-lune
 - **Clic**: i link hanno `?da=email-lunedi`; `ActivityPing` registra `email_clicked`. Query in `docs/09-metriche.md`.
 - **Admin → ✉️ Email del lunedì**: «Vedila» (l'HTML con i propri numeri in una scheda) e «Mandamela ora» (`email-test-actions.ts`, solo admin): i cron non girano in anteprima.
 - **Privacy** (`app/privacy/page.tsx`): email del lunedì con importi, Resend, Anthropic anche per PDF e bollette (prima diceva solo screenshot).
-- `profiles.email_monthly` c'è già per il riepilogo del mese (prossima PR). Sono preferenze dell'utente: non vanno nel trigger `prevent_plan_self_change`.
+- `profiles.email_monthly` è per l'email del mese (sezione sopra). Sono preferenze dell'utente: non vanno nel trigger `prevent_plan_self_change`.
 - **Provata in una transazione annullata** il 17/11, sul database di produzione, senza lasciare niente (controllato dopo):
   - le due colonne ci sono, accese per tutti;
   - `email_sends` ha RLS attiva, e un utente collegato non vi legge niente;

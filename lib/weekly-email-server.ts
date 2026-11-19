@@ -10,7 +10,7 @@ import { currentPeriod } from "./period";
 import { heroNumbers } from "./hero-numbers";
 import { upcomingItems, type UpcomingItem } from "./upcoming";
 import { weeklyEmail, weeklyStarted, WEEKLY_SOURCE, type WeeklyEmail } from "./weekly-email";
-import { unsubscribeQuery } from "./email-token";
+import { unsubscribeQuery, type EmailKind } from "./email-token";
 import { isAdminEmail } from "./admin-emails";
 import { isDemoEmail } from "./demo";
 import { mondayOf } from "./retention";
@@ -91,7 +91,10 @@ export async function buildWeeklyEmail(service: SupabaseClient, profile: Profile
   );
 }
 
-export async function sendEmail(to: string, userId: string, email: WeeklyEmail): Promise<void> {
+/** Manda un'email automatica (del lunedì o del mese), con la disiscrizione dal programma di posta. */
+export async function sendEmail(
+  to: string, userId: string, email: Pick<WeeklyEmail, "subject" | "html" | "text">, kind: EmailKind = "weekly",
+): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("RESEND_API_KEY is not set");
   const { error } = await new Resend(apiKey).emails.send({
@@ -102,11 +105,30 @@ export async function sendEmail(to: string, userId: string, email: WeeklyEmail):
     text: email.text,
     headers: {
       // disiscrizione con un clic dal programma di posta (Gmail, Apple Mail): RFC 8058
-      "List-Unsubscribe": `<${siteConfig.url}/api/email/disiscriviti?${unsubscribeQuery(userId, "weekly")}>`,
+      "List-Unsubscribe": `<${siteConfig.url}/api/email/disiscriviti?${unsubscribeQuery(userId, kind)}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     },
   });
   if (error) throw new Error(`resend: ${error.name}`);
+}
+
+/**
+ * Gli indirizzi a cui mandare le email automatiche: utenti con l'email confermata, tranne admin
+ * e demo (l'admin le vede da Admin). Mappa id utente → indirizzo; non esce mai dal server.
+ */
+export async function recipientEmails(service: SupabaseClient): Promise<Map<string, string>> {
+  const emails = new Map<string, string>();
+  for (let page = 1; page <= 50; page++) {
+    const { data, error } = await service.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw new Error(`listUsers: ${error.message}`);
+    for (const u of data.users) {
+      const e = (u.email ?? "").toLowerCase();
+      if (!e || isDemoEmail(e) || isAdminEmail(e) || !u.email_confirmed_at) continue;
+      emails.set(u.id, u.email!);
+    }
+    if (data.users.length < 1000) break;
+  }
+  return emails;
 }
 
 export type WeeklyRunResult = {
@@ -125,17 +147,7 @@ export async function runWeeklyEmails(service: SupabaseClient, now: Date = new D
   const week = mondayOf(now);
   if (!weeklyStarted(week)) return { ...res, notStarted: true };
 
-  const emails = new Map<string, string>();
-  for (let page = 1; page <= 50; page++) {
-    const { data, error } = await service.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) throw new Error(`listUsers: ${error.message}`);
-    for (const u of data.users) {
-      const e = (u.email ?? "").toLowerCase();
-      if (!e || isDemoEmail(e) || isAdminEmail(e) || !u.email_confirmed_at) continue;
-      emails.set(u.id, u.email!);
-    }
-    if (data.users.length < 1000) break;
-  }
+  const emails = await recipientEmails(service);
 
   const { data: profiles, error } = await service.from("profiles").select("*").eq("email_weekly", true);
   if (error) throw new Error(`profiles: ${error.message}`);

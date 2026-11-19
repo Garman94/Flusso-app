@@ -15,7 +15,7 @@ import { dictionaryProposals, type RuleRow } from "@/lib/dictionary-proposals";
 import { categoryKind } from "@/lib/money";
 import { loadRetention } from "@/lib/retention-server";
 import { AdminChiTorna } from "./admin-chi-torna";
-import { AdminEmailLunedi } from "./admin-email-lunedi";
+import { AdminEmailTest } from "./admin-email-lunedi";
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
@@ -92,7 +92,8 @@ async function AdminContent() {
       {retention && <AdminChiTorna data={retention} />}
 
       {/* Email del lunedì: vederla o riceverla subito */}
-      <AdminEmailLunedi />
+      <AdminEmailTest kind="weekly" />
+      <AdminEmailTest kind="monthly" />
 
       {/* Users table */}
       <AdminUsersSection profiles={profiles ?? []} />

@@ -3,36 +3,16 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { addDaysISO, todayISO } from "@/lib/dates";
-import { currentPeriod, previousPeriods } from "@/lib/period";
+import { currentPeriod } from "@/lib/period";
 import { formatEuro } from "@/lib/calculations";
-import { isFixedExpense, type PlanItem } from "@/lib/fixed-expenses";
-import { buildRecap, periodContaining, periodName, RECAP_HISTORY, type Recap, type RecapTx } from "@/lib/recap";
+import { periodContaining, periodName, type Recap } from "@/lib/recap";
+import { loadRecap } from "@/lib/recap-data";
 import { RecapSeen, RecapTransactions } from "./recap-client";
 import { RecapGroups } from "./recap-groups";
 
 // Riepilogo di un periodo chiuso (prima: una finestra "Mesi passati" per mese solare, senza
 // confronti). ?da=YYYY-MM-DD sceglie il periodo che contiene quella data; senza, l'ultimo
-// chiuso. Calcoli in lib/recap.ts.
-
-const PAGE = 1000;
-
-type Supabase = Awaited<ReturnType<typeof createClient>>;
-
-async function fetchTxs(supabase: Supabase, userId: string, from: string, to: string): Promise<RecapTx[]> {
-  const out: RecapTx[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("id, date, amount, description, merchant, category_id, categories(name, icon, color)")
-      .eq("user_id", userId).gte("date", from).lte("date", to)
-      .order("date", { ascending: false }).order("id", { ascending: true })
-      .range(offset, offset + PAGE - 1);
-    if (error || !data) break;
-    out.push(...(data as unknown as RecapTx[]));
-    if (data.length < PAGE) break;
-  }
-  return out;
-}
+// chiuso. Query in lib/recap-data.ts (le stesse dell'email del mese), calcoli in lib/recap.ts.
 
 const fmtDay = (iso: string, weekday = false) =>
   new Date(iso + "T00:00:00").toLocaleDateString("it-IT", { ...(weekday ? { weekday: "long" as const } : {}), day: "numeric", month: "short" });
@@ -107,21 +87,11 @@ async function RecapContent({ searchParams }: { searchParams: Promise<{ da?: str
   const asked = da && /^\d{4}-\d{2}-\d{2}$/.test(da) ? periodContaining(payDay, da) : latest;
   const sel = asked.from >= cur.from ? latest : asked;
   const isLatest = sel.from === latest.from;
-  const previous = previousPeriods(payDay, sel.year, sel.month, RECAP_HISTORY + 1);
 
-  const [txs, budgetsRes, recurringRes, firstRes, categoriesRes] = await Promise.all([
-    fetchTxs(supabase, userId, previous[previous.length - 1]?.from ?? sel.from, sel.to),
-    supabase.from("category_budgets").select("category_id, monthly_budget").eq("user_id", userId),
-    supabase.from("recurring_expenses").select("*").eq("user_id", userId),
-    supabase.from("transactions").select("date").eq("user_id", userId).order("date", { ascending: true }).limit(1).maybeSingle(),
-    supabase.from("categories").select("id, name, icon").or(`user_id.eq.${userId},user_id.is.null`),
-  ]);
-  const planItems = ((recurringRes.data ?? []) as PlanItem[]).filter(it => isFixedExpense(it) || it.debt_type);
-  const r = buildRecap(txs, sel, previous, budgetsRes.data ?? [], planItems, todayISO(), categoriesRes.data ?? []);
+  const { recap: r, txs, previous, firstDate } = await loadRecap(supabase, userId, payDay, sel, todayISO());
 
   const name = periodName(payDay, sel);
   const monthName = name.month;
-  const firstDate = firstRes.data?.date as string | undefined;
   const older = previous[0] && firstDate && firstDate <= previous[0].to ? previous[0] : null;
   const newer = isLatest ? null : periodContaining(payDay, addDaysISO(sel.to, 1));
   const rows = txs
