@@ -89,7 +89,12 @@ export type Recap = Totals & {
 /** Periodi passati usati per "il solito"; ne serve uno in più per sapere se l'ultimo è completo. */
 export const RECAP_HISTORY = 3;
 
-const INCOMPLETE_DAYS = 5;
+/** Giorni dall'inizio del periodo nuovo in cui si invita al riepilogo di quello chiuso (banner, email). */
+export const RECAP_BANNER_DAYS = 10;
+/** Il periodo chiuso sembra completo se l'ultimo movimento è entro questi giorni dalla fine. */
+export const RECAP_COMPLETE_DAYS = 5;
+
+const INCOMPLETE_DAYS = RECAP_COMPLETE_DAYS;
 
 function daysBetween(a: string, b: string): number {
   const ms = Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10))

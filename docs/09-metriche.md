@@ -21,6 +21,8 @@ Dal 17/10: `import_completed` e `screenshot_import_completed` prima si perdevano
 
 **Email del lunedì** (migration 052): ogni invio è una riga di `email_sends` (`user_id`, `kind` = `weekly`, `period_key` = lunedì della settimana), mai il contenuto. I link dell'email hanno `?da=email-lunedi`: arrivando da lì si registra `email_clicked` (`kind`, `path`; al massimo uno all'ora per tipo). Accendere o spegnere l'email da Account registra `email_pref_changed` (`kind`, `on`); chi si disiscrive dal link dell'email si vede da `profiles.email_weekly = false`.
 
+**Email del mese** (dal 7/12): stesse regole, con `kind` = `monthly`, `period_key` = inizio del periodo riepilogato, link con `?da=email-mese` e preferenza `profiles.email_monthly`. Il giro di ogni giorno (log di Vercel, «email del mese») conta anche chi era nei primi giorni del periodo nuovo ma non l'ha ricevuta, e perché (`notReady`: `few` meno di 3 movimenti, `incomplete` mancano gli ultimi giorni, `starts-late` cominciano a metà).
+
 **Chi torna** (dal 16/11) si legge in Admin, senza SQL: la card conta chi ha aperto Flusso almeno 7 giorni dopo l'iscrizione (obiettivo 40%) e le persone attive negli ultimi 7 giorni e in ogni settimana. Toglie admin e demo, e chi aveva già passato la settimana dopo l'iscrizione prima della prima visita registrata (un suo ritorno di allora non risulterebbe). Calcoli in `lib/retention.ts`.
 
 Le query vanno lanciate da Supabase → SQL Editor (nessuna policy di lettura per gli utenti).

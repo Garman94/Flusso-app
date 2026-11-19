@@ -14,7 +14,7 @@ export default function PrivacyPage() {
       <main className="flex-1 w-full max-w-3xl mx-auto px-5 py-16 flex flex-col gap-10">
         <div className="flex flex-col gap-3">
           <h1 className="text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-sm text-muted-foreground">Ultimo aggiornamento: 16 novembre 2026</p>
+          <p className="text-sm text-muted-foreground">Ultimo aggiornamento: 19 novembre 2026</p>
         </div>
 
         <p className="text-muted-foreground leading-relaxed">
@@ -38,6 +38,7 @@ export default function PrivacyPage() {
             <li><strong className="text-foreground">Dati finanziari:</strong> transazioni (importo, data, descrizione, categoria) caricate manualmente, dal file della banca o da foto e PDF. Non accediamo direttamente ai conti bancari.</li>
             <li><strong className="text-foreground">Foto, PDF degli estratti conto e bollette (solo Premium, solo se scegli queste funzioni):</strong> il file viene inviato ad Anthropic per leggerne i movimenti o i dati della bolletta e non viene conservato da Flusso; quello che viene letto lo confermi tu prima che sia salvato.</li>
             <li><strong className="text-foreground">Email del lunedì:</strong> ogni lunedì mattina ti mandiamo un&apos;email con quanto puoi spendere fino al prossimo stipendio e le spese da pagare in settimana, calcolati dai dati che hai inserito. Contiene importi: chi può leggere la tua casella di posta li vede (l&apos;oggetto dell&apos;email non ne contiene). La spegni con un clic dal link in fondo all&apos;email o da Account → Avvisi.</li>
+            <li><strong className="text-foreground">Riepilogo del mese:</strong> quando si chiude il tuo mese (il periodo tra due stipendi) ti mandiamo un&apos;email con quanto hai risparmiato, entrate e uscite, le spese cambiate di più rispetto al solito e i budget rispettati, calcolati dai dati che hai inserito. Come l&apos;email del lunedì contiene importi (l&apos;oggetto no) e la spegni con un clic dal link in fondo all&apos;email o da Account → Avvisi.</li>
             <li><strong className="text-foreground">Dati di utilizzo:</strong> log di accesso, preferenze, obiettivi finanziari inseriti ed eventi d&apos;uso legati al tuo account (ad esempio: import completato, pagina aperta, errore di lettura di un file), senza importi né descrizioni dei movimenti. Servono a capire quali funzioni vengono usate e dove l&apos;app crea difficoltà; non sono condivisi con strumenti di analytics di terzi.</li>
             <li><strong className="text-foreground">Dati di pagamento:</strong> gestiti da Lemon Squeezy (merchant of record). Non conserviamo dati di carte di credito.</li>
           </ul>
@@ -47,7 +48,7 @@ export default function PrivacyPage() {
           <ul className="list-disc list-inside space-y-2">
             <li>Erogazione del servizio &rarr; Esecuzione del contratto (Art. 6.1.b GDPR)</li>
             <li>Elaborazione pagamenti &rarr; Esecuzione del contratto (Art. 6.1.b GDPR)</li>
-            <li>Comunicazioni di servizio, compresa l&apos;email del lunedì con i tuoi numeri (disattivabile in ogni momento) &rarr; Esecuzione del contratto (Art. 6.1.b GDPR)</li>
+            <li>Comunicazioni di servizio, compresi l&apos;email del lunedì e il riepilogo del mese con i tuoi numeri (disattivabili in ogni momento) &rarr; Esecuzione del contratto (Art. 6.1.b GDPR)</li>
             <li>Prevenzione frodi e sicurezza &rarr; Interesse legittimo (Art. 6.1.f GDPR)</li>
             <li>Miglioramento del prodotto (eventi d&apos;uso) &rarr; Interesse legittimo (Art. 6.1.f GDPR)</li>
             <li>Adempimento obblighi fiscali &rarr; Obbligo legale (Art. 6.1.c GDPR)</li>
@@ -60,7 +61,7 @@ export default function PrivacyPage() {
             <li><strong className="text-foreground">Supabase Inc.</strong> — database e autenticazione. DPA: supabase.com/privacy.</li>
             <li><strong className="text-foreground">Vercel Inc.</strong> — hosting applicazione web. Privacy: vercel.com/legal/privacy-policy.</li>
             <li><strong className="text-foreground">Lemon Squeezy LLC</strong> — elaborazione pagamenti e merchant of record. Agisce come titolare autonomo per i dati di pagamento.</li>
-            <li><strong className="text-foreground">Resend Inc.</strong> — invio delle email: quelle di servizio (benvenuto, cambio password) e l&apos;email del lunedì, che contiene i tuoi numeri (quanto puoi spendere, spese in arrivo).</li>
+            <li><strong className="text-foreground">Resend Inc.</strong> — invio delle email: quelle di servizio (benvenuto, cambio password), l&apos;email del lunedì e il riepilogo del mese, che contengono i tuoi numeri (quanto puoi spendere, spese in arrivo, quanto hai risparmiato).</li>
             <li><strong className="text-foreground">Anthropic PBC</strong> — solo se usi la lettura di foto, PDF degli estratti conto o bollette (Premium): elabora il file che carichi per estrarne i movimenti o i dati della bolletta.</li>
           </ul>
         </Section>

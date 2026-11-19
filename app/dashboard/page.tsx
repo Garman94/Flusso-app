@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getEffectivePlan } from "@/lib/preview-plan";
 import { currentPeriod } from "@/lib/period";
 import { addDaysISO, todayISO } from "@/lib/dates";
-import { periodContaining, periodName, totals, type RecapTx } from "@/lib/recap";
+import { periodContaining, periodName, totals, RECAP_BANNER_DAYS, RECAP_COMPLETE_DAYS, type RecapTx } from "@/lib/recap";
 import type { RecapTeaser } from "./recap-banner";
 import { DashboardClient } from "./dashboard-client";
 import type { Transaction, Goal, IncomeInfo } from "@/lib/calculations";
@@ -12,11 +12,7 @@ import { withPotBalances } from "@/lib/goals";
 import { loadHeroBase, loadStartingBalance, type HeroData, type HeroProfile, type HeroTx } from "./hero-data";
 
 // ─── Server component ─────────────────────────────────────────────────────────
-
-/** Giorni dall'inizio del periodo in cui la dashboard invita al riepilogo di quello chiuso. */
-const RECAP_BANNER_DAYS = 10;
-/** Il periodo chiuso sembra completo se l'ultimo movimento è entro questi giorni dalla fine. */
-const RECAP_COMPLETE_DAYS = 5;
+// RECAP_BANNER_DAYS e RECAP_COMPLETE_DAYS stanno in lib/recap.ts: li usa anche l'email del mese.
 
 async function DashboardContent() {
   const supabase = await createClient();

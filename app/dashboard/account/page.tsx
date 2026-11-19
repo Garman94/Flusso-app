@@ -15,6 +15,7 @@ import { FeedbackChat } from "./feedback-chat";
 import { PageTour } from "@/components/tour/page-tour";
 import { todayISO } from "@/lib/dates";
 import { weeklyStarted, firstMondayLabel } from "@/lib/weekly-email";
+import { monthlyStarted, monthlyStartLabel } from "@/lib/monthly-email";
 
 async function AccountContent() {
   const supabase = await createClient();
@@ -104,13 +105,15 @@ async function AccountContent() {
         <FamilyMembersSection userId={data.claims.sub} />
       </div>
 
-      {/* Avvisi: email del lunedì (migration 052; senza la colonna dice che arriva presto) */}
+      {/* Avvisi: email del lunedì e del mese (migration 052; senza le colonne dice che arrivano presto) */}
       <EmailAlertsSection
         userId={data.claims.sub}
         email={(data.claims.email as string | undefined) ?? null}
         weekly={profile?.email_weekly !== false}
-        available={profile != null && "email_weekly" in profile}
+        monthly={profile?.email_monthly !== false}
+        available={profile != null && "email_weekly" in profile && "email_monthly" in profile}
         startsOn={weeklyStarted(todayISO()) ? null : firstMondayLabel()}
+        monthlyStartsOn={monthlyStarted(todayISO()) ? null : monthlyStartLabel()}
       />
 
       {/* Power user toggle */}
