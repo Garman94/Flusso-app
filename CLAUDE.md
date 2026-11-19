@@ -37,7 +37,8 @@ Fase 2 della ricerca UX («ti richiama»). Migration 052, test `tests/email-lune
   - `email_sends` ha RLS attiva, e un utente collegato non vi legge niente;
   - lo stesso invio fatto due volte entra una volta sola;
   - un utente collegato spegne la sua email da solo, e il trigger lascia il piano com'era.
-  Si applica al «pubblica», prima del merge.
+  **Applicata in produzione il 19/11** (`db push --remote`, solo la 052), prima del merge.
+- **Prima email il 7 dicembre** (`WEEKLY_FIRST_MONDAY` in `lib/weekly-email.ts`): la privacy (punto 10) promette 15 giorni di avviso via email per le modifiche importanti, e Marco ha scelto di rispettarli. Prima di quel lunedì `runWeeklyEmails` si ferma subito (`notStarted`, senza toccare il database), e Account → Avvisi dice «La prima arriva lunedì 7 dicembre». «Mandamela ora» in Admin funziona lo stesso. L'avviso agli utenti si manda a parte, dopo che Marco ha letto il testo.
 - Rollback: prima il codice (revert della PR, toglie anche il cron), poi `supabase/rollback/052_email_del_lunedi_down.sql`.
 
 ---

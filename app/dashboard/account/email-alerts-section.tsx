@@ -9,10 +9,11 @@ import { toast } from "sonner";
 /**
  * Account → Avvisi: l'email del lunedì (migration 052). Se la colonna manca (`available` false)
  * la sezione dice che arriva presto invece di mostrare un interruttore che non salva.
+ * `startsOn`: "lunedì 7 dicembre" finché il giro non è partito (WEEKLY_FIRST_MONDAY), poi null.
  */
 export function EmailAlertsSection({
-  userId, email, weekly, available,
-}: { userId: string; email: string | null; weekly: boolean; available: boolean }) {
+  userId, email, weekly, available, startsOn = null,
+}: { userId: string; email: string | null; weekly: boolean; available: boolean; startsOn?: string | null }) {
   const [on, setOn] = useState(weekly);
   const [isPending, startTransition] = useTransition();
   const demoGuard = useDemoGuard();
@@ -55,6 +56,7 @@ export function EmailAlertsSection({
             {available
               ? "Ogni lunedì mattina: quanto puoi spendere fino al prossimo stipendio e cosa c'è da pagare in settimana."
               : "Arriva presto: ogni lunedì quanto puoi spendere fino al prossimo stipendio."}
+            {available && startsOn && on ? ` La prima arriva ${startsOn}.` : ""}
           </p>
         </div>
         <button

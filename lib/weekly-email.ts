@@ -19,6 +19,25 @@ export const STALE_DAYS = 7;
 export const WEEK_UPCOMING_MAX = 5;
 /** Valore di `da` nei link: dice da dove arriva il clic (evento email_clicked). */
 export const WEEKLY_SOURCE = "email-lunedi";
+/**
+ * Il primo lunedì in cui il giro manda l'email. La privacy (punto 10) promette 15 giorni di
+ * avviso per le modifiche importanti: pubblicata il 19/11, Marco ha scelto di partire il 7/12
+ * dopo un'email di avviso a tutti. Prima di questa data il giro non manda niente; «Mandamela ora»
+ * in Admin funziona lo stesso.
+ */
+export const WEEKLY_FIRST_MONDAY = "2026-12-07";
+
+/** `day` è YYYY-MM-DD (il lunedì del giro, o oggi). */
+export function weeklyStarted(day: string): boolean {
+  return day >= WEEKLY_FIRST_MONDAY;
+}
+
+const MONTHS = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+
+/** "lunedì 7 dicembre", per Account → Avvisi. */
+export function firstMondayLabel(): string {
+  return `lunedì ${Number(WEEKLY_FIRST_MONDAY.slice(8, 10))} ${MONTHS[Number(WEEKLY_FIRST_MONDAY.slice(5, 7)) - 1]}`;
+}
 
 export type WeeklyEmailInput = {
   name: string | null;

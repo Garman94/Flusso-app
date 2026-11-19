@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { weeklyEmail, upcomingThisWeek, isStale, STALE_DAYS, type WeeklyEmailInput } from "../lib/weekly-email";
+import { weeklyEmail, upcomingThisWeek, isStale, STALE_DAYS, weeklyStarted, firstMondayLabel, WEEKLY_FIRST_MONDAY, type WeeklyEmailInput } from "../lib/weekly-email";
+import { runWeeklyEmails } from "../lib/weekly-email-server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { unsubscribeToken, verifyUnsubscribe, unsubscribeQuery } from "../lib/email-token";
 import { escapeHtml } from "../lib/email-layout";
 import { heroNumbers, txSumToToday } from "../lib/hero-numbers";
@@ -143,4 +145,20 @@ test("numeri della card (usati anche dall'email): senza saldo niente, altrimenti
   assert.equal(h.flexiblePlanned, 600);
   // 600 di budget, spese 80: ne restano 520, e sul conto ce n'è abbastanza
   assert.deepEqual(h.spend, { kind: "ok", amount: 520, perDay: 47.27, days: 11, capped: false });
+});
+
+test("prima del 7 dicembre il giro non manda niente (15 giorni di avviso della privacy)", async () => {
+  assert.equal(WEEKLY_FIRST_MONDAY, "2026-12-07");
+  assert.equal(weeklyStarted("2026-11-23"), false);
+  assert.equal(weeklyStarted("2026-11-30"), false);
+  assert.equal(weeklyStarted("2026-12-07"), true);
+  assert.equal(weeklyStarted("2027-01-04"), true);
+  assert.equal(firstMondayLabel(), "lunedì 7 dicembre");
+
+  // lunedì 23 novembre, 7 del mattino a Roma: il giro si ferma prima di toccare il database
+  const untouchable = new Proxy({}, { get() { throw new Error("il database non va toccato"); } }) as unknown as SupabaseClient;
+  const r = await runWeeklyEmails(untouchable, new Date("2026-11-23T06:00:00Z"));
+  assert.deepEqual(r, { sent: 0, skipped: 0, already: 0, failed: 0, variants: {}, notStarted: true });
+  // anche la domenica prima del 7 (il lunedì del giro è ancora il 30/11)
+  assert.equal((await runWeeklyEmails(untouchable, new Date("2026-12-06T20:00:00Z"))).notStarted, true);
 });
