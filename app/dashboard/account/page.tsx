@@ -13,6 +13,8 @@ import { PowerUserToggle } from "./power-user-toggle";
 import { EmailAlertsSection } from "./email-alerts-section";
 import { FeedbackChat } from "./feedback-chat";
 import { PageTour } from "@/components/tour/page-tour";
+import { todayISO } from "@/lib/dates";
+import { weeklyStarted, firstMondayLabel } from "@/lib/weekly-email";
 
 async function AccountContent() {
   const supabase = await createClient();
@@ -108,6 +110,7 @@ async function AccountContent() {
         email={(data.claims.email as string | undefined) ?? null}
         weekly={profile?.email_weekly !== false}
         available={profile != null && "email_weekly" in profile}
+        startsOn={weeklyStarted(todayISO()) ? null : firstMondayLabel()}
       />
 
       {/* Power user toggle */}

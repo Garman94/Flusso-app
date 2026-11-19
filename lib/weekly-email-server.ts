@@ -9,7 +9,7 @@ import { todayISO } from "./dates";
 import { currentPeriod } from "./period";
 import { heroNumbers } from "./hero-numbers";
 import { upcomingItems, type UpcomingItem } from "./upcoming";
-import { weeklyEmail, WEEKLY_SOURCE, type WeeklyEmail } from "./weekly-email";
+import { weeklyEmail, weeklyStarted, WEEKLY_SOURCE, type WeeklyEmail } from "./weekly-email";
 import { unsubscribeQuery } from "./email-token";
 import { isAdminEmail } from "./admin-emails";
 import { isDemoEmail } from "./demo";
@@ -109,7 +109,11 @@ export async function sendEmail(to: string, userId: string, email: WeeklyEmail):
   if (error) throw new Error(`resend: ${error.name}`);
 }
 
-export type WeeklyRunResult = { sent: number; skipped: number; already: number; failed: number; variants: Record<string, number> };
+export type WeeklyRunResult = {
+  sent: number; skipped: number; already: number; failed: number; variants: Record<string, number>;
+  /** true se il lunedì è prima di WEEKLY_FIRST_MONDAY: nessuna email */
+  notStarted?: boolean;
+};
 
 /**
  * Il giro del lunedì: tutti gli utenti con l'email accesa, tranne admin e demo.
@@ -119,6 +123,7 @@ export type WeeklyRunResult = { sent: number; skipped: number; already: number; 
 export async function runWeeklyEmails(service: SupabaseClient, now: Date = new Date()): Promise<WeeklyRunResult> {
   const res: WeeklyRunResult = { sent: 0, skipped: 0, already: 0, failed: 0, variants: {} };
   const week = mondayOf(now);
+  if (!weeklyStarted(week)) return { ...res, notStarted: true };
 
   const emails = new Map<string, string>();
   for (let page = 1; page <= 50; page++) {
