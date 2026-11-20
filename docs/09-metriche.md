@@ -23,6 +23,8 @@ Dal 17/10: `import_completed` e `screenshot_import_completed` prima si perdevano
 
 **Email del mese** (dal 7/12): stesse regole, con `kind` = `monthly`, `period_key` = inizio del periodo riepilogato, link con `?da=email-mese` e preferenza `profiles.email_monthly`. Il giro di ogni giorno (log di Vercel, «email del mese») conta anche chi era nei primi giorni del periodo nuovo ma non l'ha ricevuta, e perché (`notReady`: `few` meno di 3 movimenti, `incomplete` mancano gli ultimi giorni, `starts-late` cominciano a metà).
 
+**Notifiche push** (migration 053): chi le accende ha una riga per dispositivo in `push_subscriptions` (`device` = solo il tipo, `last_ok_at` = ultimo invio riuscito); spegnendole o uscendo dall'account la riga sparisce; se il permesso lo toglie il browser, sparisce al primo invio che fallisce. Eventi: `push_enabled` (`device`), `push_disabled`, `push_permission` (`result`: `denied` o `default`, cioè chi ha detto di no alla richiesta del browser), `push_failed` (`device`), `push_test` (`ok`). La notifica del lunedì è una riga di `email_sends` con `kind` = `push_weekly`; il link ha `?da=push-lunedi` e arrivando da lì si registra `push_clicked` (`kind`, `path`). Il giro del lunedì (log di Vercel, «giro del lunedì») dà `push`: persone e dispositivi raggiunti, dispositivi tolti (`gone`), errori.
+
 **Chi torna** (dal 16/11) si legge in Admin, senza SQL: la card conta chi ha aperto Flusso almeno 7 giorni dopo l'iscrizione (obiettivo 40%) e le persone attive negli ultimi 7 giorni e in ogni settimana. Toglie admin e demo, e chi aveva già passato la settimana dopo l'iscrizione prima della prima visita registrata (un suo ritorno di allora non risulterebbe). Calcoli in `lib/retention.ts`.
 
 Le query vanno lanciate da Supabase → SQL Editor (nessuna policy di lettura per gli utenti).
@@ -55,6 +57,27 @@ group by 1 order by 1 desc;
 
 -- quanti l'hanno spenta
 select count(*) filter (where not email_weekly) as spenta, count(*) as profili from profiles;
+```
+
+## Notifiche: accese, cliccate, rifiutate
+
+```sql
+-- persone e dispositivi con le notifiche accese, per tipo
+select device, count(*) as dispositivi, count(distinct user_id) as persone
+from push_subscriptions group by 1 order by 2 desc;
+
+-- per settimana: notifiche mandate e persone che l'hanno toccata entro 2 giorni
+select s.period_key as settimana, count(*) as mandate,
+       count(*) filter (where exists (
+         select 1 from events e where e.user_id = s.user_id and e.name = 'push_clicked'
+           and e.created_at >= s.sent_at and e.created_at < s.sent_at + interval '2 days')) as toccate
+from email_sends s where s.kind = 'push_weekly'
+group by 1 order by 1 desc;
+
+-- chi prova ad accenderle e come va
+select name, props->>'device' as dispositivo, props->>'result' as risposta, count(*)
+from events where name in ('push_enabled', 'push_permission', 'push_failed', 'push_disabled')
+group by 1, 2, 3 order by 1, 4 desc;
 ```
 
 ## Perché falliscono gli import

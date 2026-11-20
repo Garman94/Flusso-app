@@ -14,7 +14,7 @@ export default function PrivacyPage() {
       <main className="flex-1 w-full max-w-3xl mx-auto px-5 py-16 flex flex-col gap-10">
         <div className="flex flex-col gap-3">
           <h1 className="text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-sm text-muted-foreground">Ultimo aggiornamento: 19 novembre 2026</p>
+          <p className="text-sm text-muted-foreground">Ultimo aggiornamento: 20 novembre 2026</p>
         </div>
 
         <p className="text-muted-foreground leading-relaxed">
@@ -39,6 +39,7 @@ export default function PrivacyPage() {
             <li><strong className="text-foreground">Foto, PDF degli estratti conto e bollette (solo Premium, solo se scegli queste funzioni):</strong> il file viene inviato ad Anthropic per leggerne i movimenti o i dati della bolletta e non viene conservato da Flusso; quello che viene letto lo confermi tu prima che sia salvato.</li>
             <li><strong className="text-foreground">Email del lunedì:</strong> ogni lunedì mattina ti mandiamo un&apos;email con quanto puoi spendere fino al prossimo stipendio e le spese da pagare in settimana, calcolati dai dati che hai inserito. Contiene importi: chi può leggere la tua casella di posta li vede (l&apos;oggetto dell&apos;email non ne contiene). La spegni con un clic dal link in fondo all&apos;email o da Account → Avvisi.</li>
             <li><strong className="text-foreground">Riepilogo del mese:</strong> quando si chiude il tuo mese (il periodo tra due stipendi) ti mandiamo un&apos;email con quanto hai risparmiato, entrate e uscite, le spese cambiate di più rispetto al solito e i budget rispettati, calcolati dai dati che hai inserito. Come l&apos;email del lunedì contiene importi (l&apos;oggetto no) e la spegni con un clic dal link in fondo all&apos;email o da Account → Avvisi.</li>
+            <li><strong className="text-foreground">Notifiche (solo se le accendi):</strong> quando accendi le notifiche su un telefono o computer salviamo l&apos;indirizzo che il browser riceve dal suo servizio di notifiche, le chiavi per cifrare i messaggi e il tipo di dispositivo (ad esempio iPhone o Android). Il lunedì mattina ti mandiamo un promemoria senza importi (si vede anche a telefono bloccato). Il messaggio viaggia cifrato: il servizio di notifiche lo consegna ma non può leggerlo. Le spegni da Account → Avvisi, dalle impostazioni del browser o uscendo dall&apos;account, e allora l&apos;indirizzo viene cancellato.</li>
             <li><strong className="text-foreground">Dati di utilizzo:</strong> log di accesso, preferenze, obiettivi finanziari inseriti ed eventi d&apos;uso legati al tuo account (ad esempio: import completato, pagina aperta, errore di lettura di un file), senza importi né descrizioni dei movimenti. Servono a capire quali funzioni vengono usate e dove l&apos;app crea difficoltà; non sono condivisi con strumenti di analytics di terzi.</li>
             <li><strong className="text-foreground">Dati di pagamento:</strong> gestiti da Lemon Squeezy (merchant of record). Non conserviamo dati di carte di credito.</li>
           </ul>
@@ -52,6 +53,7 @@ export default function PrivacyPage() {
             <li>Prevenzione frodi e sicurezza &rarr; Interesse legittimo (Art. 6.1.f GDPR)</li>
             <li>Miglioramento del prodotto (eventi d&apos;uso) &rarr; Interesse legittimo (Art. 6.1.f GDPR)</li>
             <li>Adempimento obblighi fiscali &rarr; Obbligo legale (Art. 6.1.c GDPR)</li>
+            <li>Notifiche sul dispositivo &rarr; Consenso (Art. 6.1.a GDPR), dato quando le accendi e revocabile spegnendole</li>
             <li>Comunicazioni promozionali &rarr; Consenso revocabile (Art. 6.1.a GDPR)</li>
           </ul>
         </Section>
@@ -63,12 +65,13 @@ export default function PrivacyPage() {
             <li><strong className="text-foreground">Lemon Squeezy LLC</strong> — elaborazione pagamenti e merchant of record. Agisce come titolare autonomo per i dati di pagamento.</li>
             <li><strong className="text-foreground">Resend Inc.</strong> — invio delle email: quelle di servizio (benvenuto, cambio password), l&apos;email del lunedì e il riepilogo del mese, che contengono i tuoi numeri (quanto puoi spendere, spese in arrivo, quanto hai risparmiato).</li>
             <li><strong className="text-foreground">Anthropic PBC</strong> — solo se usi la lettura di foto, PDF degli estratti conto o bollette (Premium): elabora il file che carichi per estrarne i movimenti o i dati della bolletta.</li>
+            <li><strong className="text-foreground">Servizio di notifiche del tuo browser</strong> (Google per Chrome e Android, Apple per Safari, Mozilla per Firefox, Microsoft per Edge su Windows) — solo se accendi le notifiche: riceve l&apos;indirizzo del dispositivo e il messaggio cifrato, che non può leggere, e lo consegna. Lo sceglie il tuo browser, non Flusso.</li>
           </ul>
         </Section>
 
         <Section title="5. Trasferimento di dati fuori dall&apos;UE">
           <p>
-            Supabase, Vercel, Resend e Anthropic sono aziende con sede negli Stati Uniti (il database Supabase è ospitato in Irlanda). I trasferimenti avvengono sulla base delle{" "}
+            Supabase, Vercel, Resend e Anthropic sono aziende con sede negli Stati Uniti (il database Supabase è ospitato in Irlanda), come i servizi di notifiche dei browser se accendi le notifiche. I trasferimenti avvengono sulla base delle{" "}
             <strong className="text-foreground">Clausole Contrattuali Standard (SCC)</strong> approvate dalla
             Commissione Europea (Decisione 2021/914/UE) o di altre garanzie adeguate previste dal capo V del GDPR.
           </p>
