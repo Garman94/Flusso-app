@@ -11,11 +11,13 @@ import { FamilyMembersSection } from "./family-members-section";
 import { IncomeSection } from "./income-section";
 import { PowerUserToggle } from "./power-user-toggle";
 import { EmailAlertsSection } from "./email-alerts-section";
+import { PushSection } from "./push-section";
 import { FeedbackChat } from "./feedback-chat";
 import { PageTour } from "@/components/tour/page-tour";
 import { todayISO } from "@/lib/dates";
 import { weeklyStarted, firstMondayLabel } from "@/lib/weekly-email";
 import { monthlyStarted, monthlyStartLabel } from "@/lib/monthly-email";
+import { pushConfigured, vapidPublicKey } from "@/lib/push-server";
 
 async function AccountContent() {
   const supabase = await createClient();
@@ -37,6 +39,10 @@ async function AccountContent() {
     .eq("user_id", data.claims.sub)
     .eq("is_owner", true)
     .maybeSingle();
+
+  // Notifiche: servono le chiavi VAPID e la tabella (migration 053; senza, la query dà errore)
+  const pushReady = pushConfigured()
+    && !(await supabase.from("push_subscriptions").select("id", { head: true }).limit(1)).error;
 
   const plan = await getEffectivePlan(profile?.plan ?? "free", profile?.trial_ends_at);
   const checkoutUrl = process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_URL ?? null;
@@ -105,7 +111,7 @@ async function AccountContent() {
         <FamilyMembersSection userId={data.claims.sub} />
       </div>
 
-      {/* Avvisi: email del lunedì e del mese (migration 052; senza le colonne dice che arrivano presto) */}
+      {/* Avvisi: email del lunedì e del mese (migration 052) e notifiche (053); senza dicono che arrivano presto */}
       <EmailAlertsSection
         userId={data.claims.sub}
         email={(data.claims.email as string | undefined) ?? null}
@@ -114,7 +120,9 @@ async function AccountContent() {
         available={profile != null && "email_weekly" in profile && "email_monthly" in profile}
         startsOn={weeklyStarted(todayISO()) ? null : firstMondayLabel()}
         monthlyStartsOn={monthlyStarted(todayISO()) ? null : monthlyStartLabel()}
-      />
+      >
+        <PushSection configured={pushReady} publicKey={pushReady ? vapidPublicKey() : null} />
+      </EmailAlertsSection>
 
       {/* Power user toggle */}
       <div data-tour="account-power-user">
