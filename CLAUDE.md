@@ -7,6 +7,21 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## Notifiche push (2026-11-20)
+
+Fase 2 della ricerca UX («ti richiama»). Solo sito e app installata dal browser (PWA): l'app Android è una WebView e non le ha. Migration 053, test `tests/notifiche-push.test.ts`, libreria `web-push` 3.6.x.
+- **Si accendono a mano**, telefono per telefono: Account → Avvisi → «Notifiche su questo dispositivo» (`push-section.tsx`, dentro `EmailAlertsSection` come `children`). «Accendi le notifiche» chiede il permesso al browser, iscrive il dispositivo (`pushManager.subscribe` con la chiave VAPID pubblica) e lo salva (`savePushDevice` in `app/actions/push.ts`); poi «Mandami una prova» e «Spegni». A ogni visita di Account il dispositivo si risalva (il browser può aver cambiato indirizzo). Spiegazioni per iPhone senza schermata Home (`ios-browser`), iOS sotto il 16.4, app Android (`; wv)` o `window.Capacitor`), browser senza notifiche e permesso negato (`pushSupport` in `lib/push.ts`). La demo non le accende. **Uscendo dall'account** (`logout-button.tsx`) si spengono su quel dispositivo, al massimo 1,5 s di attesa.
+- **Tabella** `push_subscriptions` (053): indirizzo (solo i servizi di Google, Apple, Mozilla e Microsoft, controllato anche dal database), chiavi `p256dh`/`auth`, `device` (solo il tipo: `deviceLabel`), `last_ok_at`. Nessuna policy: scrive solo il server con la service role, dopo aver controllato chi è collegato, filtrando per `user_id` (`lib/push-server.ts`). Un indirizzo è di un solo utente (se sullo stesso browser le accende un altro account passa a lui), al massimo 10 dispositivi a testa (`MAX_DEVICES`). Un invio con risposta 404 o 410 toglie il dispositivo.
+- **Service worker** (`public/sw.js`): `push` mostra la notifica (solo link interni, `/dashboard` se manca), `notificationclick` porta davanti Flusso sulla pagina giusta o lo apre, `pushsubscriptionchange` iscrive di nuovo e manda l'indirizzo nuovo a `POST /api/push/subscription` (con la sessione, stessa origine).
+- **La notifica del lunedì** (`weeklyPush`): «Nuova settimana · Guarda quanto puoi spendere fino al prossimo stipendio (26 nov).» → `/dashboard?da=push-lunedi`; se l'ultimo movimento ha più di 7 giorni (`isStale`, come l'email) «Carica i movimenti» → import. **Mai importi**, e niente budget superato o soldi che mancano: si vede a telefono bloccato. Chi non ha mai caricato movimenti non la riceve. Parte dallo stesso cron dell'email (`/api/cron/email-lunedi`: il piano Hobby di Vercel ha 2 cron, già usati), con `Promise.allSettled` così un giro fermo non ferma l'altro; risposta `{email, push}`. **Parte subito**, senza aspettare il 7 dicembre (si accende solo a mano), admin compreso. Una per persona e settimana: riga in `email_sends` con `kind` = `push_weekly` (053 allarga il controllo su `kind`), tolta se nessun dispositivo la riceve. Tiene la notifica 12 ore se il telefono è spento (`WEEKLY_PUSH_TTL`).
+- **Chiavi VAPID**: `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY` su Vercel (Production e Preview); senza, o senza la tabella, Account dice «Arrivano presto» e il giro non tocca il database (`notConfigured`). Firma con l'indirizzo del sito (`https://www.flussoapp.it`, mai localhost: Apple lo rifiuta). La copia delle chiavi sta in `Documenti\Riservato`. Cambiarle vuol dire che ognuno deve riaccenderle: Account riconosce l'iscrizione con le chiavi vecchie e mostra di nuovo «Accendi».
+- **Admin → 📲 Notifiche** (`admin-push.tsx`): persone e dispositivi per tipo (`pushStats`), «Mandami quella del lunedì» (`adminWeeklyPush`, non scrive in `email_sends`).
+- **Clic**: `ActivityPing` registra `push_clicked` per `?da=push-…`. Eventi e query in `docs/09-metriche.md`.
+- **Privacy** (`app/privacy/page.tsx`, aggiornata il 20/11 senza i 15 giorni di avviso: le notifiche si accendono solo con il consenso): cosa si salva, base giuridica consenso, servizi di notifiche dei browser.
+- Rollback: prima il codice (revert della PR; il cron torna a mandare solo l'email), poi `supabase/rollback/053_notifiche_push_down.sql`.
+
+---
+
 ## Perché falliscono le letture di foto e PDF (2026-11-16)
 
 Fase 2 della ricerca UX ("ti richiama"), primo pezzo. Solo codice, nessuna migration.
@@ -965,6 +980,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `050_campanella_pulita.sql` | Spegne (`is_active = false`) le due notifiche della campanella superate (formati Excel, "sezione Smart"). Nessun dato cancellato. Rollback: `supabase/rollback/050_campanella_pulita_down.sql` |
 | `051_demo_coerente.sql` | Solo demo: `reseed_demo()` sui periodi di paga, mai date future, con conto, auto e salvadanai in pari; `reseed_demo_salvadanai()` vuota. Applicata il 2026-11-13 |
 | `052_email_del_lunedi.sql` | `profiles.email_weekly` / `email_monthly` (default true) e tabella `email_sends` (un invio per utente, tipo e periodo). Rollback: `supabase/rollback/052_email_del_lunedi_down.sql` |
+| `053_notifiche_push.sql` | Tabella `push_subscriptions` (dispositivi con le notifiche accese, solo server) e `email_sends.kind` anche `push_weekly`. Rollback: `supabase/rollback/053_notifiche_push_down.sql` |
 
 ---
 

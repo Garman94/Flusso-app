@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useDemoGuard } from "@/components/demo-context";
 import { track } from "@/lib/track";
@@ -15,12 +15,13 @@ const LABEL: Record<EmailKind, string> = { weekly: "Email del lunedì", monthly:
  * mancano (`available` false) la sezione dice che arrivano presto invece di mostrare interruttori
  * che non salvano. Finché il giro non è partito: `startsOn` = "lunedì 7 dicembre"
  * (WEEKLY_FIRST_MONDAY), `monthlyStartsOn` = "7 dicembre" (MONTHLY_FIRST_DAY); poi null.
+ * `children`: le notifiche su questo dispositivo (push-section.tsx), in fondo.
  */
 export function EmailAlertsSection({
-  userId, email, weekly, monthly = true, available, startsOn = null, monthlyStartsOn = null,
+  userId, email, weekly, monthly = true, available, startsOn = null, monthlyStartsOn = null, children,
 }: {
   userId: string; email: string | null; weekly: boolean; monthly?: boolean; available: boolean;
-  startsOn?: string | null; monthlyStartsOn?: string | null;
+  startsOn?: string | null; monthlyStartsOn?: string | null; children?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
 
@@ -52,6 +53,7 @@ export function EmailAlertsSection({
           ? "Quando si chiude il mese, se hai caricato i movimenti fino alla fine: quanto hai risparmiato, le spese cambiate di più e i budget."
           : "Arriva presto: com'è andato il mese appena chiuso."}
       />
+      {children}
     </div>
   );
 }
