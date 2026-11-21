@@ -3,10 +3,35 @@
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { APP_AUTH_REDIRECT } from "@/lib/auth-return";
+
+/**
+ * Nell'app Android con il plugin Browser (dalla versione 1.1) Google si apre in una scheda di Chrome sopra
+ * l'app e torna con it.flussoapp://auth/callback (perché: lib/auth-return.ts). Le versioni vecchie dell'app,
+ * senza il plugin, e il sito restano come prima.
+ */
+async function inAppWithBrowser(): Promise<boolean> {
+  if (!("Capacitor" in window)) return false;
+  const { Capacitor } = await import("@capacitor/core");
+  return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("Browser");
+}
 
 export function OAuthButtons() {
   async function signInWithGoogle() {
     const supabase = createClient();
+    if (await inAppWithBrowser()) {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: APP_AUTH_REDIRECT, skipBrowserRedirect: true },
+      });
+      if (error || !data.url) {
+        toast.error("Errore con Google: " + (error?.message ?? "riprova"));
+        return;
+      }
+      const { Browser } = await import("@capacitor/browser");
+      await Browser.open({ url: data.url });
+      return;
+    }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {

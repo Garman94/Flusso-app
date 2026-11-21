@@ -22,6 +22,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Ritorno dall'accesso con Google (lib/auth-return.ts, MainActivity.openAuthReturn) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="it.flussoapp" android:host="auth" android:path="/callback" />
+            </intent-filter>
+
         </activity>
 
         <provider
