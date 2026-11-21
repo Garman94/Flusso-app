@@ -16,6 +16,8 @@ import { categoryKind } from "@/lib/money";
 import { loadRetention } from "@/lib/retention-server";
 import { AdminChiTorna } from "./admin-chi-torna";
 import { AdminEmailTest } from "./admin-email-lunedi";
+import { AdminPush } from "./admin-push";
+import { pushConfigured, pushStats } from "@/lib/push-server";
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
@@ -42,7 +44,7 @@ async function AdminContent() {
 
   const service = getServiceClient();
 
-  const [{ data: profiles, error: profilesError }, { data: coupons }, previewPlan, changes, dictionaryRes, rulesRes, systemCatsRes, retention] = await Promise.all([
+  const [{ data: profiles, error: profilesError }, { data: coupons }, previewPlan, changes, dictionaryRes, rulesRes, systemCatsRes, retention, push] = await Promise.all([
     service
       .from("profiles")
       .select("id, full_name, plan, created_at")
@@ -59,6 +61,8 @@ async function AdminContent() {
     service.from("categories").select("name").is("user_id", null).order("name"),
     // Chi torna: iscritti e visite (app_open), senza admin e demo
     loadRetention(service),
+    // Notifiche: persone e dispositivi (null senza la tabella, migration 053)
+    pushStats(service),
   ]);
   const dictionary = dictionaryRes.data ?? [];
   const proposals = dictionaryProposals((rulesRes.data ?? []) as unknown as RuleRow[], dictionary);
@@ -94,6 +98,7 @@ async function AdminContent() {
       {/* Email del lunedì: vederla o riceverla subito */}
       <AdminEmailTest kind="weekly" />
       <AdminEmailTest kind="monthly" />
+      <AdminPush stats={push} configured={pushConfigured()} />
 
       {/* Users table */}
       <AdminUsersSection profiles={profiles ?? []} />
