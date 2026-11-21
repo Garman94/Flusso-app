@@ -18,6 +18,7 @@ Fase 2 della ricerca UX («ti richiama»). Solo sito e app installata dal browse
 - **Admin → 📲 Notifiche** (`admin-push.tsx`): persone e dispositivi per tipo (`pushStats`), «Mandami quella del lunedì» (`adminWeeklyPush`, non scrive in `email_sends`).
 - **Clic**: `ActivityPing` registra `push_clicked` per `?da=push-…`. Eventi e query in `docs/09-metriche.md`.
 - **Privacy** (`app/privacy/page.tsx`, aggiornata il 20/11 senza i 15 giorni di avviso: le notifiche si accendono solo con il consenso): cosa si salva, base giuridica consenso, servizi di notifiche dei browser.
+- **Applicata in produzione il 21/11** (`db push --remote`, solo la 053), dopo la prova in una transazione annullata sul database vero: entrano gli indirizzi dei quattro servizi, quelli a caso e le chiavi strane no; un utente collegato non legge e non scrive; `push_weekly` una volta sola a settimana; il rollback rimette tutto com'era. **Chiavi VAPID su Vercel dal 21/11** (Production e Preview del branch `anteprima`): sul sito valgono dal primo deploy di produzione dopo quella data.
 - Rollback: prima il codice (revert della PR; il cron torna a mandare solo l'email), poi `supabase/rollback/053_notifiche_push_down.sql`.
 
 ---
@@ -980,7 +981,7 @@ Applica con `supabase db push` (dopo `supabase login` e `supabase link`).
 | `050_campanella_pulita.sql` | Spegne (`is_active = false`) le due notifiche della campanella superate (formati Excel, "sezione Smart"). Nessun dato cancellato. Rollback: `supabase/rollback/050_campanella_pulita_down.sql` |
 | `051_demo_coerente.sql` | Solo demo: `reseed_demo()` sui periodi di paga, mai date future, con conto, auto e salvadanai in pari; `reseed_demo_salvadanai()` vuota. Applicata il 2026-11-13 |
 | `052_email_del_lunedi.sql` | `profiles.email_weekly` / `email_monthly` (default true) e tabella `email_sends` (un invio per utente, tipo e periodo). Rollback: `supabase/rollback/052_email_del_lunedi_down.sql` |
-| `053_notifiche_push.sql` | Tabella `push_subscriptions` (dispositivi con le notifiche accese, solo server) e `email_sends.kind` anche `push_weekly`. Rollback: `supabase/rollback/053_notifiche_push_down.sql` |
+| `053_notifiche_push.sql` | Tabella `push_subscriptions` (dispositivi con le notifiche accese, solo server) e `email_sends.kind` anche `push_weekly`. Applicata il 2026-11-21. Rollback: `supabase/rollback/053_notifiche_push_down.sql` |
 
 ---
 
