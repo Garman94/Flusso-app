@@ -7,6 +7,18 @@ Documentazione tecnica completa per Claude Code. Aggiornata al: 2026-09-10. Ulti
 
 ---
 
+## App Android: accesso con Google (2026-11-21)
+
+L'app Android è Capacitor che apre www.flussoapp.it (`capacitor.config.ts`), solo APK (niente Play Store), firmata con `Documenti\Riservato\Flusso.jks`. Fino alla 1.0 l'accesso con Google non funzionava: partiva nella finestra dell'app, Google si apriva in Chrome e il ritorno arrivava in Chrome, senza il codice di verifica (PKCE) → errore «both auth code and code verifier should be non-empty».
+- **Dalla 1.1** (`versionCode 2`): «Continua con Google» (`components/oauth-buttons.tsx`), se c'è il plugin `@capacitor/browser`, apre Google in una scheda di Chrome sopra l'app con `redirectTo` = `it.flussoapp://auth/callback` (`APP_AUTH_REDIRECT` in `lib/auth-return.ts`). Android riapre l'app (intent-filter in `AndroidManifest.xml`) e `MainActivity.openAuthReturn` carica `https://www.flussoapp.it/auth/callback?code=…` nella sua finestra, dove il codice di verifica c'è. Un codice mandato da un'altra app non serve: senza il codice di verifica Supabase lo rifiuta. Il sito e l'APK 1.0 restano come prima.
+- **Supabase**: `it.flussoapp://auth/callback` va negli indirizzi di ritorno consentiti (Authentication → URL Configuration), altrimenti Supabase torna al sito e l'errore resta. Indirizzo uguale in sito, manifest e `MainActivity` (test `tests/accesso-app.test.ts`).
+- `/auth/callback` ora va solo su pagine di Flusso (`safeNext`: prima `next` poteva portare a un altro sito) e mostra il motivo se l'accesso è annullato (`error_description`).
+- **Build**: il Java di Android Studio è il 25, quindi Gradle 9.5.0 (come Mineral Quest; non oltre la 9.5.x con AGP 8). `android/local.properties` con `sdk.dir` (non versionato), poi `npx cap sync android` e `JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" ./gradlew assembleRelease` → `app-release-unsigned.apk`, che firma Marco con `apksigner` (la password la scrive lui). Stessa firma della 1.0, quindi si installa sopra.
+- Nell'app le notifiche push non ci sono ancora (servirebbe Firebase): `push-section.tsx` lo dice.
+- Rollback: revert della PR (il sito torna come prima; l'APK 1.1 torna a fallire con Google come la 1.0).
+
+---
+
 ## Notifiche push (2026-11-20)
 
 Fase 2 della ricerca UX («ti richiama»). Solo sito e app installata dal browser (PWA): l'app Android è una WebView e non le ha. Migration 053, test `tests/notifiche-push.test.ts`, libreria `web-push` 3.6.x.
